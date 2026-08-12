@@ -50,6 +50,7 @@ import 'chat_suggestion_bubbles.dart';
 import 'token_display_widget.dart';
 import '../../../theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
+import '../../../shared/utils/markdown_html_clipboard.dart';
 
 final RegExp _urlSchemeRe = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:');
 
@@ -1956,8 +1957,9 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     );
 
     return RepaintBoundary(
-      child: SelectionArea(
-        key: ValueKey('assistant_${widget.message.id}'),
+      child: _MarkdownSelectionArea(
+        areaKey: ValueKey('assistant_${widget.message.id}'),
+        markdownSource: visualContent,
         child: DefaultTextStyle.merge(
           style: TextStyle(fontSize: baseAssistant, height: 1.5),
           child: assistantContent,
@@ -5892,7 +5894,7 @@ class _ShimmerState extends State<_Shimmer> with TickerProviderStateMixin {
     if (!widget.enabled) return widget.child;
     return AnimatedBuilder(
       animation: _c,
-      builder: (context, child) {
+      builder: (context, child) {  // _Shimmer
         final t = _c.value; // 0..1
         return ShaderMask(
           shaderCallback: (rect) {
@@ -5927,6 +5929,93 @@ class _ShimmerState extends State<_Shimmer> with TickerProviderStateMixin {
         );
       },
       child: widget.child,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _MarkdownSelectionArea
+//
+// Wraps SelectionArea so that the Copy action (keyboard shortcut AND context
+// menu) writes both text/html and text/plain to the clipboard.  The selected
+// plain-text is tracked via onSelectionChanged; on copy it is converted to
+// HTML using the lightweight Markdown→HTML converter and written via
+// super_clipboard.  Plain-text is always included as a fallback.
+// ---------------------------------------------------------------------------
+
+class _MarkdownSelectionArea extends StatefulWidget {
+  const _MarkdownSelectionArea({
+    required this.areaKey,
+    required this.markdownSource,
+    required this.child,
+  });
+
+  /// Forwarded as the SelectionArea's key so that the widget identity is stable
+  /// across rebuilds of the parent (same semantics as the previous plain
+  /// SelectionArea key).
+  final Key areaKey;
+
+  /// The full Markdown source for this message.  Used only to resolve a
+  /// well-formed HTML payload when the user copies a selection that matches
+  /// a leading substring of the source (streaming case) or the whole source.
+  /// For partial mid-message selections we fall back to converting the
+  /// selected plain-text directly.
+  final String markdownSource;
+
+  final Widget child;
+
+  @override
+  State<_MarkdownSelectionArea> createState() =>
+      _MarkdownSelectionAreaState();
+}
+
+class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
+  String? _selectedPlainText;
+
+  Future<void> _copyRichText() async {
+    final text = _selectedPlainText;
+    if (text == null || text.isEmpty) return;
+    await copyMarkdownSelectionToClipboard(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        CopySelectionTextIntent: CallbackAction<CopySelectionTextIntent>(
+          onInvoke: (_) {
+            _copyRichText();
+            return null;
+          },
+        ),
+      },
+      child: SelectionArea(
+        key: widget.areaKey,
+        onSelectionChanged: (content) {
+          _selectedPlainText = content?.plainText;
+        },
+        contextMenuBuilder: (context, selectableRegionState) {
+          final List<ContextMenuButtonItem> items = selectableRegionState
+              .contextMenuButtonItems
+              .map((item) {
+                if (item.type == ContextMenuButtonType.copy) {
+                  return item.copyWith(
+                    onPressed: () {
+                      _copyRichText();
+                      selectableRegionState.hideToolbar();
+                    },
+                  );
+                }
+                return item;
+              })
+              .toList();
+          return AdaptiveTextSelectionToolbar.buttonItems(
+            anchors: selectableRegionState.contextMenuAnchors,
+            buttonItems: items,
+          );
+        },
+        child: widget.child,
+      ),
     );
   }
 }
