@@ -6153,7 +6153,10 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
   Future<void> _copyRichText() async {
     final text = _selectedPlainText;
     if (text == null || text.isEmpty) return;
-    await copyMarkdownSelectionToClipboard(text);
+    await copyMarkdownSelectionToClipboard(
+      text,
+      markdownSource: widget.markdownSource,
+    );
   }
 
   @override
