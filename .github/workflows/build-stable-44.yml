@@ -4,6 +4,11 @@ env:
   FLUTTER_VERSION: '3.44.6'  # 当前 stable 3.44.6 / Dart 3.12.x
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - pubspec.yaml
+
   # 手动触发
   workflow_dispatch:
     inputs:
@@ -59,10 +64,94 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: stable-44-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    name: 检查发布版本
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.release.outputs.should_build }}
+      publish_release: ${{ steps.release.outputs.publish_release }}
+      release_version: ${{ steps.release.outputs.release_version }}
+      artifact_version: ${{ steps.release.outputs.artifact_version }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查 pubspec 版本
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          MANUAL_PUBLISH: ${{ inputs.publish_release }}
+          MANUAL_TAG: ${{ inputs.release_tag }}
+          MANUAL_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          raw_version="$(awk '$1 == "version:" { print $2; exit }' pubspec.yaml)"
+          release_version="${raw_version%%+*}"
+          if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid pubspec version: $raw_version" >&2
+            exit 1
+          fi
+
+          should_build=true
+          publish_release=false
+          prerelease=false
+          release_tag=""
+          artifact_version="$raw_version"
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            old_raw_version="$(
+              git show "${BEFORE_SHA}:pubspec.yaml" 2>/dev/null |
+                awk '$1 == "version:" { print $2; exit }' || true
+            )"
+            old_release_version="${old_raw_version%%+*}"
+
+            if [[ -n "$old_release_version" && \
+                  "$old_release_version" == "$release_version" ]]; then
+              should_build=false
+              echo "Semantic version unchanged: $release_version"
+            else
+              publish_release=true
+              release_tag="v$release_version"
+              echo "Version changed: ${old_release_version:-unknown} -> $release_version"
+            fi
+          else
+            publish_release="${MANUAL_PUBLISH:-false}"
+            prerelease="${MANUAL_PRERELEASE:-false}"
+            release_tag="${MANUAL_TAG:-}"
+            if [[ "$publish_release" == "true" && -z "$release_tag" ]]; then
+              release_tag="v$release_version"
+            fi
+            if [[ "$publish_release" != "true" ]]; then
+              artifact_version="${raw_version}_$(git rev-parse --short HEAD)"
+            fi
+          fi
+
+          {
+            echo "should_build=$should_build"
+            echo "publish_release=$publish_release"
+            echo "release_version=$release_version"
+            echo "artifact_version=$artifact_version"
+            echo "release_tag=$release_tag"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
   # Android 构建
   android:
-    if: ${{ github.event.inputs.build_android == 'true' }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_android) }}
     name: 构建 Android
     runs-on: ubuntu-latest
     permissions: write-all
@@ -97,11 +186,7 @@ jobs:
       - name: 📝 获取版本号
         id: version
         run: |
-          VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          if [ "${{ github.event.inputs.publish_release }}" != "true" ]; then
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            VERSION="${VERSION}_${SHORT_SHA}"
-          fi
+          VERSION='${{ needs.prepare.outputs.artifact_version }}'
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "版本号: $VERSION"
       # 如果有签名密钥，写入密钥文件
@@ -126,15 +211,6 @@ jobs:
             abi=$(echo "$file" | sed -E 's/app-(.*)-release\.apk/\1/')
             mv "$file" "Kelivo_android_${VERSION}_${abi}.apk"
           done
-      - name: 🚀 发布到 Release
-        if: ${{ github.event.inputs.publish_release == 'true' && github.event.inputs.release_tag != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          name: ${{ github.event.inputs.release_tag }}
-          prerelease: ${{ github.event.inputs.prerelease }}
-          files: build/app/outputs/flutter-apk/Kelivo_android_*.apk
-
       - name: 📤 上传构建产物 (arm64-v8a)
         uses: actions/upload-artifact@v4
         with:
@@ -155,7 +231,8 @@ jobs:
 
   # iOS 构建
   ios:
-    if: ${{ github.event.inputs.build_ios == 'true' }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_ios) }}
     name: 构建 iOS
     runs-on: macos-latest
     permissions: write-all
@@ -186,11 +263,7 @@ jobs:
       - name: 📝 获取版本号
         id: version
         run: |
-          VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          if [ "${{ github.event.inputs.publish_release }}" != "true" ]; then
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            VERSION="${VERSION}_${SHORT_SHA}"
-          fi
+          VERSION='${{ needs.prepare.outputs.artifact_version }}'
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "版本号: $VERSION"
       - name: 🏗️ 构建 iOS (无签名)
@@ -200,15 +273,6 @@ jobs:
           mkdir Payload
           cp -r Runner.app Payload/
           zip -r ../../../Kelivo_ios_${VERSION}.ipa Payload
-      - name: 🚀 发布到 Release
-        if: ${{ github.event.inputs.publish_release == 'true' && github.event.inputs.release_tag != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          name: ${{ github.event.inputs.release_tag }}
-          prerelease: ${{ github.event.inputs.prerelease }}
-          files: Kelivo_ios_*.ipa
-
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4
         with:
@@ -217,7 +281,8 @@ jobs:
 
   # macOS 构建
   macos:
-    if: ${{ github.event.inputs.build_mac == 'true' }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_mac) }}
     name: 构建 macOS
     runs-on: macos-latest
     permissions: write-all
@@ -247,11 +312,7 @@ jobs:
           EOF
       - name: 📝 获取版本号
         run: |
-          VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          if [ "${{ github.event.inputs.publish_release }}" != "true" ]; then
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            VERSION="${VERSION}_${SHORT_SHA}"
-          fi
+          VERSION='${{ needs.prepare.outputs.artifact_version }}'
           echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: 🏗️ 构建 macOS
         run: flutter build macos --release
@@ -271,15 +332,6 @@ jobs:
           if [ ! -f "Kelivo_macos_${VERSION}.dmg" ]; then
             hdiutil create -volname Kelivo -srcfolder build/macos/Build/Products/Release/kelivo.app -ov -format UDZO Kelivo_macos_${VERSION}.dmg
           fi
-      - name: 🚀 发布到 Release
-        if: ${{ github.event.inputs.publish_release == 'true' && github.event.inputs.release_tag != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          name: ${{ github.event.inputs.release_tag }}
-          prerelease: ${{ github.event.inputs.prerelease }}
-          files: Kelivo_macos_*.dmg
-
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4
         with:
@@ -288,7 +340,8 @@ jobs:
 
   # Windows 构建
   windows:
-    if: ${{ github.event.inputs.build_windows == 'true' }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_windows) }}
     name: 构建 Windows
     runs-on: windows-latest
     permissions: write-all
@@ -329,11 +382,7 @@ jobs:
       - name: 📝 获取版本号
         shell: pwsh
         run: |
-          $version = (Select-String -Path pubspec.yaml -Pattern "version:" | ForEach-Object { $_.Line.Split(":")[1].Trim() })
-          if ("${{ github.event.inputs.publish_release }}" -ne "true") {
-            $shortSha = git rev-parse --short HEAD
-            $version = "$version`_$shortSha"
-          }
+          $version = '${{ needs.prepare.outputs.artifact_version }}'
           echo "VERSION=$version" >> $env:GITHUB_ENV
           Write-Host "版本号: $version"
       - name: 🏗️ 构建 Windows
@@ -425,16 +474,6 @@ jobs:
           
           # 编译安装程序
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer.iss"
-      - name: 🚀 发布到 Release
-        if: ${{ github.event.inputs.publish_release == 'true' && github.event.inputs.release_tag != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          name: ${{ github.event.inputs.release_tag }}
-          prerelease: ${{ github.event.inputs.prerelease }}
-          files: |
-            Kelivo_windows_*.zip
-            Kelivo_windows_*_setup.exe
       - name: 📤 上传构建产物 (ZIP)
         uses: actions/upload-artifact@v4
         with:
@@ -449,7 +488,8 @@ jobs:
 
   # Linux 构建
   linux:
-    if: ${{ github.event.inputs.build_linux == 'true' }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_linux) }}
     name: 构建 Linux
     runs-on: ubuntu-22.04
     permissions: write-all
@@ -485,14 +525,9 @@ jobs:
           EOF
       - name: 📝 获取版本号
         run: |
-          RAW_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          VERSION=$RAW_VERSION
-          if [ "${{ github.event.inputs.publish_release }}" != "true" ]; then
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            VERSION="${VERSION}_${SHORT_SHA}"
-          fi
+          VERSION='${{ needs.prepare.outputs.artifact_version }}'
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "VERSION_NUMBER=$(echo $RAW_VERSION | cut -d'+' -f1)" >> $GITHUB_ENV
+          echo "VERSION_NUMBER=${{ needs.prepare.outputs.release_version }}" >> $GITHUB_ENV
       - name: 🏗️ 构建 Linux
         run: flutter build linux --release
 
@@ -700,18 +735,6 @@ jobs:
           set -euxo pipefail
           RPM_FILE="Kelivo_linux_${VERSION}.rpm"
           docker run --rm -v "${PWD}:/work" -w /work fedora:43 bash -lc "dnf -y install ./${RPM_FILE}"
-      - name: 🚀 发布到 Release
-        if: ${{ github.event.inputs.publish_release == 'true' && github.event.inputs.release_tag != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          name: ${{ github.event.inputs.release_tag }}
-          prerelease: ${{ github.event.inputs.prerelease }}
-          files: |
-            Kelivo_linux_*.tar.gz
-            Kelivo_linux_*.AppImage
-            Kelivo_linux_*_amd64.deb
-            Kelivo_linux_*.rpm
       - name: 📤 上传构建产物 (tar.gz)
         uses: actions/upload-artifact@v4
         with:
@@ -735,3 +758,50 @@ jobs:
         with:
           name: Linux-RPM
           path: Kelivo_linux_*.rpm
+
+  release:
+    name: 发布 GitHub Release
+    needs: [prepare, android, ios, macos, windows, linux]
+    if: >-
+      ${{
+        always() &&
+        needs.prepare.outputs.should_build == 'true' &&
+        needs.prepare.outputs.publish_release == 'true' &&
+        (needs.android.result == 'success' || needs.android.result == 'skipped') &&
+        (needs.ios.result == 'success' || needs.ios.result == 'skipped') &&
+        (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
+        (needs.windows.result == 'success' || needs.windows.result == 'skipped') &&
+        (needs.linux.result == 'success' || needs.linux.result == 'skipped') &&
+        (needs.android.result == 'success' ||
+         needs.ios.result == 'success' ||
+         needs.macos.result == 'success' ||
+         needs.windows.result == 'success' ||
+         needs.linux.result == 'success')
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 下载全部平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: 检查发布产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          find release-artifacts -maxdepth 1 -type f -name 'Kelivo_*' -print
+          test -n "$(find release-artifacts -maxdepth 1 -type f -name 'Kelivo_*' -print -quit)"
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: ${{ needs.prepare.outputs.release_tag }}
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-artifacts/Kelivo_*
