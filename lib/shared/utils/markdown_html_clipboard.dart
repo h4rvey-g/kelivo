@@ -49,12 +49,15 @@ String markdownSelectionToHtml(String markdown) {
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;');
 
-  // Code first (suppresses bold/italic inside backticks).
+  // Inline Markdown: process code spans first using placeholders so that
+  // bold/italic regexes cannot match inside already-emitted <code> content.
   String applyInline(String s) {
-    s = s.replaceAllMapped(
-      RegExp(r'`([^`]+)`'),
-      (m) => '<code>${esc(m.group(1)!)}</code>',
-    );
+    final codePlaceholders = <String>[];
+    s = s.replaceAllMapped(RegExp(r'`([^`]+)`'), (m) {
+      final idx = codePlaceholders.length;
+      codePlaceholders.add('<code>${esc(m.group(1)!)}</code>');
+      return '\x00$idx\x00'; // null-byte fences, safe as Markdown is plain text
+    });
     s = s.replaceAllMapped(
       RegExp(r'(\*\*|__)(.+?)\1'),
       (m) => '<strong>${m.group(2)!}</strong>',
@@ -63,6 +66,10 @@ String markdownSelectionToHtml(String markdown) {
       RegExp(r'(\*|_)(.+?)\1'),
       (m) => '<em>${m.group(2)!}</em>',
     );
+    // Restore code placeholders.
+    for (int i = 0; i < codePlaceholders.length; i++) {
+      s = s.replaceAll('\x00$i\x00', codePlaceholders[i]);
+    }
     return s;
   }
 
