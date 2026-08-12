@@ -6115,10 +6115,9 @@ class _ShimmerState extends State<_Shimmer> with TickerProviderStateMixin {
 // _MarkdownSelectionArea
 //
 // Wraps SelectionArea so that the Copy action (keyboard shortcut AND context
-// menu) writes both text/html and text/plain to the clipboard.  The selected
-// plain-text is tracked via onSelectionChanged; on copy it is converted to
-// HTML using the lightweight Markdown→HTML converter and written via
-// super_clipboard.  Plain-text is always included as a fallback.
+// menu) maps rendered selection text back to the original Markdown source.
+// The clipboard intentionally receives only text/plain Markdown; an HTML
+// flavor would make rich-text targets render list markers as bullets again.
 // ---------------------------------------------------------------------------
 
 class _MarkdownSelectionArea extends StatefulWidget {
@@ -6133,11 +6132,7 @@ class _MarkdownSelectionArea extends StatefulWidget {
   /// SelectionArea key).
   final Key areaKey;
 
-  /// The full Markdown source for this message.  Used only to resolve a
-  /// well-formed HTML payload when the user copies a selection that matches
-  /// a leading substring of the source (streaming case) or the whole source.
-  /// For partial mid-message selections we fall back to converting the
-  /// selected plain-text directly.
+  /// The full Markdown source used to recover syntax stripped by rendering.
   final String markdownSource;
 
   final Widget child;
@@ -6150,7 +6145,7 @@ class _MarkdownSelectionArea extends StatefulWidget {
 class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
   String? _selectedPlainText;
 
-  Future<void> _copyRichText() async {
+  Future<void> _copyMarkdown() async {
     final text = _selectedPlainText;
     if (text == null || text.isEmpty) return;
     await copyMarkdownSelectionToClipboard(
@@ -6165,7 +6160,7 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
       actions: <Type, Action<Intent>>{
         CopySelectionTextIntent: CallbackAction<CopySelectionTextIntent>(
           onInvoke: (_) {
-            _copyRichText();
+            _copyMarkdown();
             return null;
           },
         ),
@@ -6182,7 +6177,7 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
                 if (item.type == ContextMenuButtonType.copy) {
                   return item.copyWith(
                     onPressed: () {
-                      _copyRichText();
+                      _copyMarkdown();
                       selectableRegionState.hideToolbar();
                     },
                   );

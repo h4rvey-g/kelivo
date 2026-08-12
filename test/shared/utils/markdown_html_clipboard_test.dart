@@ -1,7 +1,10 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:Kelivo/shared/utils/markdown_html_clipboard.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   // ─────────────────────────────────────────────────────────────────────────
   // markdownSelectionToHtml
   // ─────────────────────────────────────────────────────────────────────────
@@ -180,6 +183,21 @@ void main() {
       expect(result, '- Apple\n- Banana');
     });
 
+    test('rendered bullet characters map back to Markdown list markers', () {
+      const md = '* Apple\n- Banana\n- Cherry';
+      final result = findMarkdownRangeForSelection(md, '• Apple• Banana');
+      expect(result, '* Apple\n- Banana');
+    });
+
+    test('Flutter object replacement bullets map back to Markdown markers', () {
+      const md = '- Apple\n- Banana';
+      final result = findMarkdownRangeForSelection(
+        md,
+        '\uFFFCApple\uFFFCBanana',
+      );
+      expect(result, md);
+    });
+
     test('heading + paragraph (no separator in selection)', () {
       const md = '## Section\n\nSome text here.';
       // Flutter concatenates: "SectionSome text here."
@@ -222,6 +240,31 @@ void main() {
       expect(html, contains('<strong>Alpha</strong>'));
       expect(html, contains('<strong>Beta</strong>'));
       expect(html, contains('<li>'));
+    });
+  });
+
+  group('copyMarkdownSelectionToClipboard', () {
+    test('writes recovered Markdown as the only plain-text payload', () async {
+      MethodCall? clipboardCall;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        clipboardCall = call;
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await copyMarkdownSelectionToClipboard(
+        '• Alpha• Beta',
+        markdownSource: '- **Alpha**\n* Beta',
+      );
+
+      expect(clipboardCall?.method, 'Clipboard.setData');
+      expect(clipboardCall?.arguments, <String, dynamic>{
+        'text': '- **Alpha**\n* Beta',
+      });
     });
   });
 }

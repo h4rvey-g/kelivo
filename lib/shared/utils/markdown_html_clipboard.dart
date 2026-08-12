@@ -1,7 +1,4 @@
-import 'dart:async';
-
 import 'package:flutter/services.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 
 // ---------------------------------------------------------------------------
 // Markdown → HTML
@@ -202,6 +199,22 @@ class _Projection {
   final String visibleText;
 
   const _Projection(this.visibleText, this.sourceIndex);
+}
+
+const _selectionDecorationRunes = <int>{
+  0x2022, // bullet
+  0x2023, // triangular bullet
+  0x25aa, // small square
+  0x25cb, // white circle
+  0x25cf, // black circle
+  0x25e6, // white bullet
+  0xfffc, // Flutter object replacement character
+};
+
+String _removeSelectionDecorations(String text) {
+  return String.fromCharCodes(
+    text.runes.where((rune) => !_selectionDecorationRunes.contains(rune)),
+  );
 }
 
 _Projection _buildProjection(String source) {
@@ -412,15 +425,33 @@ String findMarkdownRangeForSelection(
   }
   final projCompact = projCompactBuf.toString();
 
-  final selCompact = selectedPlainText.replaceAll(ws, '');
-  if (selCompact.isEmpty) return selectedPlainText;
+  final directSelection = selectedPlainText.replaceAll(ws, '');
+  if (directSelection.isEmpty) return selectedPlainText;
 
-  final hit = projCompact.indexOf(selCompact);
+  // Depending on the platform and paste target, Flutter's WidgetSpan used
+  // for unordered-list bullets may surface as a visible bullet or an object
+  // replacement character. These characters are decorations, not part of
+  // the source Markdown, so retry without them when the direct match fails.
+  final selectionCandidates = <String>[
+    directSelection,
+    _removeSelectionDecorations(directSelection),
+  ];
+
+  var hit = -1;
+  var matchedSelection = '';
+  for (final candidate in selectionCandidates.toSet()) {
+    if (candidate.isEmpty) continue;
+    hit = projCompact.indexOf(candidate);
+    if (hit != -1) {
+      matchedSelection = candidate;
+      break;
+    }
+  }
   if (hit == -1) return selectedPlainText;
 
   // Map compact indices → proj.visibleText indices → source indices.
   final projStartPos = projCompactToProj[hit];
-  final projEndPos = projCompactToProj[hit + selCompact.length - 1];
+  final projEndPos = projCompactToProj[hit + matchedSelection.length - 1];
 
   final srcStart = proj.sourceIndex[projStartPos];
   final srcEnd = proj.sourceIndex[projEndPos];
@@ -446,36 +477,22 @@ String findMarkdownRangeForSelection(
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Writes [selectedPlainText] and its HTML equivalent to the system clipboard.
+/// Writes the selected content to the system clipboard as Markdown source.
 ///
-/// If [markdownSource] is provided the HTML is derived from the Markdown lines
-/// that produced the selection (preserving bold, lists, headings, etc.).
-/// Falls back to plain-text-only copy when super_clipboard is unavailable.
+/// If [markdownSource] is provided, the rendered selection is mapped back to
+/// the original Markdown lines. Only `text/plain` is written: adding an HTML
+/// flavor would make rich-text paste targets prefer `<ul>`/`<strong>` and turn
+/// Markdown markers back into rendered bullets or styling.
 Future<void> copyMarkdownSelectionToClipboard(
   String selectedPlainText, {
   String? markdownSource,
 }) async {
   if (selectedPlainText.trim().isEmpty) return;
 
-  final markdownForHtml =
+  final markdownForClipboard =
       (markdownSource != null && markdownSource.isNotEmpty)
-          ? findMarkdownRangeForSelection(markdownSource, selectedPlainText)
-          : selectedPlainText;
+      ? findMarkdownRangeForSelection(markdownSource, selectedPlainText)
+      : selectedPlainText;
 
-  final htmlContent = markdownSelectionToHtml(markdownForHtml);
-
-  try {
-    final clipboard = SystemClipboard.instance;
-    if (clipboard != null && htmlContent.isNotEmpty) {
-      final item = DataWriterItem();
-      item.add(Formats.plainText(selectedPlainText));
-      item.add(Formats.htmlText(htmlContent));
-      await clipboard.write([item]);
-      return;
-    }
-  } catch (_) {
-    // Fall through to plain-text fallback.
-  }
-
-  await Clipboard.setData(ClipboardData(text: selectedPlainText));
+  await Clipboard.setData(ClipboardData(text: markdownForClipboard));
 }
