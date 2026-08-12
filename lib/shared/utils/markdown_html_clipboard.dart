@@ -4,31 +4,31 @@ import 'package:flutter/services.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 
 // ---------------------------------------------------------------------------
-// markdownSelectionToHtml
-//
-// Converts a Markdown string to a minimal HTML snippet suitable for the
-// system clipboard. Handles the subset produced by AI responses:
-//   • ATX headings (#, ##, ###)
-//   • Unordered lists  (- / * / +)
-//   • Ordered lists    (1. 2. 3.)
-//   • Bold             **text** or __text__
-//   • Italic           *text* or _text_
-//   • Inline code      `code`
-//   • Fenced code blocks (``` … ```)
-//   • Blockquotes      (> text)
-//   • Horizontal rules (--- / ***)
-//   • Plain paragraphs
+// Markdown → HTML
 // ---------------------------------------------------------------------------
+
+/// Convert a Markdown string to a minimal HTML snippet for the clipboard.
+///
+/// Handles the subset produced by AI responses:
+///   • ATX headings  (# … ######)
+///   • Unordered lists  (- / * / +)
+///   • Ordered lists    (1. 2. …)
+///   • Bold   **…** / __…__
+///   • Italic  *…* / _…_
+///   • Inline code  `…`
+///   • Fenced code blocks  (``` … ```)
+///   • Blockquotes  (> …)
+///   • Horizontal rules  (--- / ***)
+///   • Plain paragraphs
 String markdownSelectionToHtml(String markdown) {
   if (markdown.trim().isEmpty) return '';
 
   final lines = markdown.split('\n');
   final buf = StringBuffer();
 
-  bool inFencedCode = false;
-  String fencedLang = '';
+  bool inFence = false;
+  String fenceLang = '';
   final codeLines = <String>[];
-
   bool inUl = false;
   bool inOl = false;
 
@@ -49,17 +49,16 @@ String markdownSelectionToHtml(String markdown) {
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;');
 
-  /// Apply inline spans — code first (suppresses bold/italic inside backticks).
-  String inline(String s) {
-    // Inline code: capture raw content, escape inside.
-    final codeRe = RegExp(r'`([^`]+)`');
-    s = s.replaceAllMapped(codeRe, (m) => '<code>${esc(m.group(1)!)}</code>');
-    // Bold (**…** or __…__).
+  // Code first (suppresses bold/italic inside backticks).
+  String applyInline(String s) {
+    s = s.replaceAllMapped(
+      RegExp(r'`([^`]+)`'),
+      (m) => '<code>${esc(m.group(1)!)}</code>',
+    );
     s = s.replaceAllMapped(
       RegExp(r'(\*\*|__)(.+?)\1'),
       (m) => '<strong>${m.group(2)!}</strong>',
     );
-    // Italic (*…* or _…_).
     s = s.replaceAllMapped(
       RegExp(r'(\*|_)(.+?)\1'),
       (m) => '<em>${m.group(2)!}</em>',
@@ -69,20 +68,23 @@ String markdownSelectionToHtml(String markdown) {
 
   for (final raw in lines) {
     // ── Fenced code block ─────────────────────────────────────────────────
-    if (!inFencedCode) {
+    if (!inFence) {
       final fm = RegExp(r'^(`{3,}|~{3,})(.*)$').firstMatch(raw);
       if (fm != null) {
         flushLists();
-        inFencedCode = true;
-        fencedLang = fm.group(2)!.trim();
+        inFence = true;
+        fenceLang = fm.group(2)!.trim();
         codeLines.clear();
         continue;
       }
     } else {
       if (RegExp(r'^(`{3,}|~{3,})\s*$').hasMatch(raw)) {
-        final attr = fencedLang.isNotEmpty ? ' class="language-$fencedLang"' : '';
-        buf.write('<pre><code$attr>${esc(codeLines.join('\n'))}</code></pre>');
-        inFencedCode = false;
+        final attr =
+            fenceLang.isNotEmpty ? ' class="language-$fenceLang"' : '';
+        buf.write(
+          '<pre><code$attr>${esc(codeLines.join('\n'))}</code></pre>',
+        );
+        inFence = false;
         codeLines.clear();
         continue;
       }
@@ -96,12 +98,12 @@ String markdownSelectionToHtml(String markdown) {
       continue;
     }
 
-    // ── ATX Heading ───────────────────────────────────────────────────────
+    // ── ATX heading ───────────────────────────────────────────────────────
     final hm = RegExp(r'^(#{1,6})\s+(.+)$').firstMatch(raw);
     if (hm != null) {
       flushLists();
       final lvl = hm.group(1)!.length;
-      buf.write('<h$lvl>${inline(esc(hm.group(2)!.trim()))}</h$lvl>');
+      buf.write('<h$lvl>${applyInline(esc(hm.group(2)!.trim()))}</h$lvl>');
       continue;
     }
 
@@ -116,206 +118,342 @@ String markdownSelectionToHtml(String markdown) {
     final bq = RegExp(r'^>\s?(.*)$').firstMatch(raw);
     if (bq != null) {
       flushLists();
-      buf.write('<blockquote><p>${inline(esc(bq.group(1)!))}</p></blockquote>');
+      buf.write(
+        '<blockquote><p>${applyInline(esc(bq.group(1)!))}</p></blockquote>',
+      );
       continue;
     }
 
     // ── Unordered list ────────────────────────────────────────────────────
     final ul = RegExp(r'^[-*+]\s+(.+)$').firstMatch(raw);
     if (ul != null) {
-      if (inOl) { buf.write('</ol>'); inOl = false; }
-      if (!inUl) { buf.write('<ul>'); inUl = true; }
-      buf.write('<li>${inline(esc(ul.group(1)!))}</li>');
+      if (inOl) {
+        buf.write('</ol>');
+        inOl = false;
+      }
+      if (!inUl) {
+        buf.write('<ul>');
+        inUl = true;
+      }
+      buf.write('<li>${applyInline(esc(ul.group(1)!))}</li>');
       continue;
     }
 
     // ── Ordered list ──────────────────────────────────────────────────────
-    final ol = RegExp(r'^\d+\.\s+(.+)$').firstMatch(raw);
+    final ol = RegExp(r'^(\d+)\.\s+(.+)$').firstMatch(raw);
     if (ol != null) {
-      if (inUl) { buf.write('</ul>'); inUl = false; }
-      if (!inOl) { buf.write('<ol>'); inOl = true; }
-      buf.write('<li>${inline(esc(ol.group(1)!))}</li>');
+      if (inUl) {
+        buf.write('</ul>');
+        inUl = false;
+      }
+      if (!inOl) {
+        buf.write('<ol>');
+        inOl = true;
+      }
+      buf.write('<li>${applyInline(esc(ol.group(2)!))}</li>');
       continue;
     }
 
     // ── Plain paragraph ───────────────────────────────────────────────────
     flushLists();
-    buf.write('<p>${inline(esc(raw))}</p>');
+    buf.write('<p>${applyInline(esc(raw))}</p>');
   }
 
-  if (inFencedCode && codeLines.isNotEmpty) {
+  if (inFence && codeLines.isNotEmpty) {
     buf.write('<pre><code>${esc(codeLines.join('\n'))}</code></pre>');
   }
   flushLists();
-
   return buf.toString();
 }
 
 // ---------------------------------------------------------------------------
-// _renderedLineText
+// Offset-mapped projection
 //
-// Given a raw Markdown line, return the plain text that gpt_markdown renders
-// for it — i.e., the text that ends up in the Flutter selection system.
+// Goal: given the original Markdown source, determine which source characters
+// are *visible* (i.e. rendered as selectable text), building a parallel list
+// of (sourceIndex, visibleChar) pairs.
 //
-// Rules match the gpt_markdown component regexes:
-//   UnOrderedList : r"(?:\-|\*)\ ([^\n]+)$"   → group(1)
-//   OrderedList   : r"([0-9]+)\.\ ([^\n]+)$"  → group(2)
-//   HTag          : r"#{1,6}\ ([^\n]+?)$"      → group(1), then inline stripped
-//   BlockQuote    : r"> ?(.*)"                 → group(1)
-//   Fenced code   : rendered as non-selectable code widget (skip)
-//   Everything else: the line itself minus inline markup
+// Key observations from gpt_markdown's widget tree:
+//
+//  • Block prefixes are DROPPED from selectable text:
+//      "# Title"    → "Title"
+//      "- Item"     → "Item"    (bullet is a Container widget, not text)
+//      "> Quote"    → "Quote"
+//  • Ordered-list markers ARE selectable ("1." is a Text.rich TextSpan):
+//      "1. Step"    → "1. Step"
+//  • Inline syntax is stripped by Flutter's text selection:
+//      "**bold**"   → "bold"
+//      "*italic*"   → "italic"
+//      "`code`"     → "code"
+//  • Fenced code blocks render in a non-selectable widget — skip entirely.
+//  • Blank lines produce no visible characters.
 // ---------------------------------------------------------------------------
-String _renderedLineText(String mdLine) {
-  // Unordered list item: "- text" or "* text"
-  final ulM = RegExp(r'^[-*+]\s+(.+)$').firstMatch(mdLine);
-  if (ulM != null) return _stripInlineMarkup(ulM.group(1)!.trim());
 
-  // Ordered list item: "1. text"
-  final olM = RegExp(r'^\d+\.\s+(.+)$').firstMatch(mdLine);
-  if (olM != null) return _stripInlineMarkup(olM.group(1)!.trim());
+class _Projection {
+  /// sourceIndex[i] = position in the original source string for visibleText[i]
+  final List<int> sourceIndex;
+  final String visibleText;
 
-  // ATX heading: "## text"
-  final hM = RegExp(r'^#{1,6}\s+(.+)$').firstMatch(mdLine);
-  if (hM != null) return _stripInlineMarkup(hM.group(1)!.trim());
-
-  // Blockquote: "> text"
-  final bqM = RegExp(r'^>\s?(.*)$').firstMatch(mdLine);
-  if (bqM != null) return _stripInlineMarkup(bqM.group(1)!);
-
-  // Fenced fence line itself (``` or ~~~) → empty, skip
-  if (RegExp(r'^(`{3,}|~{3,})').hasMatch(mdLine)) return '';
-
-  // HR
-  if (RegExp(r'^[-*_]{3,}\s*$').hasMatch(mdLine)) return '';
-
-  // Plain line: strip inline markup
-  return _stripInlineMarkup(mdLine);
+  const _Projection(this.visibleText, this.sourceIndex);
 }
 
-/// Remove inline Markdown syntax (**bold**, *italic*, `code`, __under__)
-/// to produce the visible plain text that Flutter's text engine presents.
-String _stripInlineMarkup(String s) {
-  // Inline code: remove backticks, keep content.
-  s = s.replaceAllMapped(RegExp(r'`([^`]+)`'), (m) => m.group(1)!);
-  // Bold (**…** or __…__).
-  s = s.replaceAllMapped(RegExp(r'(\*\*|__)(.+?)\1'), (m) => m.group(2)!);
-  // Italic (*…* or _…_).
-  s = s.replaceAllMapped(RegExp(r'(\*|_)(.+?)\1'), (m) => m.group(2)!);
-  return s;
-}
+_Projection _buildProjection(String source) {
+  final chars = <String>[];
+  final indices = <int>[];
 
-// ---------------------------------------------------------------------------
-// findMarkdownLinesForSelection
-//
-// Given the full Markdown source and the plain text that the user selected
-// (as reported by Flutter's selection system), find the contiguous Markdown
-// lines that produce that selection and return them joined with '\n'.
-//
-// Strategy:
-//  1. Build a list of (mdLine, renderedText) pairs, skipping blank lines and
-//     fenced-code-block delimiters that produce no selectable text.
-//  2. Build the full rendered string (joined with '\n') of all visible lines.
-//  3. Find the start of selectedPlain in the rendered string.
-//  4. Map the character offset range back to the list of (line, renderedText)
-//     pairs to find which mdLines are covered.
-//  5. Return those original mdLines joined with '\n'.
-//
-// If no match is found (e.g. selection spans a code block boundary or the
-// text has drifted) return selectedPlain unchanged as the best we can do.
-// ---------------------------------------------------------------------------
-String findMarkdownLinesForSelection(String markdownSource, String selectedPlain) {
-  if (selectedPlain.trim().isEmpty) return selectedPlain;
+  void emit(int srcIdx, String ch) {
+    chars.add(ch);
+    indices.add(srcIdx);
+  }
 
-  final srcLines = markdownSource.split('\n');
+  final lines = source.split('\n');
+  int srcPos = 0;
+  bool inFence = false;
 
-  // Build (originalLine, renderedText) skipping empties and fence markers.
-  final rendered = <({String md, String text})>[];
-  bool inCode = false;
-  for (final line in srcLines) {
-    if (!inCode && RegExp(r'^(`{3,}|~{3,})').hasMatch(line)) {
-      inCode = true;
-      // Fence opener: not selectable, add a placeholder so the code content
-      // lines are also excluded (they render inside a non-selectable widget).
+  for (final line in lines) {
+    final lineLen = line.length;
+    final lineStart = srcPos;
+
+    // Skip fenced code blocks (non-selectable widget).
+    if (!inFence && RegExp(r'^(`{3,}|~{3,})').hasMatch(line)) {
+      inFence = true;
+      srcPos += lineLen + 1;
       continue;
     }
-    if (inCode) {
+    if (inFence) {
       if (RegExp(r'^(`{3,}|~{3,})\s*$').hasMatch(line)) {
-        inCode = false;
+        inFence = false;
       }
-      // Lines inside fenced blocks are not selectable as text.
+      srcPos += lineLen + 1;
       continue;
     }
-    final t = _renderedLineText(line);
-    if (t.isEmpty && line.trim().isEmpty) continue; // blank separator
-    rendered.add((md: line, text: t));
-  }
 
-  if (rendered.isEmpty) return selectedPlain;
-
-  // Build the joined rendered text (lines separated by '\n') and search.
-  final joinedRendered = rendered.map((e) => e.text).join('\n');
-
-  // Normalise both sides: collapse runs of whitespace/newlines so minor
-  // differences in whitespace handling don't break the match.
-  String norm(String s) => s.replaceAll(RegExp(r'\s+'), ' ').trim();
-
-  final normSelected = norm(selectedPlain);
-  final normJoined = norm(joinedRendered);
-
-  final startIdx = normJoined.indexOf(normSelected);
-  if (startIdx == -1) {
-    // Fallback: couldn't match — return the original selected plain text so
-    // the plain-text fallback path in copyMarkdownSelectionToClipboard is used.
-    return selectedPlain;
-  }
-
-  // Map character offset back to line indices.
-  // Build cumulative lengths in normJoined per rendered entry.
-  int pos = 0;
-  int firstLine = -1;
-  int lastLine = -1;
-  final endIdx = startIdx + normSelected.length;
-
-  for (int i = 0; i < rendered.length; i++) {
-    final lineNorm = norm(rendered[i].text);
-    final lineEnd = pos + lineNorm.length;
-
-    if (firstLine == -1 && lineEnd > startIdx) firstLine = i;
-    if (lineEnd >= endIdx) {
-      lastLine = i;
-      break;
+    // Blank line: no visible text.
+    if (line.trim().isEmpty) {
+      srcPos += lineLen + 1;
+      continue;
     }
 
-    pos = lineEnd + 1; // +1 for the '\n' separator
+    // Inter-line separator (used only by the whitespace-insensitive search;
+    // real Flutter selection may omit newlines between blocks).
+    if (chars.isNotEmpty) {
+      final nlSrcIdx = srcPos > 0 ? srcPos - 1 : 0;
+      emit(nlSrcIdx, '\n');
+    }
+
+    // Determine content start for this line.
+    int contentStart = 0;
+
+    // ATX heading: "## text" → skip "## "
+    final hmPfx = RegExp(r'^(#{1,6}) ').firstMatch(line);
+    if (hmPfx != null) {
+      contentStart = hmPfx.group(0)!.length;
+      _emitInlineMd(line, lineStart, contentStart, emit);
+      srcPos += lineLen + 1;
+      continue;
+    }
+
+    // Unordered list: "- text" → skip "- " (bullet is not selectable text)
+    final ulPfx = RegExp(r'^[-*+] ').firstMatch(line);
+    if (ulPfx != null) {
+      contentStart = ulPfx.group(0)!.length;
+      _emitInlineMd(line, lineStart, contentStart, emit);
+      srcPos += lineLen + 1;
+      continue;
+    }
+
+    // Ordered list: "1. text" → KEEP "1. " (rendered as selectable text)
+    final olPfx = RegExp(r'^(\d+\.) ').firstMatch(line);
+    if (olPfx != null) {
+      final prefix = olPfx.group(0)!; // e.g. "1. "
+      for (int i = 0; i < prefix.length; i++) {
+        emit(lineStart + i, prefix[i]);
+      }
+      contentStart = prefix.length;
+      _emitInlineMd(line, lineStart, contentStart, emit);
+      srcPos += lineLen + 1;
+      continue;
+    }
+
+    // Blockquote: "> text" → skip "> "
+    final bqPfx = RegExp(r'^> ?').firstMatch(line);
+    if (bqPfx != null) {
+      contentStart = bqPfx.group(0)!.length;
+      _emitInlineMd(line, lineStart, contentStart, emit);
+      srcPos += lineLen + 1;
+      continue;
+    }
+
+    // HR: no visible text.
+    if (RegExp(r'^[-*_]{3,}\s*$').hasMatch(line)) {
+      srcPos += lineLen + 1;
+      continue;
+    }
+
+    // Plain paragraph.
+    _emitInlineMd(line, lineStart, 0, emit);
+    srcPos += lineLen + 1;
   }
 
-  if (firstLine == -1) return selectedPlain;
-  if (lastLine == -1) lastLine = rendered.length - 1;
+  return _Projection(chars.join(), indices);
+}
 
-  return rendered
-      .sublist(firstLine, lastLine + 1)
-      .map((e) => e.md)
-      .join('\n');
+/// Emit visible characters for [line] starting at [contentStart],
+/// resolving inline markup (bold, italic, inline code) and mapping each
+/// character to its absolute source offset [lineStart + localOffset].
+void _emitInlineMd(
+  String line,
+  int lineStart,
+  int contentStart,
+  void Function(int, String) emit,
+) {
+  final content = line.substring(contentStart);
+  int i = 0;
+
+  while (i < content.length) {
+    final rest = content.substring(i);
+
+    // Inline code: `…` → emit inner content, skip backticks.
+    if (rest.startsWith('`')) {
+      final close = rest.indexOf('`', 1);
+      if (close != -1) {
+        final inner = rest.substring(1, close);
+        for (int j = 0; j < inner.length; j++) {
+          emit(lineStart + contentStart + i + 1 + j, inner[j]);
+        }
+        i += close + 1;
+        continue;
+      }
+    }
+
+    // Bold: **…** or __…__
+    if (rest.startsWith('**') || rest.startsWith('__')) {
+      final marker = rest.substring(0, 2);
+      final close = rest.indexOf(marker, 2);
+      if (close != -1) {
+        final inner = rest.substring(2, close);
+        for (int j = 0; j < inner.length; j++) {
+          emit(lineStart + contentStart + i + 2 + j, inner[j]);
+        }
+        i += close + 2;
+        continue;
+      }
+    }
+
+    // Italic: *…* or _…_
+    if (rest.startsWith('*') || rest.startsWith('_')) {
+      final marker = rest[0];
+      final close = rest.indexOf(marker, 1);
+      if (close != -1) {
+        final inner = rest.substring(1, close);
+        for (int j = 0; j < inner.length; j++) {
+          emit(lineStart + contentStart + i + 1 + j, inner[j]);
+        }
+        i += close + 1;
+        continue;
+      }
+    }
+
+    // Plain character.
+    emit(lineStart + contentStart + i, content[i]);
+    i++;
+  }
 }
 
 // ---------------------------------------------------------------------------
-// copyMarkdownSelectionToClipboard
+// findMarkdownRangeForSelection
 //
-// Writes [selectedPlainText] plus its HTML equivalent to the system clipboard.
-// If [markdownSource] is provided, the HTML is derived from the Markdown lines
-// that correspond to the selection (preserving bold, lists, headings, etc.).
-// Falls back to plain-text-only copy if super_clipboard is unavailable.
+// Maps the selected rendered plain-text back to the Markdown source lines
+// that produced it.
+//
+// WHY WHITESPACE-FREE MATCHING:
+// Flutter's _SelectableRegionContainerDelegate.getSelectedContent() writes:
+//
+//     final buffer = StringBuffer();
+//     for (final selection in selections) buffer.write(selection.plainText);
+//
+// There is NO separator between blocks.  Selecting a heading plus two list
+// items yields "TitleItem oneItem two" — no newlines, no spaces between
+// blocks.  Stripping ALL whitespace before the substring search makes the
+// algorithm immune to this concatenation behaviour.
 // ---------------------------------------------------------------------------
+
+/// Returns the slice of [markdownSource] (including original Markdown syntax)
+/// whose rendered plain-text corresponds to [selectedPlainText], extended to
+/// whole-line boundaries so that [markdownSelectionToHtml] receives valid input.
+///
+/// Returns [selectedPlainText] unchanged when no match can be found.
+String findMarkdownRangeForSelection(
+  String markdownSource,
+  String selectedPlainText,
+) {
+  if (selectedPlainText.trim().isEmpty) return selectedPlainText;
+
+  final proj = _buildProjection(markdownSource);
+  if (proj.visibleText.isEmpty) return selectedPlainText;
+
+  final ws = RegExp(r'\s');
+
+  // Build whitespace-free versions of both sides, keeping index maps back
+  // to positions in proj.visibleText / selectedPlainText respectively.
+  final projCompactBuf = StringBuffer();
+  final projCompactToProj = <int>[];
+  for (int i = 0; i < proj.visibleText.length; i++) {
+    if (ws.hasMatch(proj.visibleText[i])) continue;
+    projCompactBuf.write(proj.visibleText[i]);
+    projCompactToProj.add(i);
+  }
+  final projCompact = projCompactBuf.toString();
+
+  final selCompact = selectedPlainText.replaceAll(ws, '');
+  if (selCompact.isEmpty) return selectedPlainText;
+
+  final hit = projCompact.indexOf(selCompact);
+  if (hit == -1) return selectedPlainText;
+
+  // Map compact indices → proj.visibleText indices → source indices.
+  final projStartPos = projCompactToProj[hit];
+  final projEndPos = projCompactToProj[hit + selCompact.length - 1];
+
+  final srcStart = proj.sourceIndex[projStartPos];
+  final srcEnd = proj.sourceIndex[projEndPos];
+
+  // Extend to whole Markdown line boundaries.
+  int lineStart = srcStart;
+  while (lineStart > 0 && markdownSource[lineStart - 1] != '\n') {
+    lineStart--;
+  }
+
+  int lineEnd = srcEnd;
+  while (
+    lineEnd < markdownSource.length - 1 &&
+    markdownSource[lineEnd + 1] != '\n'
+  ) {
+    lineEnd++;
+  }
+
+  return markdownSource.substring(lineStart, lineEnd + 1);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Writes [selectedPlainText] and its HTML equivalent to the system clipboard.
+///
+/// If [markdownSource] is provided the HTML is derived from the Markdown lines
+/// that produced the selection (preserving bold, lists, headings, etc.).
+/// Falls back to plain-text-only copy when super_clipboard is unavailable.
 Future<void> copyMarkdownSelectionToClipboard(
   String selectedPlainText, {
   String? markdownSource,
 }) async {
   if (selectedPlainText.trim().isEmpty) return;
 
-  // Resolve which Markdown lines the selection covers.
-  final markdownForHtml = (markdownSource != null && markdownSource.isNotEmpty)
-      ? findMarkdownLinesForSelection(markdownSource, selectedPlainText)
-      : selectedPlainText;
+  final markdownForHtml =
+      (markdownSource != null && markdownSource.isNotEmpty)
+          ? findMarkdownRangeForSelection(markdownSource, selectedPlainText)
+          : selectedPlainText;
 
   final htmlContent = markdownSelectionToHtml(markdownForHtml);
 

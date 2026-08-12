@@ -6,108 +6,105 @@ void main() {
   // markdownSelectionToHtml
   // ─────────────────────────────────────────────────────────────────────────
   group('markdownSelectionToHtml', () {
-    test('returns empty string for blank input', () {
+    test('empty / blank returns empty', () {
       expect(markdownSelectionToHtml(''), '');
       expect(markdownSelectionToHtml('   '), '');
     });
 
-    test('wraps a plain paragraph in <p>', () {
+    test('plain paragraph', () {
       expect(markdownSelectionToHtml('Hello world'), '<p>Hello world</p>');
     });
 
-    test('converts ATX headings', () {
-      expect(markdownSelectionToHtml('# Title'), '<h1>Title</h1>');
-      expect(markdownSelectionToHtml('## Sub'), '<h2>Sub</h2>');
-      expect(markdownSelectionToHtml('### Third'), '<h3>Third</h3>');
+    test('ATX headings', () {
+      expect(markdownSelectionToHtml('# H1'), '<h1>H1</h1>');
+      expect(markdownSelectionToHtml('## H2'), '<h2>H2</h2>');
+      expect(markdownSelectionToHtml('### H3'), '<h3>H3</h3>');
     });
 
-    test('converts bold text', () {
+    test('bold', () {
       expect(
         markdownSelectionToHtml('**bold** word'),
         '<p><strong>bold</strong> word</p>',
       );
     });
 
-    test('converts italic text', () {
+    test('italic', () {
       expect(
         markdownSelectionToHtml('*italic* word'),
         '<p><em>italic</em> word</p>',
       );
     });
 
-    test('converts inline code', () {
+    test('inline code', () {
       expect(
         markdownSelectionToHtml('Use `flutter run`'),
         '<p>Use <code>flutter run</code></p>',
       );
     });
 
-    test('escapes HTML special characters', () {
+    test('HTML character escaping', () {
       expect(
         markdownSelectionToHtml('a & b < c > d'),
         '<p>a &amp; b &lt; c &gt; d</p>',
       );
     });
 
-    test('converts unordered list', () {
-      const md = '- Apples\n- Bananas\n- Cherries';
+    test('unordered list', () {
       expect(
-        markdownSelectionToHtml(md),
+        markdownSelectionToHtml('- Apples\n- Bananas\n- Cherries'),
         '<ul><li>Apples</li><li>Bananas</li><li>Cherries</li></ul>',
       );
     });
 
-    test('converts ordered list', () {
-      const md = '1. First\n2. Second\n3. Third';
+    test('ordered list', () {
       expect(
-        markdownSelectionToHtml(md),
+        markdownSelectionToHtml('1. First\n2. Second\n3. Third'),
         '<ol><li>First</li><li>Second</li><li>Third</li></ol>',
       );
     });
 
-    test('closes list on blank line', () {
-      const md = '- Item\n\nParagraph';
+    test('list closes on blank line', () {
       expect(
-        markdownSelectionToHtml(md),
+        markdownSelectionToHtml('- Item\n\nParagraph'),
         '<ul><li>Item</li></ul><p>Paragraph</p>',
       );
     });
 
-    test('converts fenced code block with language', () {
-      const md = '```dart\nvoid main() {}\n```';
+    test('fenced code block with language', () {
       expect(
-        markdownSelectionToHtml(md),
+        markdownSelectionToHtml('```dart\nvoid main() {}\n```'),
         '<pre><code class="language-dart">void main() {}</code></pre>',
       );
     });
 
-    test('converts fenced code block without language', () {
-      const md = '```\nsome code\n```';
-      expect(markdownSelectionToHtml(md), '<pre><code>some code</code></pre>');
-    });
-
-    test('converts blockquote', () {
+    test('fenced code block without language', () {
       expect(
-        markdownSelectionToHtml('> A quoted line'),
-        '<blockquote><p>A quoted line</p></blockquote>',
+        markdownSelectionToHtml('```\nsome code\n```'),
+        '<pre><code>some code</code></pre>',
       );
     });
 
-    test('converts horizontal rule', () {
+    test('blockquote', () {
+      expect(
+        markdownSelectionToHtml('> Quoted'),
+        '<blockquote><p>Quoted</p></blockquote>',
+      );
+    });
+
+    test('horizontal rule', () {
       expect(markdownSelectionToHtml('---'), '<hr>');
       expect(markdownSelectionToHtml('***'), '<hr>');
     });
 
-    test('handles bold inside heading', () {
+    test('bold inside heading', () {
       expect(
         markdownSelectionToHtml('## **Bold** heading'),
         '<h2><strong>Bold</strong> heading</h2>',
       );
     });
 
-    test('handles multi-line mixed content', () {
-      const md =
-          '# Title\n\n- Item 1\n- Item 2\n\nParagraph with **bold**.';
+    test('mixed content', () {
+      const md = '# Title\n\n- Item 1\n- Item 2\n\nParagraph with **bold**.';
       expect(
         markdownSelectionToHtml(md),
         '<h1>Title</h1>'
@@ -116,13 +113,14 @@ void main() {
       );
     });
 
-    test('does not crash on unterminated fenced block', () {
-      const md = '```dart\nvoid main() {}';
-      final html = markdownSelectionToHtml(md);
-      expect(html, contains('void main() {}'));
+    test('unterminated fenced block does not throw', () {
+      expect(
+        () => markdownSelectionToHtml('```dart\nvoid main() {}'),
+        returnsNormally,
+      );
     });
 
-    test('inline code suppresses bold inside backticks', () {
+    test('backticks suppress bold inside code span', () {
       final html = markdownSelectionToHtml('`**not bold**`');
       expect(html, '<p><code>**not bold**</code></p>');
       expect(html, isNot(contains('<strong>')));
@@ -130,102 +128,99 @@ void main() {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // findMarkdownLinesForSelection
+  // findMarkdownRangeForSelection
   //
-  // The function maps rendered plain-text selections back to the original
-  // Markdown source lines that produced them.
+  // Flutter concatenates block selectables WITHOUT any separator, so the
+  // matching must be whitespace-insensitive (strip all whitespace before
+  // comparing).
   // ─────────────────────────────────────────────────────────────────────────
-  group('findMarkdownLinesForSelection', () {
-    test('returns plain paragraph line unchanged when it matches', () {
-      const md = 'Hello world';
-      expect(findMarkdownLinesForSelection(md, 'Hello world'), 'Hello world');
+  group('findMarkdownRangeForSelection', () {
+    test('plain paragraph matched verbatim', () {
+      expect(
+        findMarkdownRangeForSelection('Hello world', 'Hello world'),
+        'Hello world',
+      );
     });
 
-    test('returns markdown source for bold line', () {
-      // The rendered text of "**bold** word" is "bold word".
-      const md = '**bold** word';
-      final result = findMarkdownLinesForSelection(md, 'bold word');
-      expect(result, '**bold** word');
+    test('bold line: visible text "bold word" maps to "**bold** word"', () {
+      // gpt_markdown strips ** → "bold word" in selection.
+      expect(
+        findMarkdownRangeForSelection('**bold** word', 'bold word'),
+        '**bold** word',
+      );
     });
 
-    test('returns markdown source for heading', () {
-      const md = '## My heading';
-      // gpt_markdown renders "## My heading" → "My heading"
-      final result = findMarkdownLinesForSelection(md, 'My heading');
-      expect(result, '## My heading');
+    test('heading: visible text "My heading" maps to "## My heading"', () {
+      expect(
+        findMarkdownRangeForSelection('## My heading', 'My heading'),
+        '## My heading',
+      );
     });
 
-    test('returns markdown source for unordered list item', () {
-      const md = '- First item';
-      final result = findMarkdownLinesForSelection(md, 'First item');
-      expect(result, '- First item');
+    test('unordered list item: visible "First item" maps to "- First item"', () {
+      // Bullet is a Container widget, NOT text → no "- " in selection.
+      expect(
+        findMarkdownRangeForSelection('- First item', 'First item'),
+        '- First item',
+      );
     });
 
-    test('returns markdown source for ordered list item', () {
-      const md = '1. Step one';
-      final result = findMarkdownLinesForSelection(md, 'Step one');
-      expect(result, '1. Step one');
+    test('ordered list item: visible "1. Step one" maps to "1. Step one"', () {
+      // Number IS rendered as Text → "1. " is present in selection.
+      expect(
+        findMarkdownRangeForSelection('1. Step one', '1. Step one'),
+        '1. Step one',
+      );
     });
 
-    test('returns multiple markdown lines for multi-line selection', () {
+    test('multi-line selection', () {
       const md = '- Apple\n- Banana\n- Cherry';
-      // Rendered: "Apple\nBanana\nCherry"
-      final result = findMarkdownLinesForSelection(md, 'Apple\nBanana');
+      // Flutter gives "AppleBanana" (no separator) when selecting first two.
+      final result = findMarkdownRangeForSelection(md, 'AppleBanana');
       expect(result, '- Apple\n- Banana');
     });
 
-    test('returns selection unchanged if no match found', () {
-      const md = '# Heading\n\nSome paragraph.';
-      // Selecting a string not present in rendered output.
-      const notInSource = 'xyz not found';
-      expect(
-        findMarkdownLinesForSelection(md, notInSource),
-        notInSource,
-      );
-    });
-
-    test('skips fenced code block lines (non-selectable)', () {
-      const md =
-          'Before code\n```dart\nvoid f() {}\n```\nAfter code';
-      // "Before code" and "After code" are selectable; code block lines are not.
-      expect(
-        findMarkdownLinesForSelection(md, 'Before code'),
-        'Before code',
-      );
-      expect(
-        findMarkdownLinesForSelection(md, 'After code'),
-        'After code',
-      );
-    });
-
-    test('handles selection spanning heading and paragraph', () {
+    test('heading + paragraph (no separator in selection)', () {
       const md = '## Section\n\nSome text here.';
-      // Rendered: "Section\nSome text here."
-      final result = findMarkdownLinesForSelection(
-        md,
-        'Section\nSome text here.',
+      // Flutter concatenates: "SectionSome text here."
+      final result = findMarkdownRangeForSelection(md, 'SectionSome text here.');
+      // The slice spans both blocks, blank line included; the HTML converter
+      // treats the blank line as a block separator.
+      expect(result, '## Section\n\nSome text here.');
+      expect(
+        markdownSelectionToHtml(result),
+        '<h2>Section</h2><p>Some text here.</p>',
       );
-      expect(result, '## Section\nSome text here.');
     });
 
-    test('handles blockquote', () {
-      const md = '> Quoted text';
-      final result = findMarkdownLinesForSelection(md, 'Quoted text');
-      expect(result, '> Quoted text');
+    test('blockquote', () {
+      expect(
+        findMarkdownRangeForSelection('> Quoted text', 'Quoted text'),
+        '> Quoted text',
+      );
     });
 
-    test('full message: selects bold list items and returns markdown', () {
-      const md =
-          '# Results\n\n- **Alpha** wins\n- **Beta** loses\n\nDone.';
-      // Rendered list: "Alpha wins\nBeta loses"
-      final result = findMarkdownLinesForSelection(
-        md,
-        'Alpha wins\nBeta loses',
+    test('returns selectedPlainText unchanged when no match', () {
+      expect(
+        findMarkdownRangeForSelection('# Heading\n\nParagraph.', 'xyz not found'),
+        'xyz not found',
       );
-      expect(result, '- **Alpha** wins\n- **Beta** loses');
-      // Resulting HTML should contain <strong> and <li>
-      final html = markdownSelectionToHtml(result);
+    });
+
+    test('skips fenced code block content (non-selectable)', () {
+      const md = 'Before\n```dart\nvoid f() {}\n```\nAfter';
+      expect(findMarkdownRangeForSelection(md, 'Before'), 'Before');
+      expect(findMarkdownRangeForSelection(md, 'After'), 'After');
+    });
+
+    test('full round-trip: bold list items produce HTML with <strong> and <li>', () {
+      const md = '# Results\n\n- **Alpha** wins\n- **Beta** loses\n\nDone.';
+      // Flutter gives: "AlphawinsBetaloses" for the two list items.
+      final mdSlice = findMarkdownRangeForSelection(md, 'AlphawinsBetaloses');
+      expect(mdSlice, '- **Alpha** wins\n- **Beta** loses');
+      final html = markdownSelectionToHtml(mdSlice);
       expect(html, contains('<strong>Alpha</strong>'));
+      expect(html, contains('<strong>Beta</strong>'));
       expect(html, contains('<li>'));
     });
   });
