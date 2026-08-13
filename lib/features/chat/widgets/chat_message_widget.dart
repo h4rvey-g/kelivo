@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'dart:ui' as ui;
@@ -6143,10 +6144,10 @@ class _MarkdownSelectionArea extends StatefulWidget {
 }
 
 class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
-  String? _selectedPlainText;
+  final ValueNotifier<String?> _selectedPlainText = ValueNotifier(null);
 
   Future<void> _copyMarkdown() async {
-    final text = _selectedPlainText;
+    final text = _selectedPlainText.value;
     if (text == null || text.isEmpty) return;
     await copyMarkdownSelectionToClipboard(
       text,
@@ -6155,7 +6156,30 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
   }
 
   @override
+  void dispose() {
+    _selectedPlainText.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final Widget selectionChild =
+        defaultTargetPlatform == TargetPlatform.macOS
+        ? ValueListenableBuilder<String?>(
+            valueListenable: _selectedPlainText,
+            child: widget.child,
+            builder: (context, selectedText, child) {
+              return _MacOSSelectedTextSemantics(
+                key: ValueKey(
+                  'assistant-selection-semantics:${widget.areaKey.toString()}',
+                ),
+                selectedText: selectedText,
+                child: child!,
+              );
+            },
+          )
+        : widget.child;
+
     return Actions(
       actions: <Type, Action<Intent>>{
         CopySelectionTextIntent: CallbackAction<CopySelectionTextIntent>(
@@ -6168,7 +6192,7 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
       child: SelectionArea(
         key: widget.areaKey,
         onSelectionChanged: (content) {
-          _selectedPlainText = content?.plainText;
+          _selectedPlainText.value = content?.plainText;
         },
         contextMenuBuilder: (context, selectableRegionState) {
           final List<ContextMenuButtonItem> items = selectableRegionState
@@ -6190,8 +6214,91 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
             buttonItems: items,
           );
         },
-        child: widget.child,
+        child: selectionChild,
       ),
     );
+  }
+}
+
+/// Exposes a [SelectionArea] selection through macOS AXSelectedText.
+///
+/// Flutter's non-editable selection system paints the selection but does not
+/// attach its range to the semantics tree. macOS text services consequently
+/// cannot read it. While a selection is active, this render object presents
+/// the selected content as a focused, read-only text field, matching the
+/// semantics contract used by [SelectableText].
+class _MacOSSelectedTextSemantics extends SingleChildRenderObjectWidget {
+  const _MacOSSelectedTextSemantics({
+    super.key,
+    required this.selectedText,
+    required super.child,
+  });
+
+  final String? selectedText;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderMacOSSelectedTextSemantics(
+      selectedText,
+      Directionality.of(context),
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderMacOSSelectedTextSemantics renderObject,
+  ) {
+    renderObject
+      ..selectedText = selectedText
+      ..textDirection = Directionality.of(context);
+  }
+}
+
+class _RenderMacOSSelectedTextSemantics extends RenderProxyBox {
+  _RenderMacOSSelectedTextSemantics(this._selectedText, this._textDirection);
+
+  String? _selectedText;
+
+  set selectedText(String? value) {
+    if (_selectedText == value) return;
+    _selectedText = value;
+    markNeedsSemanticsUpdate();
+  }
+
+  ui.TextDirection _textDirection;
+
+  set textDirection(ui.TextDirection value) {
+    if (_textDirection == value) return;
+    _textDirection = value;
+    markNeedsSemanticsUpdate();
+  }
+
+  bool get _hasAccessibleSelection =>
+      defaultTargetPlatform == TargetPlatform.macOS &&
+      (_selectedText?.isNotEmpty ?? false);
+
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    if (!_hasAccessibleSelection) return;
+
+    final text = _selectedText!;
+    config
+      ..isSemanticBoundary = true
+      ..isTextField = true
+      ..isReadOnly = true
+      ..isFocused = true
+      ..isMultiline = text.contains('\n')
+      ..textDirection = _textDirection
+      ..inputType = ui.SemanticsInputType.text
+      ..value = text
+      ..textSelection = TextSelection(baseOffset: 0, extentOffset: text.length);
+  }
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    if (_hasAccessibleSelection) return;
+    super.visitChildrenForSemantics(visitor);
   }
 }

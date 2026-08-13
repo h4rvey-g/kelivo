@@ -7,6 +7,8 @@ import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart';
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -89,6 +91,57 @@ void main() {
       expect(clipboardCall?.arguments, <String, dynamic>{
         'text': '•Alpha\n•Beta',
       });
+    },
+  );
+
+  testWidgets(
+    'assistant selection is exposed to macOS accessibility services',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final semantics = tester.ensureSemantics();
+      try {
+        const markdown = '- **Alpha**\n* Beta';
+        await tester.pumpWidget(
+          _buildHarness(
+            ChatMessageWidget(
+              message: ChatMessage(
+                id: 'macos-accessible-selection',
+                role: 'assistant',
+                content: markdown,
+                conversationId: 'conversation-1',
+              ),
+              showModelIcon: false,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final areaState = tester.state<SelectionAreaState>(
+          find.byType(SelectionArea),
+        );
+        areaState.selectableRegion.selectAll(SelectionChangedCause.keyboard);
+        await tester.pump();
+
+        final semanticsFinder = find.byWidgetPredicate(
+          (widget) =>
+              widget.key?.toString().contains(
+                'assistant-selection-semantics',
+              ) ??
+              false,
+        );
+        final data = tester.getSemantics(semanticsFinder).getSemanticsData();
+        expect(data.value, '•Alpha\n•Beta');
+        expect(
+          data.textSelection,
+          const TextSelection(baseOffset: 0, extentOffset: 12),
+        );
+        expect(data.flagsCollection.isTextField, isTrue);
+        expect(data.flagsCollection.isReadOnly, isTrue);
+        expect(data.flagsCollection.isFocused, ui.Tristate.isTrue);
+      } finally {
+        semantics.dispose();
+        debugDefaultTargetPlatformOverride = null;
+      }
     },
   );
 }
