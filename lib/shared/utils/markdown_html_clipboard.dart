@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:super_clipboard/super_clipboard.dart';
 
 // ---------------------------------------------------------------------------
 // Markdown → HTML
@@ -83,11 +84,8 @@ String markdownSelectionToHtml(String markdown) {
       }
     } else {
       if (RegExp(r'^(`{3,}|~{3,})\s*$').hasMatch(raw)) {
-        final attr =
-            fenceLang.isNotEmpty ? ' class="language-$fenceLang"' : '';
-        buf.write(
-          '<pre><code$attr>${esc(codeLines.join('\n'))}</code></pre>',
-        );
+        final attr = fenceLang.isNotEmpty ? ' class="language-$fenceLang"' : '';
+        buf.write('<pre><code$attr>${esc(codeLines.join('\n'))}</code></pre>');
         inFence = false;
         codeLines.clear();
         continue;
@@ -193,12 +191,28 @@ String markdownSelectionToHtml(String markdown) {
 //  • Blank lines produce no visible characters.
 // ---------------------------------------------------------------------------
 
+class _InlineMarkdownSpan {
+  const _InlineMarkdownSpan({
+    required this.marker,
+    required this.contentStart,
+    required this.contentEnd,
+  });
+
+  final String marker;
+  final int contentStart;
+  final int contentEnd;
+
+  bool contains(int sourceOffset) =>
+      sourceOffset >= contentStart && sourceOffset <= contentEnd;
+}
+
 class _Projection {
   /// sourceIndex[i] = position in the original source string for visibleText[i]
   final List<int> sourceIndex;
   final String visibleText;
+  final List<_InlineMarkdownSpan> inlineSpans;
 
-  const _Projection(this.visibleText, this.sourceIndex);
+  const _Projection(this.visibleText, this.sourceIndex, this.inlineSpans);
 }
 
 const _selectionDecorationRunes = <int>{
@@ -220,6 +234,7 @@ String _removeSelectionDecorations(String text) {
 _Projection _buildProjection(String source) {
   final chars = <String>[];
   final indices = <int>[];
+  final inlineSpans = <_InlineMarkdownSpan>[];
 
   void emit(int srcIdx, String ch) {
     chars.add(ch);
@@ -268,7 +283,7 @@ _Projection _buildProjection(String source) {
     final hmPfx = RegExp(r'^(#{1,6}) ').firstMatch(line);
     if (hmPfx != null) {
       contentStart = hmPfx.group(0)!.length;
-      _emitInlineMd(line, lineStart, contentStart, emit);
+      _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
       srcPos += lineLen + 1;
       continue;
     }
@@ -277,7 +292,7 @@ _Projection _buildProjection(String source) {
     final ulPfx = RegExp(r'^[-*+] ').firstMatch(line);
     if (ulPfx != null) {
       contentStart = ulPfx.group(0)!.length;
-      _emitInlineMd(line, lineStart, contentStart, emit);
+      _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
       srcPos += lineLen + 1;
       continue;
     }
@@ -290,7 +305,7 @@ _Projection _buildProjection(String source) {
         emit(lineStart + i, prefix[i]);
       }
       contentStart = prefix.length;
-      _emitInlineMd(line, lineStart, contentStart, emit);
+      _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
       srcPos += lineLen + 1;
       continue;
     }
@@ -299,7 +314,7 @@ _Projection _buildProjection(String source) {
     final bqPfx = RegExp(r'^> ?').firstMatch(line);
     if (bqPfx != null) {
       contentStart = bqPfx.group(0)!.length;
-      _emitInlineMd(line, lineStart, contentStart, emit);
+      _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
       srcPos += lineLen + 1;
       continue;
     }
@@ -311,11 +326,11 @@ _Projection _buildProjection(String source) {
     }
 
     // Plain paragraph.
-    _emitInlineMd(line, lineStart, 0, emit);
+    _emitInlineMd(line, lineStart, 0, emit, inlineSpans.add);
     srcPos += lineLen + 1;
   }
 
-  return _Projection(chars.join(), indices);
+  return _Projection(chars.join(), indices, inlineSpans);
 }
 
 /// Emit visible characters for [line] starting at [contentStart],
@@ -326,6 +341,7 @@ void _emitInlineMd(
   int lineStart,
   int contentStart,
   void Function(int, String) emit,
+  void Function(_InlineMarkdownSpan) emitSpan,
 ) {
   final content = line.substring(contentStart);
   int i = 0;
@@ -338,6 +354,13 @@ void _emitInlineMd(
       final close = rest.indexOf('`', 1);
       if (close != -1) {
         final inner = rest.substring(1, close);
+        emitSpan(
+          _InlineMarkdownSpan(
+            marker: '`',
+            contentStart: lineStart + contentStart + i + 1,
+            contentEnd: lineStart + contentStart + i + close - 1,
+          ),
+        );
         for (int j = 0; j < inner.length; j++) {
           emit(lineStart + contentStart + i + 1 + j, inner[j]);
         }
@@ -352,6 +375,13 @@ void _emitInlineMd(
       final close = rest.indexOf(marker, 2);
       if (close != -1) {
         final inner = rest.substring(2, close);
+        emitSpan(
+          _InlineMarkdownSpan(
+            marker: marker,
+            contentStart: lineStart + contentStart + i + 2,
+            contentEnd: lineStart + contentStart + i + close - 1,
+          ),
+        );
         for (int j = 0; j < inner.length; j++) {
           emit(lineStart + contentStart + i + 2 + j, inner[j]);
         }
@@ -366,6 +396,13 @@ void _emitInlineMd(
       final close = rest.indexOf(marker, 1);
       if (close != -1) {
         final inner = rest.substring(1, close);
+        emitSpan(
+          _InlineMarkdownSpan(
+            marker: marker,
+            contentStart: lineStart + contentStart + i + 1,
+            contentEnd: lineStart + contentStart + i + close - 1,
+          ),
+        );
         for (int j = 0; j < inner.length; j++) {
           emit(lineStart + contentStart + i + 1 + j, inner[j]);
         }
@@ -383,8 +420,9 @@ void _emitInlineMd(
 // ---------------------------------------------------------------------------
 // findMarkdownRangeForSelection
 //
-// Maps the selected rendered plain-text back to the Markdown source lines
-// that produced it.
+// Maps selected rendered plain-text back to the Markdown source that produced
+// it. Block-level Markdown is recovered only when the selection covers whole
+// rendered lines; a partial-line selection must remain exact.
 //
 // WHY WHITESPACE-FREE MATCHING:
 // Flutter's _SelectableRegionContainerDelegate.getSelectedContent() writes:
@@ -399,8 +437,10 @@ void _emitInlineMd(
 // ---------------------------------------------------------------------------
 
 /// Returns the slice of [markdownSource] (including original Markdown syntax)
-/// whose rendered plain-text corresponds to [selectedPlainText], extended to
-/// whole-line boundaries so that [markdownSelectionToHtml] receives valid input.
+/// whose rendered plain-text corresponds to [selectedPlainText]. Whole rendered
+/// lines recover their block-level Markdown syntax. Partial-line selections
+/// keep exact visible bounds while recovering any inline style at their edges,
+/// so copying a word cannot expand to its entire paragraph.
 ///
 /// Returns [selectedPlainText] unchanged when no match can be found.
 String findMarkdownRangeForSelection(
@@ -456,18 +496,47 @@ String findMarkdownRangeForSelection(
   final srcStart = proj.sourceIndex[projStartPos];
   final srcEnd = proj.sourceIndex[projEndPos];
 
-  // Extend to whole Markdown line boundaries.
+  // Locate the source lines touched by the selection.
   int lineStart = srcStart;
   while (lineStart > 0 && markdownSource[lineStart - 1] != '\n') {
     lineStart--;
   }
 
   int lineEnd = srcEnd;
-  while (
-    lineEnd < markdownSource.length - 1 &&
-    markdownSource[lineEnd + 1] != '\n'
-  ) {
+  while (lineEnd < markdownSource.length - 1 &&
+      markdownSource[lineEnd + 1] != '\n') {
     lineEnd++;
+  }
+
+  // Recover block prefixes and inline Markdown only when every visible
+  // character on both boundary lines was selected. Expanding a partial-line
+  // selection to these boundaries would copy text the user did not select.
+  final previousCompactIndex = hit - 1;
+  final nextCompactIndex = hit + matchedSelection.length;
+  final startsAtRenderedLineBoundary =
+      previousCompactIndex < 0 ||
+      proj.sourceIndex[projCompactToProj[previousCompactIndex]] < lineStart;
+  final endsAtRenderedLineBoundary =
+      nextCompactIndex >= projCompactToProj.length ||
+      proj.sourceIndex[projCompactToProj[nextCompactIndex]] > lineEnd;
+
+  if (!startsAtRenderedLineBoundary || !endsAtRenderedLineBoundary) {
+    // Keep the visible range exact while restoring any inline style active at
+    // either edge. This lets a partial bold/code selection paste richly
+    // without bringing along text outside the selection.
+    final sourceFragment = markdownSource.substring(srcStart, srcEnd + 1);
+    if (sourceFragment.contains('\n')) return selectedPlainText;
+
+    final openingSpans =
+        proj.inlineSpans.where((span) => span.contains(srcStart)).toList()
+          ..sort((a, b) => a.contentStart.compareTo(b.contentStart));
+    final closingSpans =
+        proj.inlineSpans.where((span) => span.contains(srcEnd)).toList()
+          ..sort((a, b) => a.contentEnd.compareTo(b.contentEnd));
+
+    return '${openingSpans.map((span) => span.marker).join()}'
+        '$sourceFragment'
+        '${closingSpans.map((span) => span.marker).join()}';
   }
 
   return markdownSource.substring(lineStart, lineEnd + 1);
@@ -477,22 +546,65 @@ String findMarkdownRangeForSelection(
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Writes the selected content to the system clipboard as Markdown source.
+/// Clipboard representations for a rendered Markdown selection.
+class MarkdownClipboardPayload {
+  const MarkdownClipboardPayload({
+    required this.plainText,
+    required this.htmlText,
+  });
+
+  /// Exact rendered text selected by the user.
+  final String plainText;
+
+  /// Rich representation used by paste targets that accept HTML.
+  final String htmlText;
+}
+
+/// Builds plain-text and rich-text representations for the same selection.
+MarkdownClipboardPayload buildMarkdownClipboardPayload(
+  String selectedPlainText, {
+  String? markdownSource,
+}) {
+  final markdownForHtml = (markdownSource != null && markdownSource.isNotEmpty)
+      ? findMarkdownRangeForSelection(markdownSource, selectedPlainText)
+      : selectedPlainText;
+
+  return MarkdownClipboardPayload(
+    plainText: selectedPlainText,
+    htmlText: markdownSelectionToHtml(markdownForHtml),
+  );
+}
+
+/// Writes both rich HTML and exact plain text to the system clipboard.
 ///
-/// If [markdownSource] is provided, the rendered selection is mapped back to
-/// the original Markdown lines. Only `text/plain` is written: adding an HTML
-/// flavor would make rich-text paste targets prefer `<ul>`/`<strong>` and turn
-/// Markdown markers back into rendered bullets or styling.
+/// Normal paste in rich-text applications prefers `text/html`. Paste without
+/// formatting (for example Cmd+Shift+V) uses the `text/plain` representation.
+/// If the richer clipboard API is unavailable, this falls back to plain text.
 Future<void> copyMarkdownSelectionToClipboard(
   String selectedPlainText, {
   String? markdownSource,
 }) async {
   if (selectedPlainText.trim().isEmpty) return;
 
-  final markdownForClipboard =
-      (markdownSource != null && markdownSource.isNotEmpty)
-      ? findMarkdownRangeForSelection(markdownSource, selectedPlainText)
-      : selectedPlainText;
+  final payload = buildMarkdownClipboardPayload(
+    selectedPlainText,
+    markdownSource: markdownSource,
+  );
 
-  await Clipboard.setData(ClipboardData(text: markdownForClipboard));
+  try {
+    final clipboard = SystemClipboard.instance;
+    if (clipboard != null && payload.htmlText.isNotEmpty) {
+      final item = DataWriterItem();
+      // Add the highest-fidelity representation first. Some platforms use
+      // registration order when choosing a preferred clipboard flavor.
+      item.add(Formats.htmlText(payload.htmlText));
+      item.add(Formats.plainText(payload.plainText));
+      await clipboard.write([item]);
+      return;
+    }
+  } catch (_) {
+    // Keep copying functional when the native rich clipboard is unavailable.
+  }
+
+  await Clipboard.setData(ClipboardData(text: payload.plainText));
 }

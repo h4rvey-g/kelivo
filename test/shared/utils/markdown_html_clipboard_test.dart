@@ -145,6 +145,30 @@ void main() {
       );
     });
 
+    test('partial paragraph selection stays exact', () {
+      const md =
+          '1. **Safety with FVL**: Progestin-only contraceptives do not '
+          'increase VTE risk.';
+
+      expect(
+        findMarkdownRangeForSelection(md, 'Progestin-only'),
+        'Progestin-only',
+      );
+    });
+
+    test(
+      'partial formatted selection keeps style without surrounding text',
+      () {
+        expect(
+          findMarkdownRangeForSelection(
+            'Before **selected words** after',
+            'selected words',
+          ),
+          '**selected words**',
+        );
+      },
+    );
+
     test('bold line: visible text "bold word" maps to "**bold** word"', () {
       // gpt_markdown strips ** → "bold word" in selection.
       expect(
@@ -160,13 +184,16 @@ void main() {
       );
     });
 
-    test('unordered list item: visible "First item" maps to "- First item"', () {
-      // Bullet is a Container widget, NOT text → no "- " in selection.
-      expect(
-        findMarkdownRangeForSelection('- First item', 'First item'),
-        '- First item',
-      );
-    });
+    test(
+      'unordered list item: visible "First item" maps to "- First item"',
+      () {
+        // Bullet is a Container widget, NOT text → no "- " in selection.
+        expect(
+          findMarkdownRangeForSelection('- First item', 'First item'),
+          '- First item',
+        );
+      },
+    );
 
     test('ordered list item: visible "1. Step one" maps to "1. Step one"', () {
       // Number IS rendered as Text → "1. " is present in selection.
@@ -201,7 +228,10 @@ void main() {
     test('heading + paragraph (no separator in selection)', () {
       const md = '## Section\n\nSome text here.';
       // Flutter concatenates: "SectionSome text here."
-      final result = findMarkdownRangeForSelection(md, 'SectionSome text here.');
+      final result = findMarkdownRangeForSelection(
+        md,
+        'SectionSome text here.',
+      );
       // The slice spans both blocks, blank line included; the HTML converter
       // treats the blank line as a block separator.
       expect(result, '## Section\n\nSome text here.');
@@ -220,7 +250,10 @@ void main() {
 
     test('returns selectedPlainText unchanged when no match', () {
       expect(
-        findMarkdownRangeForSelection('# Heading\n\nParagraph.', 'xyz not found'),
+        findMarkdownRangeForSelection(
+          '# Heading\n\nParagraph.',
+          'xyz not found',
+        ),
         'xyz not found',
       );
     });
@@ -231,20 +264,70 @@ void main() {
       expect(findMarkdownRangeForSelection(md, 'After'), 'After');
     });
 
-    test('full round-trip: bold list items produce HTML with <strong> and <li>', () {
-      const md = '# Results\n\n- **Alpha** wins\n- **Beta** loses\n\nDone.';
-      // Flutter gives: "AlphawinsBetaloses" for the two list items.
-      final mdSlice = findMarkdownRangeForSelection(md, 'AlphawinsBetaloses');
-      expect(mdSlice, '- **Alpha** wins\n- **Beta** loses');
-      final html = markdownSelectionToHtml(mdSlice);
-      expect(html, contains('<strong>Alpha</strong>'));
-      expect(html, contains('<strong>Beta</strong>'));
-      expect(html, contains('<li>'));
+    test(
+      'full round-trip: bold list items produce HTML with <strong> and <li>',
+      () {
+        const md = '# Results\n\n- **Alpha** wins\n- **Beta** loses\n\nDone.';
+        // Flutter gives: "AlphawinsBetaloses" for the two list items.
+        final mdSlice = findMarkdownRangeForSelection(md, 'AlphawinsBetaloses');
+        expect(mdSlice, '- **Alpha** wins\n- **Beta** loses');
+        final html = markdownSelectionToHtml(mdSlice);
+        expect(html, contains('<strong>Alpha</strong>'));
+        expect(html, contains('<strong>Beta</strong>'));
+        expect(html, contains('<li>'));
+      },
+    );
+  });
+
+  group('buildMarkdownClipboardPayload', () {
+    test('provides rich HTML and exact rendered plain text', () {
+      const markdown =
+          '1. **Safety with FVL**: Progestin-only contraceptives do not '
+          'increase VTE risk.';
+      const selected =
+          '1. Safety with FVL: Progestin-only contraceptives do not '
+          'increase VTE risk.';
+
+      final payload = buildMarkdownClipboardPayload(
+        selected,
+        markdownSource: markdown,
+      );
+
+      expect(payload.plainText, selected);
+      expect(
+        payload.htmlText,
+        '<ol><li><strong>Safety with FVL</strong>: Progestin-only '
+        'contraceptives do not increase VTE risk.</li></ol>',
+      );
+    });
+
+    test('partial selection remains exact in both representations', () {
+      const markdown =
+          '1. **Safety with FVL**: Progestin-only contraceptives do not '
+          'increase VTE risk.';
+
+      final payload = buildMarkdownClipboardPayload(
+        'Progestin-only',
+        markdownSource: markdown,
+      );
+
+      expect(payload.plainText, 'Progestin-only');
+      expect(payload.htmlText, '<p>Progestin-only</p>');
+    });
+
+    test('partial bold selection is rich HTML but exact plain text', () {
+      final payload = buildMarkdownClipboardPayload(
+        'with FVL',
+        markdownSource: 'Before **Safety with FVL** after',
+      );
+
+      expect(payload.plainText, 'with FVL');
+      expect(payload.htmlText, '<p><strong>with FVL</strong></p>');
     });
   });
 
   group('copyMarkdownSelectionToClipboard', () {
-    test('writes recovered Markdown as the only plain-text payload', () async {
+    test('falls back to the exact rendered plain text', () async {
       MethodCall? clipboardCall;
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -263,7 +346,33 @@ void main() {
 
       expect(clipboardCall?.method, 'Clipboard.setData');
       expect(clipboardCall?.arguments, <String, dynamic>{
-        'text': '- **Alpha**\n* Beta',
+        'text': '• Alpha• Beta',
+      });
+    });
+
+    test('writes only a partial paragraph selection', () async {
+      MethodCall? clipboardCall;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        clipboardCall = call;
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      const markdown =
+          '1. **Safety with FVL**: Progestin-only contraceptives do not '
+          'increase VTE risk.';
+      await copyMarkdownSelectionToClipboard(
+        'Progestin-only',
+        markdownSource: markdown,
+      );
+
+      expect(clipboardCall?.method, 'Clipboard.setData');
+      expect(clipboardCall?.arguments, <String, dynamic>{
+        'text': 'Progestin-only',
       });
     });
   });

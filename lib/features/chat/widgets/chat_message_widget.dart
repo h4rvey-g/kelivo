@@ -6115,9 +6115,9 @@ class _ShimmerState extends State<_Shimmer> with TickerProviderStateMixin {
 // _MarkdownSelectionArea
 //
 // Wraps SelectionArea so that the Copy action (keyboard shortcut AND context
-// menu) maps rendered selection text back to the original Markdown source.
-// The clipboard intentionally receives only text/plain Markdown; an HTML
-// flavor would make rich-text targets render list markers as bullets again.
+// menu) writes both rich HTML and exact rendered plain text. Normal paste can
+// preserve Markdown-derived formatting while paste-without-formatting uses the
+// plain-text clipboard representation.
 // ---------------------------------------------------------------------------
 
 class _MarkdownSelectionArea extends StatefulWidget {

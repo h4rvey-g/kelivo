@@ -39,7 +39,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'assistant selection copies original Markdown through Copy intent',
+    'assistant selection copies exact rendered text through Copy intent',
     (tester) async {
       MethodCall? clipboardCall;
       final messenger =
@@ -86,7 +86,9 @@ void main() {
       await tester.pump();
 
       expect(clipboardCall?.method, 'Clipboard.setData');
-      expect(clipboardCall?.arguments, <String, dynamic>{'text': markdown});
+      expect(clipboardCall?.arguments, <String, dynamic>{
+        'text': '•Alpha\n•Beta',
+      });
     },
   );
 }
