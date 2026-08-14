@@ -2,6 +2,17 @@ import Cocoa
 import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
+  private var selectedTextAccessibilityController:
+    SelectedTextAccessibilityController?
+
+  override var accessibilityFocusedUIElement: Any? {
+    if let focusedElement =
+      selectedTextAccessibilityController?.focusedUIElement {
+      return focusedElement
+    }
+    return super.accessibilityFocusedUIElement
+  }
+
   // Use Cocoa autosave to persist and restore window frame precisely on macOS.
   private let autosaveName = NSWindow.FrameAutosaveName("KelivoMainWindowFrame")
 
@@ -119,6 +130,20 @@ class MainFlutterWindow: NSWindow {
     self.layoutTrafficLights()
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+
+    let coordinateView = flutterViewController.view.subviews.first(
+      where: { $0.isFlipped }
+    ) ?? flutterViewController.view
+    let selectedTextAccessibilityController =
+      SelectedTextAccessibilityController(
+        ownerWindow: self,
+        coordinateView: coordinateView
+      )
+    selectedTextAccessibilityController.register(
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    self.selectedTextAccessibilityController =
+      selectedTextAccessibilityController
 
     let channel = FlutterMethodChannel(name: "app.clipboard", binaryMessenger: flutterViewController.engine.binaryMessenger)
     channel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in

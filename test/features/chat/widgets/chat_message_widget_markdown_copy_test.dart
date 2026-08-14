@@ -3,11 +3,11 @@ import '../../../support/business_test_harness.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/providers/tts_provider.dart';
+import 'package:Kelivo/core/services/macos_selected_text_accessibility.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart';
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
-import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -95,10 +95,19 @@ void main() {
   );
 
   testWidgets(
-    'assistant selection is exposed to macOS accessibility services',
+    'assistant selection is published and cleared for macOS accessibility',
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      final semantics = tester.ensureSemantics();
+      final accessibilityCalls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const accessibilityChannel = MethodChannel(
+        MacOSSelectedTextAccessibilityBridge.channelName,
+      );
+      messenger.setMockMethodCallHandler(accessibilityChannel, (call) async {
+        accessibilityCalls.add(call);
+        return null;
+      });
       try {
         const markdown = '- **Alpha**\n* Beta';
         await tester.pumpWidget(
@@ -122,24 +131,68 @@ void main() {
         areaState.selectableRegion.selectAll(SelectionChangedCause.keyboard);
         await tester.pump();
 
-        final semanticsFinder = find.byWidgetPredicate(
-          (widget) =>
-              widget.key?.toString().contains(
-                'assistant-selection-semantics',
-              ) ??
-              false,
-        );
-        final data = tester.getSemantics(semanticsFinder).getSemanticsData();
-        expect(data.value, '•Alpha\n•Beta');
+        expect(accessibilityCalls, isNotEmpty);
         expect(
-          data.textSelection,
-          const TextSelection(baseOffset: 0, extentOffset: 12),
+          accessibilityCalls.last.method,
+          MacOSSelectedTextAccessibilityBridge.methodName,
         );
-        expect(data.flagsCollection.isTextField, isTrue);
-        expect(data.flagsCollection.isReadOnly, isTrue);
-        expect(data.flagsCollection.isFocused, ui.Tristate.isTrue);
+        final selectionArguments = Map<String, Object?>.from(
+          accessibilityCalls.last.arguments as Map,
+        );
+        expect(selectionArguments['source'], isA<String>());
+        expect(selectionArguments['source'], isNotEmpty);
+        expect(selectionArguments['text'], '•Alpha\n•Beta');
+        final bounds = Map<String, Object?>.from(
+          selectionArguments['bounds']! as Map,
+        );
+        expect((bounds['width']! as num).toDouble(), greaterThan(0));
+        expect((bounds['height']! as num).toDouble(), greaterThan(0));
+        expect((bounds['x']! as num).toDouble().isFinite, isTrue);
+        expect((bounds['y']! as num).toDouble().isFinite, isTrue);
+
+        await tester.pumpWidget(
+          _buildHarness(
+            ChatMessageWidget(
+              message: ChatMessage(
+                id: 'macos-accessible-selection-replacement',
+                role: 'assistant',
+                content: markdown,
+                conversationId: 'conversation-1',
+              ),
+              showModelIcon: false,
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(accessibilityCalls.last.arguments, <String, Object?>{
+          'source': selectionArguments['source'],
+          'text': '',
+        });
+
+        final replacementAreaState = tester.state<SelectionAreaState>(
+          find.byType(SelectionArea),
+        );
+        replacementAreaState.selectableRegion.selectAll(
+          SelectionChangedCause.keyboard,
+        );
+        await tester.pump();
+        final replacementArguments = Map<String, Object?>.from(
+          accessibilityCalls.last.arguments as Map,
+        );
+        expect(replacementArguments['text'], '•Alpha\n•Beta');
+        expect(
+          replacementArguments['source'],
+          isNot(selectionArguments['source']),
+        );
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        expect(accessibilityCalls.last.arguments, <String, Object?>{
+          'source': replacementArguments['source'],
+          'text': '',
+        });
       } finally {
-        semantics.dispose();
+        messenger.setMockMethodCallHandler(accessibilityChannel, null);
         debugDefaultTargetPlatformOverride = null;
       }
     },
