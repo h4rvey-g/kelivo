@@ -644,11 +644,15 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // When app resumes from background, suppress context menu briefly to avoid flickering
+    // When app resumes from background, suppress context menu briefly to avoid flickering.
     if (state == AppLifecycleState.resumed) {
       _suppressContextMenu = true;
-      // Also unfocus to reset any stuck toolbar state
-      widget.focusNode?.unfocus();
+      scheduleMicrotask(() {
+        if (!mounted) return;
+        final route = ModalRoute.of(context);
+        if (route != null && !route.isCurrent) return;
+        widget.focusNode?.requestFocus();
+      });
       // Re-enable context menu after a short delay
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
