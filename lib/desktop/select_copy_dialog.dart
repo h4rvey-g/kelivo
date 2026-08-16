@@ -3,6 +3,7 @@ import '../core/models/chat_message.dart';
 import '../l10n/app_localizations.dart';
 import '../icons/lucide_adapter.dart';
 import '../shared/widgets/snackbar.dart';
+import '../shared/widgets/auto_scroll_selection_area.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
@@ -18,13 +19,33 @@ Future<void> showSelectCopyDesktopDialog(
   );
 }
 
-class _SelectCopyDesktopDialog extends StatelessWidget {
+class _SelectCopyDesktopDialog extends StatefulWidget {
   const _SelectCopyDesktopDialog({required this.message});
   final ChatMessage message;
 
+  @override
+  State<_SelectCopyDesktopDialog> createState() =>
+      _SelectCopyDesktopDialogState();
+}
+
+class _SelectCopyDesktopDialogState extends State<_SelectCopyDesktopDialog> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _copyAll(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
-    await Clipboard.setData(ClipboardData(text: message.content));
+    await Clipboard.setData(ClipboardData(text: widget.message.content));
     if (!context.mounted) return;
     showAppSnackBar(
       context,
@@ -103,11 +124,13 @@ class _SelectCopyDesktopDialog extends StatelessWidget {
                         ),
                       ),
                       child: Scrollbar(
+                        controller: _scrollController,
                         child: SingleChildScrollView(
+                          controller: _scrollController,
                           padding: const EdgeInsets.all(12),
-                          child: SelectionArea(
+                          child: AutoScrollSelectionArea(
                             child: Text(
-                              message.content,
+                              widget.message.content,
                               style: TextStyle(fontSize: 15, height: 1.5),
                             ),
                           ),

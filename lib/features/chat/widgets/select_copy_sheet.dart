@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../shared/widgets/auto_scroll_selection_area.dart';
 import '../../../shared/widgets/snackbar.dart';
 import '../../../shared/widgets/ios_tactile.dart';
 import '../../../core/services/haptics.dart';
@@ -132,7 +133,7 @@ class _SelectCopySheet extends StatelessWidget {
                 child: SingleChildScrollView(
                   controller: sc,
                   primary: false,
-                  child: SelectionArea(
+                  child: AutoScrollSelectionArea(
                     child: Text(
                       message.content,
                       style: TextStyle(fontSize: 15, height: 1.5),

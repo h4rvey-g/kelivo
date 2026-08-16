@@ -30,6 +30,7 @@ import '../../../utils/assistant_regex.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/providers/tts_provider.dart';
 import '../../../shared/widgets/markdown_with_highlight.dart';
+import '../../../shared/widgets/auto_scroll_selection_area.dart';
 import '../../../shared/widgets/snackbar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
@@ -1746,8 +1747,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     }
 
     return isDesktop
-        ? SelectionArea(
-            key: ValueKey('user_${widget.message.id}'),
+        ? AutoScrollSelectionArea(
+            selectionAreaKey: ValueKey('user_${widget.message.id}'),
             child: content,
           )
         : content;
@@ -2621,8 +2622,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                           Padding(
                             padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
                             child: RepaintBoundary(
-                              child: SelectionArea(
-                                key: ValueKey(
+                              child: AutoScrollSelectionArea(
+                                selectionAreaKey: ValueKey(
                                   'translation_${widget.message.id}',
                                 ),
                                 child: Builder(
@@ -4104,17 +4105,21 @@ class _ChainOfThoughtReasoningStepState
                 child: SingleChildScrollView(
                   controller: _scroll,
                   physics: const BouncingScrollPhysics(),
-                  child: SelectionArea(child: reasoningContent(display)),
+                  child: AutoScrollSelectionArea(
+                    child: reasoningContent(display),
+                  ),
                 ),
               )
             : SingleChildScrollView(
                 controller: _scroll,
                 physics: const NeverScrollableScrollPhysics(),
-                child: SelectionArea(child: reasoningContent(display)),
+                child: AutoScrollSelectionArea(
+                  child: reasoningContent(display),
+                ),
               ),
       );
     } else if (state == _ReasoningStepState.expanded) {
-      content = SelectionArea(child: reasoningContent(display));
+      content = AutoScrollSelectionArea(child: reasoningContent(display));
     }
 
     return _TimelineStepShell(
@@ -6007,7 +6012,7 @@ class _ReasoningSectionState extends State<_ReasoningSection>
     }
 
     // Enable long-press text selection in reasoning body
-    body = SelectionArea(child: body);
+    body = AutoScrollSelectionArea(child: body);
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 300),
@@ -6206,8 +6211,8 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
       },
       child: KeyedSubtree(
         key: _selectionBoundsKey,
-        child: SelectionArea(
-          key: widget.areaKey,
+        child: AutoScrollSelectionArea(
+          selectionAreaKey: widget.areaKey,
           onSelectionChanged: (content) {
             final selectedText = content?.plainText;
             if (_selectedPlainText == selectedText) return;

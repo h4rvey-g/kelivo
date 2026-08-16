@@ -3,18 +3,38 @@ import 'package:flutter/services.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../shared/widgets/auto_scroll_selection_area.dart';
 import '../../../shared/widgets/snackbar.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
 
-class SelectCopyPage extends StatelessWidget {
+class SelectCopyPage extends StatefulWidget {
   const SelectCopyPage({super.key, required this.message});
   final ChatMessage message;
+
+  @override
+  State<SelectCopyPage> createState() => _SelectCopyPageState();
+}
+
+class _SelectCopyPageState extends State<SelectCopyPage> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   void _copyAll(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
     // Ensure there is a text input connection on iOS before showing system copy UI
     // Here we bypass system menu by writing directly to clipboard and showing a snackbar
-    await Clipboard.setData(ClipboardData(text: message.content));
+    await Clipboard.setData(ClipboardData(text: widget.message.content));
     if (!context.mounted) return;
     showAppSnackBar(
       context,
@@ -48,10 +68,12 @@ class SelectCopyPage extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Scrollbar(
+            controller: _scrollController,
             child: SingleChildScrollView(
-              child: SelectionArea(
+              controller: _scrollController,
+              child: AutoScrollSelectionArea(
                 child: Text(
-                  message.content,
+                  widget.message.content,
                   style: TextStyle(fontSize: 15, height: 1.5),
                 ),
               ),
