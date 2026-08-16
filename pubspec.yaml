@@ -67,6 +67,7 @@ dependencies:
   package_info_plus: ^8.3.1
   gpt_markdown: #^1.1.7
     path: ./dependencies/gpt_markdown
+  markdown: ^7.3.0
   uuid: ^4.5.0
   intl: ^0.20.2
   path: ^1.9.1

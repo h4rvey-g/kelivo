@@ -1,171 +1,177 @@
 import 'package:flutter/services.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:super_clipboard/super_clipboard.dart';
 
 // ---------------------------------------------------------------------------
 // Markdown → HTML
 // ---------------------------------------------------------------------------
 
-/// Convert a Markdown string to a minimal HTML snippet for the clipboard.
+const _inlineDollarLatexPattern =
+    r'(?<![\\$A-Za-z0-9])\$(?!\$)((?:\\.|[^$\\\n]){1,20000})\$(?![$A-Za-z0-9])';
+const _inlineParenLatexPattern = r'\\\(([^\n]{1,20000}?)\\\)';
+final _inlineDollarLatexRegExp = RegExp(_inlineDollarLatexPattern);
+final _inlineParenLatexRegExp = RegExp(_inlineParenLatexPattern);
+
+final _clipboardMarkdownExtensions = md.ExtensionSet(
+  md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+  md.ExtensionSet.gitHubFlavored.inlineSyntaxes
+      .where((syntax) => syntax is! md.InlineHtmlSyntax)
+      .toList(growable: false),
+);
+
+String _escapeHtml(String value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+
+bool _isValidDollarLatexBody(String body) =>
+    body.isNotEmpty && body.trim() == body;
+
+md.Element _mathElement(String latex, {required bool block}) {
+  final escaped = _escapeHtml(latex.trim());
+  final element = md.Element.text(block ? 'div' : 'span', escaped)
+    ..attributes['class'] = block ? 'math math-block' : 'math math-inline'
+    ..attributes['data-latex'] = escaped
+    ..attributes['style'] = block
+        ? 'font-family: serif; font-style: italic; text-align: center; '
+              'white-space: pre-wrap;'
+        : 'font-family: serif; font-style: italic;';
+  return element;
+}
+
+class _InlineDollarLatexSyntax extends md.InlineSyntax {
+  _InlineDollarLatexSyntax()
+    : super(_inlineDollarLatexPattern, startCharacter: 0x24);
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final body = match.group(1)!;
+    if (_isValidDollarLatexBody(body)) {
+      parser.addNode(_mathElement(body, block: false));
+    } else {
+      parser.addNode(md.Text(_escapeHtml(match.group(0)!)));
+    }
+    return true;
+  }
+}
+
+class _InlineParenLatexSyntax extends md.InlineSyntax {
+  _InlineParenLatexSyntax()
+    : super(_inlineParenLatexPattern, startCharacter: 0x5c);
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    parser.addNode(_mathElement(match.group(1)!, block: false));
+    return true;
+  }
+}
+
+class _LatexBlockSyntax extends md.BlockSyntax {
+  const _LatexBlockSyntax();
+
+  static final _pattern = RegExp(r'^\s*(?:\$\$|\\\[)');
+
+  @override
+  RegExp get pattern => _pattern;
+
+  @override
+  md.Node parse(md.BlockParser parser) {
+    final openingLine = parser.current.content.trim();
+    final dollarDelimited = openingLine.startsWith(r'$$');
+    final opening = dollarDelimited ? r'$$' : r'\[';
+    final closing = dollarDelimited ? r'$$' : r'\]';
+    final bodyLines = <String>[];
+
+    var remainder = openingLine.substring(opening.length);
+    parser.advance();
+
+    bool consumeClosing(String value) {
+      final closingIndex = value.lastIndexOf(closing);
+      if (closingIndex == -1 ||
+          value.substring(closingIndex + closing.length).trim().isNotEmpty) {
+        return false;
+      }
+      bodyLines.add(value.substring(0, closingIndex));
+      return true;
+    }
+
+    var closed = remainder.isNotEmpty && consumeClosing(remainder);
+    if (!closed && remainder.isNotEmpty) bodyLines.add(remainder);
+
+    while (!closed && !parser.isDone) {
+      remainder = parser.current.content;
+      parser.advance();
+      closed = consumeClosing(remainder);
+      if (!closed) bodyLines.add(remainder);
+    }
+
+    return _mathElement(bodyLines.join('\n'), block: true);
+  }
+}
+
+class _CompactHtmlRenderer implements md.NodeVisitor {
+  final _buffer = StringBuffer();
+  final _elementStack = <String>[];
+
+  String render(List<md.Node> nodes) {
+    for (final node in nodes) {
+      node.accept(this);
+    }
+    return _buffer.toString();
+  }
+
+  @override
+  void visitText(md.Text text) {
+    var value = text.textContent;
+    final inFencedCode =
+        _elementStack.length >= 2 &&
+        _elementStack.last == 'code' &&
+        _elementStack[_elementStack.length - 2] == 'pre';
+    if (inFencedCode && value.endsWith('\n')) {
+      value = value.substring(0, value.length - 1);
+    }
+    if (!inFencedCode && RegExp(r'<(?:/?[A-Za-z]|!|\?)').hasMatch(value)) {
+      value = _escapeHtml(value);
+    }
+    _buffer.write(value);
+  }
+
+  @override
+  bool visitElementBefore(md.Element element) {
+    _buffer.write('<${element.tag}');
+    for (final attribute in element.attributes.entries) {
+      _buffer.write(' ${attribute.key}="${attribute.value}"');
+    }
+    _buffer.write('>');
+    if (element.isEmpty) return false;
+    _elementStack.add(element.tag);
+    return true;
+  }
+
+  @override
+  void visitElementAfter(md.Element element) {
+    _buffer.write('</${element.tag}>');
+    _elementStack.removeLast();
+  }
+}
+
+/// Converts Markdown to a compact HTML fragment suitable for the clipboard.
 ///
-/// Handles the subset produced by AI responses:
-///   • ATX headings  (# … ######)
-///   • Unordered lists  (- / * / +)
-///   • Ordered lists    (1. 2. …)
-///   • Bold   **…** / __…__
-///   • Italic  *…* / _…_
-///   • Inline code  `…`
-///   • Fenced code blocks  (``` … ```)
-///   • Blockquotes  (> …)
-///   • Horizontal rules  (--- / ***)
-///   • Plain paragraphs
+/// A real Markdown AST preserves nested lists and mixed block structures.
+/// LaTeX is represented as styled semantic nodes carrying the original source
+/// in `data-latex`, so rich paste targets do not force the whole selection to
+/// plain text when a non-selectable math widget appears in the source.
 String markdownSelectionToHtml(String markdown) {
   if (markdown.trim().isEmpty) return '';
 
-  final lines = markdown.split('\n');
-  final buf = StringBuffer();
-
-  bool inFence = false;
-  String fenceLang = '';
-  final codeLines = <String>[];
-  bool inUl = false;
-  bool inOl = false;
-
-  void flushLists() {
-    if (inUl) {
-      buf.write('</ul>');
-      inUl = false;
-    }
-    if (inOl) {
-      buf.write('</ol>');
-      inOl = false;
-    }
-  }
-
-  String esc(String s) => s
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;');
-
-  // Inline Markdown: process code spans first using placeholders so that
-  // bold/italic regexes cannot match inside already-emitted <code> content.
-  String applyInline(String s) {
-    final codePlaceholders = <String>[];
-    s = s.replaceAllMapped(RegExp(r'`([^`]+)`'), (m) {
-      final idx = codePlaceholders.length;
-      codePlaceholders.add('<code>${esc(m.group(1)!)}</code>');
-      return '\x00$idx\x00'; // null-byte fences, safe as Markdown is plain text
-    });
-    s = s.replaceAllMapped(
-      RegExp(r'(\*\*|__)(.+?)\1'),
-      (m) => '<strong>${m.group(2)!}</strong>',
-    );
-    s = s.replaceAllMapped(
-      RegExp(r'(\*|_)(.+?)\1'),
-      (m) => '<em>${m.group(2)!}</em>',
-    );
-    // Restore code placeholders.
-    for (int i = 0; i < codePlaceholders.length; i++) {
-      s = s.replaceAll('\x00$i\x00', codePlaceholders[i]);
-    }
-    return s;
-  }
-
-  for (final raw in lines) {
-    // ── Fenced code block ─────────────────────────────────────────────────
-    if (!inFence) {
-      final fm = RegExp(r'^(`{3,}|~{3,})(.*)$').firstMatch(raw);
-      if (fm != null) {
-        flushLists();
-        inFence = true;
-        fenceLang = fm.group(2)!.trim();
-        codeLines.clear();
-        continue;
-      }
-    } else {
-      if (RegExp(r'^(`{3,}|~{3,})\s*$').hasMatch(raw)) {
-        final attr = fenceLang.isNotEmpty ? ' class="language-$fenceLang"' : '';
-        buf.write('<pre><code$attr>${esc(codeLines.join('\n'))}</code></pre>');
-        inFence = false;
-        codeLines.clear();
-        continue;
-      }
-      codeLines.add(raw);
-      continue;
-    }
-
-    // ── Blank line ────────────────────────────────────────────────────────
-    if (raw.trim().isEmpty) {
-      flushLists();
-      continue;
-    }
-
-    // ── ATX heading ───────────────────────────────────────────────────────
-    final hm = RegExp(r'^(#{1,6})\s+(.+)$').firstMatch(raw);
-    if (hm != null) {
-      flushLists();
-      final lvl = hm.group(1)!.length;
-      buf.write('<h$lvl>${applyInline(esc(hm.group(2)!.trim()))}</h$lvl>');
-      continue;
-    }
-
-    // ── Horizontal rule ───────────────────────────────────────────────────
-    if (RegExp(r'^[-*_]{3,}\s*$').hasMatch(raw)) {
-      flushLists();
-      buf.write('<hr>');
-      continue;
-    }
-
-    // ── Blockquote ────────────────────────────────────────────────────────
-    final bq = RegExp(r'^>\s?(.*)$').firstMatch(raw);
-    if (bq != null) {
-      flushLists();
-      buf.write(
-        '<blockquote><p>${applyInline(esc(bq.group(1)!))}</p></blockquote>',
-      );
-      continue;
-    }
-
-    // ── Unordered list ────────────────────────────────────────────────────
-    final ul = RegExp(r'^[-*+]\s+(.+)$').firstMatch(raw);
-    if (ul != null) {
-      if (inOl) {
-        buf.write('</ol>');
-        inOl = false;
-      }
-      if (!inUl) {
-        buf.write('<ul>');
-        inUl = true;
-      }
-      buf.write('<li>${applyInline(esc(ul.group(1)!))}</li>');
-      continue;
-    }
-
-    // ── Ordered list ──────────────────────────────────────────────────────
-    final ol = RegExp(r'^(\d+)\.\s+(.+)$').firstMatch(raw);
-    if (ol != null) {
-      if (inUl) {
-        buf.write('</ul>');
-        inUl = false;
-      }
-      if (!inOl) {
-        buf.write('<ol>');
-        inOl = true;
-      }
-      buf.write('<li>${applyInline(esc(ol.group(2)!))}</li>');
-      continue;
-    }
-
-    // ── Plain paragraph ───────────────────────────────────────────────────
-    flushLists();
-    buf.write('<p>${applyInline(esc(raw))}</p>');
-  }
-
-  if (inFence && codeLines.isNotEmpty) {
-    buf.write('<pre><code>${esc(codeLines.join('\n'))}</code></pre>');
-  }
-  flushLists();
-  return buf.toString();
+  final document = md.Document(
+    blockSyntaxes: const [_LatexBlockSyntax()],
+    inlineSyntaxes: [_InlineDollarLatexSyntax(), _InlineParenLatexSyntax()],
+    extensionSet: _clipboardMarkdownExtensions,
+    encodeHtml: true,
+  );
+  return _CompactHtmlRenderer().render(document.parse(markdown.trim()));
 }
 
 // ---------------------------------------------------------------------------
@@ -193,12 +199,14 @@ String markdownSelectionToHtml(String markdown) {
 
 class _InlineMarkdownSpan {
   const _InlineMarkdownSpan({
-    required this.marker,
+    required this.openingMarker,
+    required this.closingMarker,
     required this.contentStart,
     required this.contentEnd,
   });
 
-  final String marker;
+  final String openingMarker;
+  final String closingMarker;
   final int contentStart;
   final int contentEnd;
 
@@ -244,10 +252,12 @@ _Projection _buildProjection(String source) {
   final lines = source.split('\n');
   int srcPos = 0;
   bool inFence = false;
+  String? mathBlockClosing;
 
   for (final line in lines) {
     final lineLen = line.length;
     final lineStart = srcPos;
+    final trimmedLine = line.trim();
 
     // Skip fenced code blocks (non-selectable widget).
     if (!inFence && RegExp(r'^(`{3,}|~{3,})').hasMatch(line)) {
@@ -263,8 +273,37 @@ _Projection _buildProjection(String source) {
       continue;
     }
 
+    // Math widgets are wrapped in SelectionContainer.disabled. Skip their
+    // source from the visible projection so text selected across a formula
+    // still maps to one contiguous Markdown source range.
+    if (mathBlockClosing != null) {
+      if (trimmedLine.endsWith(mathBlockClosing)) mathBlockClosing = null;
+      srcPos += lineLen + 1;
+      continue;
+    }
+    final opensDollarMath = trimmedLine.startsWith(r'$$');
+    final opensBracketMath = trimmedLine.startsWith(r'\[');
+    if (opensDollarMath || opensBracketMath) {
+      final opening = opensDollarMath ? r'$$' : r'\[';
+      final closing = opensDollarMath ? r'$$' : r'\]';
+      final remainder = trimmedLine.substring(opening.length);
+      final closingIndex = remainder.lastIndexOf(closing);
+      final closesOnSameLine =
+          closingIndex >= 0 &&
+          remainder.substring(closingIndex + closing.length).trim().isEmpty;
+      if (!closesOnSameLine) mathBlockClosing = closing;
+      srcPos += lineLen + 1;
+      continue;
+    }
+
     // Blank line: no visible text.
-    if (line.trim().isEmpty) {
+    if (trimmedLine.isEmpty) {
+      srcPos += lineLen + 1;
+      continue;
+    }
+
+    // HR: no visible text.
+    if (RegExp(r'^\s{0,3}[-*_]{3,}\s*$').hasMatch(line)) {
       srcPos += lineLen + 1;
       continue;
     }
@@ -280,7 +319,7 @@ _Projection _buildProjection(String source) {
     int contentStart = 0;
 
     // ATX heading: "## text" → skip "## "
-    final hmPfx = RegExp(r'^(#{1,6}) ').firstMatch(line);
+    final hmPfx = RegExp(r'^\s{0,3}(#{1,6}) ').firstMatch(line);
     if (hmPfx != null) {
       contentStart = hmPfx.group(0)!.length;
       _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
@@ -289,7 +328,7 @@ _Projection _buildProjection(String source) {
     }
 
     // Unordered list: "- text" → skip "- " (bullet is not selectable text)
-    final ulPfx = RegExp(r'^[-*+] ').firstMatch(line);
+    final ulPfx = RegExp(r'^\s*[-*+]\s+').firstMatch(line);
     if (ulPfx != null) {
       contentStart = ulPfx.group(0)!.length;
       _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
@@ -298,29 +337,25 @@ _Projection _buildProjection(String source) {
     }
 
     // Ordered list: "1. text" → KEEP "1. " (rendered as selectable text)
-    final olPfx = RegExp(r'^(\d+\.) ').firstMatch(line);
+    final olPfx = RegExp(r'^(\s*)(\d+[.)])\s+').firstMatch(line);
     if (olPfx != null) {
-      final prefix = olPfx.group(0)!; // e.g. "1. "
-      for (int i = 0; i < prefix.length; i++) {
-        emit(lineStart + i, prefix[i]);
+      final leadingLength = olPfx.group(1)!.length;
+      final marker = olPfx.group(2)!;
+      for (int i = 0; i < marker.length; i++) {
+        emit(lineStart + leadingLength + i, marker[i]);
       }
-      contentStart = prefix.length;
+      emit(lineStart + olPfx.group(0)!.length - 1, ' ');
+      contentStart = olPfx.group(0)!.length;
       _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
       srcPos += lineLen + 1;
       continue;
     }
 
     // Blockquote: "> text" → skip "> "
-    final bqPfx = RegExp(r'^> ?').firstMatch(line);
+    final bqPfx = RegExp(r'^\s{0,3}> ?').firstMatch(line);
     if (bqPfx != null) {
       contentStart = bqPfx.group(0)!.length;
       _emitInlineMd(line, lineStart, contentStart, emit, inlineSpans.add);
-      srcPos += lineLen + 1;
-      continue;
-    }
-
-    // HR: no visible text.
-    if (RegExp(r'^[-*_]{3,}\s*$').hasMatch(line)) {
       srcPos += lineLen + 1;
       continue;
     }
@@ -333,9 +368,8 @@ _Projection _buildProjection(String source) {
   return _Projection(chars.join(), indices, inlineSpans);
 }
 
-/// Emit visible characters for [line] starting at [contentStart],
-/// resolving inline markup (bold, italic, inline code) and mapping each
-/// character to its absolute source offset [lineStart + localOffset].
+/// Emits the recursively rendered inline text and maps every visible
+/// character to its absolute source offset.
 void _emitInlineMd(
   String line,
   int lineStart,
@@ -343,78 +377,103 @@ void _emitInlineMd(
   void Function(int, String) emit,
   void Function(_InlineMarkdownSpan) emitSpan,
 ) {
-  final content = line.substring(contentStart);
-  int i = 0;
-
-  while (i < content.length) {
-    final rest = content.substring(i);
-
-    // Inline code: `…` → emit inner content, skip backticks.
-    if (rest.startsWith('`')) {
-      final close = rest.indexOf('`', 1);
-      if (close != -1) {
-        final inner = rest.substring(1, close);
-        emitSpan(
-          _InlineMarkdownSpan(
-            marker: '`',
-            contentStart: lineStart + contentStart + i + 1,
-            contentEnd: lineStart + contentStart + i + close - 1,
-          ),
-        );
-        for (int j = 0; j < inner.length; j++) {
-          emit(lineStart + contentStart + i + 1 + j, inner[j]);
-        }
-        i += close + 1;
+  void emitRange(int start, int end) {
+    var i = start;
+    while (i < end) {
+      final dollarMath = _inlineDollarLatexRegExp.matchAsPrefix(line, i);
+      if (dollarMath != null &&
+          dollarMath.end <= end &&
+          _isValidDollarLatexBody(dollarMath.group(1)!)) {
+        i = dollarMath.end;
         continue;
       }
-    }
-
-    // Bold: **…** or __…__
-    if (rest.startsWith('**') || rest.startsWith('__')) {
-      final marker = rest.substring(0, 2);
-      final close = rest.indexOf(marker, 2);
-      if (close != -1) {
-        final inner = rest.substring(2, close);
-        emitSpan(
-          _InlineMarkdownSpan(
-            marker: marker,
-            contentStart: lineStart + contentStart + i + 2,
-            contentEnd: lineStart + contentStart + i + close - 1,
-          ),
-        );
-        for (int j = 0; j < inner.length; j++) {
-          emit(lineStart + contentStart + i + 2 + j, inner[j]);
-        }
-        i += close + 2;
+      final parenMath = _inlineParenLatexRegExp.matchAsPrefix(line, i);
+      if (parenMath != null && parenMath.end <= end) {
+        i = parenMath.end;
         continue;
       }
-    }
 
-    // Italic: *…* or _…_
-    if (rest.startsWith('*') || rest.startsWith('_')) {
-      final marker = rest[0];
-      final close = rest.indexOf(marker, 1);
-      if (close != -1) {
-        final inner = rest.substring(1, close);
-        emitSpan(
-          _InlineMarkdownSpan(
-            marker: marker,
-            contentStart: lineStart + contentStart + i + 1,
-            contentEnd: lineStart + contentStart + i + close - 1,
-          ),
-        );
-        for (int j = 0; j < inner.length; j++) {
-          emit(lineStart + contentStart + i + 1 + j, inner[j]);
+      // Inline code is literal: only the surrounding backticks disappear.
+      if (line[i] == '`') {
+        final close = line.indexOf('`', i + 1);
+        if (close != -1 && close < end) {
+          emitSpan(
+            _InlineMarkdownSpan(
+              openingMarker: '`',
+              closingMarker: '`',
+              contentStart: lineStart + i + 1,
+              contentEnd: lineStart + close - 1,
+            ),
+          );
+          for (var j = i + 1; j < close; j++) {
+            emit(lineStart + j, line[j]);
+          }
+          i = close + 1;
+          continue;
         }
-        i += close + 1;
+      }
+
+      String? marker;
+      if (i + 2 < end) {
+        final triple = line.substring(i, i + 3);
+        if (triple == '***' || triple == '___') marker = triple;
+      }
+      if (marker == null && i + 1 < end) {
+        final pair = line.substring(i, i + 2);
+        if (pair == '**' || pair == '__' || pair == '~~') marker = pair;
+      }
+      marker ??= (line[i] == '*' || line[i] == '_') ? line[i] : null;
+      if (marker != null) {
+        final close = line.indexOf(marker, i + marker.length);
+        if (close != -1 && close < end) {
+          emitSpan(
+            _InlineMarkdownSpan(
+              openingMarker: marker,
+              closingMarker: marker,
+              contentStart: lineStart + i + marker.length,
+              contentEnd: lineStart + close - 1,
+            ),
+          );
+          emitRange(i + marker.length, close);
+          i = close + marker.length;
+          continue;
+        }
+      }
+
+      // Markdown links render only their label as selectable text.
+      if (line[i] == '[') {
+        final labelEnd = line.indexOf('](', i + 1);
+        final destinationEnd = labelEnd == -1
+            ? -1
+            : line.indexOf(')', labelEnd + 2);
+        if (labelEnd != -1 && destinationEnd != -1 && destinationEnd < end) {
+          emitSpan(
+            _InlineMarkdownSpan(
+              openingMarker: '[',
+              closingMarker: line.substring(labelEnd, destinationEnd + 1),
+              contentStart: lineStart + i + 1,
+              contentEnd: lineStart + labelEnd - 1,
+            ),
+          );
+          emitRange(i + 1, labelEnd);
+          i = destinationEnd + 1;
+          continue;
+        }
+      }
+
+      // Backslash escapes render the escaped punctuation without the slash.
+      if (line[i] == r'\' && i + 1 < end) {
+        emit(lineStart + i + 1, line[i + 1]);
+        i += 2;
         continue;
       }
-    }
 
-    // Plain character.
-    emit(lineStart + contentStart + i, content[i]);
-    i++;
+      emit(lineStart + i, line[i]);
+      i++;
+    }
   }
+
+  emitRange(contentStart, line.length);
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +584,6 @@ String findMarkdownRangeForSelection(
     // either edge. This lets a partial bold/code selection paste richly
     // without bringing along text outside the selection.
     final sourceFragment = markdownSource.substring(srcStart, srcEnd + 1);
-    if (sourceFragment.contains('\n')) return selectedPlainText;
 
     final openingSpans =
         proj.inlineSpans.where((span) => span.contains(srcStart)).toList()
@@ -534,9 +592,9 @@ String findMarkdownRangeForSelection(
         proj.inlineSpans.where((span) => span.contains(srcEnd)).toList()
           ..sort((a, b) => a.contentEnd.compareTo(b.contentEnd));
 
-    return '${openingSpans.map((span) => span.marker).join()}'
+    return '${openingSpans.map((span) => span.openingMarker).join()}'
         '$sourceFragment'
-        '${closingSpans.map((span) => span.marker).join()}';
+        '${closingSpans.map((span) => span.closingMarker).join()}';
   }
 
   return markdownSource.substring(lineStart, lineEnd + 1);

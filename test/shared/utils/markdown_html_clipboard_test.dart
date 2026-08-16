@@ -52,6 +52,16 @@ void main() {
       );
     });
 
+    test('raw HTML blocks are escaped instead of copied as active HTML', () {
+      final html = markdownSelectionToHtml('<script>alert("x")</script>');
+
+      expect(html, isNot(contains('<script>')));
+      expect(
+        html,
+        contains('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;'),
+      );
+    });
+
     test('unordered list', () {
       expect(
         markdownSelectionToHtml('- Apples\n- Bananas\n- Cherries'),
@@ -127,6 +137,42 @@ void main() {
       final html = markdownSelectionToHtml('`**not bold**`');
       expect(html, '<p><code>**not bold**</code></p>');
       expect(html, isNot(contains('<strong>')));
+    });
+
+    test('nested mixed lists retain their hierarchy', () {
+      const markdown = '''
+- **Parent**
+  1. Child with `code`
+     - Grandchild
+- Sibling
+''';
+
+      final html = markdownSelectionToHtml(markdown);
+
+      expect(html, contains('<strong>Parent</strong>'));
+      expect(html, contains('<code>code</code>'));
+      expect(html, contains('<ul><li>Grandchild</li></ul>'));
+      expect(html, contains('<ol>'));
+      expect(html, isNot(contains('<p>  1.')));
+      expect(html, isNot(contains('<p>     -')));
+    });
+
+    test('nested inline emphasis remains rich', () {
+      final html = markdownSelectionToHtml('***very important***');
+
+      expect(html, contains('<em><strong>very important</strong></em>'));
+    });
+
+    test('parenthesis and bracket LaTeX become semantic math nodes', () {
+      final inline = markdownSelectionToHtml(r'Value: \(x_1 + x_2\)');
+      final block = markdownSelectionToHtml(r'''\[
+\frac{a}{b}
+\]''');
+
+      expect(inline, contains('class="math math-inline"'));
+      expect(inline, contains('data-latex="x_1 + x_2"'));
+      expect(block, contains('class="math math-block"'));
+      expect(block, contains(r'data-latex="\frac{a}{b}"'));
     });
   });
 
@@ -323,6 +369,89 @@ void main() {
 
       expect(payload.plainText, 'with FVL');
       expect(payload.htmlText, '<p><strong>with FVL</strong></p>');
+    });
+
+    test('partial multi-line selection retains rich formatting', () {
+      const markdown = '''
+Before **start** tail
+- **middle** item
+After `end` tail
+''';
+      const selected = 'start tail\n•middle item\nAfter end';
+
+      final payload = buildMarkdownClipboardPayload(
+        selected,
+        markdownSource: markdown,
+      );
+
+      expect(payload.plainText, selected);
+      expect(payload.htmlText, contains('<strong>start</strong>'));
+      expect(payload.htmlText, contains('<ul>'));
+      expect(payload.htmlText, contains('<strong>middle</strong>'));
+      expect(payload.htmlText, contains('<code>end</code>'));
+      expect(payload.htmlText, isNot(contains('Before')));
+      expect(payload.htmlText, isNot(contains('end</code> tail')));
+    });
+
+    test('nested list selection retains hierarchy and inline formatting', () {
+      const markdown = '''
+- **Parent**
+  1. Child with `code`
+     - Grandchild
+- Sibling
+''';
+      const selected = '•Parent\n1. Child with code\n•Grandchild\n•Sibling';
+
+      final payload = buildMarkdownClipboardPayload(
+        selected,
+        markdownSource: markdown,
+      );
+
+      expect(payload.plainText, selected);
+      expect(payload.htmlText, contains('<strong>Parent</strong>'));
+      expect(payload.htmlText, contains('<code>code</code>'));
+      expect(payload.htmlText, contains('<ul><li>Grandchild</li></ul>'));
+      expect(payload.htmlText, contains('<ol>'));
+    });
+
+    test('inline LaTeX does not collapse the selection to plain HTML', () {
+      const markdown = r'Before **bold** and $E = mc^2$ after.';
+      const selected = 'Before bold and \uFFFC after.';
+
+      final payload = buildMarkdownClipboardPayload(
+        selected,
+        markdownSource: markdown,
+      );
+
+      expect(payload.plainText, selected);
+      expect(payload.htmlText, contains('<strong>bold</strong>'));
+      expect(payload.htmlText, contains('class="math math-inline"'));
+      expect(payload.htmlText, contains('data-latex="E = mc^2"'));
+      expect(payload.htmlText, isNot(contains('\uFFFC')));
+    });
+
+    test('block LaTeX between selected blocks remains in rich HTML', () {
+      const markdown = r'''
+**Before**
+
+$$
+\frac{a}{b}
+$$
+
+After
+''';
+      const selected = 'BeforeAfter';
+
+      final payload = buildMarkdownClipboardPayload(
+        selected,
+        markdownSource: markdown,
+      );
+
+      expect(payload.plainText, selected);
+      expect(payload.htmlText, contains('<strong>Before</strong>'));
+      expect(payload.htmlText, contains('class="math math-block"'));
+      expect(payload.htmlText, contains(r'data-latex="\frac{a}{b}"'));
+      expect(payload.htmlText, contains('<p>After</p>'));
     });
   });
 
