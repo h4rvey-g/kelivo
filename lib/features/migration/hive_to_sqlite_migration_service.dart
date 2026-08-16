@@ -17,6 +17,7 @@ import '../../core/models/message_part.dart';
 import '../../core/services/backup/backup_settings_validator.dart';
 import '../../core/services/backup/restore_durability.dart';
 import '../../core/services/migration/legacy_message_content_decoder.dart';
+import '../../core/services/migration/legacy_record_sanitizer.dart';
 import '../../utils/app_directories.dart';
 import '../../utils/sandbox_path_resolver.dart';
 
@@ -186,6 +187,10 @@ class HiveToSqliteMigrationService {
   /// bad message is isolated instead of failing the whole migration.
   @visibleForTesting
   Set<String> debugFailMessageIdsForTest = <String>{};
+  @visibleForTesting
+  Set<String> debugFailConversationKeysForTest = <String>{};
+  @visibleForTesting
+  Set<String> debugFailPrescanMessageIdsForTest = <String>{};
   final RestoreDurability _durability;
   final _controller = StreamController<HiveToSqliteMigrationStatus>.broadcast();
   final _log = <String>[];
@@ -458,10 +463,29 @@ class HiveToSqliteMigrationService {
       await _deleteSqliteFamily(tempFile);
       repo = ChatDatabaseRepository.open(file: tempFile);
 
+      // 1.1.17 tolerated dangling references, cross-conversation reuse and
+      // duplicate (groupId, version) pairs at runtime; the batches must repair
+      // or skip those shapes instead of failing the whole migration.
+      final repairStats = _MigrationRepairStats();
       final conversations = <Conversation>[];
       for (final key in conversationsBox.keys) {
-        final conversation = await conversationsBox.get(key);
-        if (conversation != null) conversations.add(conversation);
+        try {
+          assert(() {
+            if (debugFailConversationKeysForTest.contains('$key')) {
+              throw StateError('debug_forced_conversation_decode_failure');
+            }
+            return true;
+          }());
+          final conversation = await conversationsBox.get(key);
+          if (conversation != null) conversations.add(conversation);
+        } catch (error, stackTrace) {
+          // A conversation record that cannot be deserialized must cost only
+          // that conversation, not the whole migration. The Hive source is
+          // retained, so nothing is destroyed.
+          repairStats.undecodableConversations++;
+          _logLine('legacy-conversation skipped ($key): $error');
+          _logLine(stackTrace.toString());
+        }
       }
       conversations.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
@@ -489,24 +513,23 @@ class HiveToSqliteMigrationService {
       );
 
       await repo.clearAllData();
-      // 1.1.17 tolerated dangling references, cross-conversation reuse and
-      // duplicate (groupId, version) pairs at runtime; the batches must repair
-      // or skip those shapes instead of failing the whole migration.
-      final repairStats = _MigrationRepairStats();
       final seenMessageIds = <String>{};
       await _recordStageBreadcrumb(
         HiveToSqliteMigrationStage.migrating,
         'messages',
       );
       for (final legacyConversation in conversations) {
-        final conversation = await _convertLegacyVersionSelections(
-          await _convertLegacyTruncateIndex(
-            legacyConversation,
+        final conversation = _sanitizeLegacyConversationFields(
+          await _convertLegacyVersionSelections(
+            await _convertLegacyTruncateIndex(
+              legacyConversation,
+              messagesBox,
+              seenMessageIds,
+            ),
             messagesBox,
             seenMessageIds,
           ),
-          messagesBox,
-          seenMessageIds,
+          repairStats,
         );
         var needsConversationInsert = true;
         var order = 0;
@@ -544,6 +567,14 @@ class HiveToSqliteMigrationService {
               if (message.conversationId != conversation.id) {
                 repairStats.conversationIdMismatches++;
                 message = message.copyWith(conversationId: conversation.id);
+              }
+              // Field-level repair (empty role, negative tokens/duration,
+              // out-of-range version, inverted reasoning timestamps) shares
+              // logic with the chats.json import boundary.
+              final sanitized = sanitizeLegacyMessageFields(message);
+              if (!identical(sanitized, message)) {
+                repairStats.dirtyNumericFields++;
+                message = sanitized;
               }
               final groupId = message.groupId;
               // '' is stored verbatim and is a real value to the
@@ -774,6 +805,42 @@ class HiveToSqliteMigrationService {
     }
   }
 
+  /// Delegates to the shared legacy sanitizer and counts repairs in the
+  /// migration stats. Out-of-range counters in dirty Hive data would
+  /// otherwise abort the whole migration with SQLITE_CONSTRAINT_CHECK.
+  Conversation _sanitizeLegacyConversationFields(
+    Conversation conversation,
+    _MigrationRepairStats stats,
+  ) {
+    final sanitized = sanitizeLegacyConversationFields(conversation);
+    if (!identical(sanitized, conversation)) {
+      stats.dirtyNumericFields++;
+    }
+    return sanitized;
+  }
+
+  /// Prescan-safe message read: an undecodable record is treated like a
+  /// dangling reference instead of aborting the migration. The same record
+  /// is read again by the main loop, where the failure is counted once in
+  /// the repair stats.
+  Future<ChatMessage?> _tryGetLegacyMessage(
+    LazyBox<ChatMessage> messagesBox,
+    String messageId,
+  ) async {
+    try {
+      assert(() {
+        if (debugFailPrescanMessageIdsForTest.contains(messageId)) {
+          throw StateError('debug_forced_prescan_decode_failure');
+        }
+        return true;
+      }());
+      return await messagesBox.get(messageId);
+    } catch (error) {
+      _logLine('legacy-message prescan read failed ($messageId): $error');
+      return null;
+    }
+  }
+
   Future<Conversation> _convertLegacyTruncateIndex(
     Conversation conversation,
     LazyBox<ChatMessage> messagesBox,
@@ -786,7 +853,10 @@ class HiveToSqliteMigrationService {
 
     final groupsBeforeTruncate = <String>{};
     for (var i = 0; i < truncateIndex; i++) {
-      final message = await messagesBox.get(conversation.messageIds[i]);
+      final message = await _tryGetLegacyMessage(
+        messagesBox,
+        conversation.messageIds[i],
+      );
       if (message == null || alreadyMigratedMessageIds.contains(message.id)) {
         continue;
       }
@@ -814,7 +884,7 @@ class HiveToSqliteMigrationService {
     final seenGroupVersions = <String>{};
     final maxGroupVersions = <String, int>{};
     for (final messageId in conversation.messageIds) {
-      final message = await messagesBox.get(messageId);
+      final message = await _tryGetLegacyMessage(messagesBox, messageId);
       if (message == null) continue;
       messagesByGroup[message.groupId ?? message.id]?.add(message);
       if (alreadyMigratedMessageIds.contains(message.id) ||
@@ -1842,19 +1912,25 @@ class _MigrationRepairStats {
   int conversationIdMismatches = 0;
   int versionConflicts = 0;
   int decodeFailures = 0;
+  int dirtyNumericFields = 0;
+  int undecodableConversations = 0;
 
   bool get hasIssues =>
       danglingMessageRefs > 0 ||
       duplicateMessageIds > 0 ||
       conversationIdMismatches > 0 ||
       versionConflicts > 0 ||
-      decodeFailures > 0;
+      decodeFailures > 0 ||
+      dirtyNumericFields > 0 ||
+      undecodableConversations > 0;
 
   String describe() {
     return 'dangling=$danglingMessageRefs duplicates=$duplicateMessageIds '
         'conversationIdMismatches=$conversationIdMismatches '
         'versionConflicts=$versionConflicts '
-        'decodeFailures=$decodeFailures';
+        'decodeFailures=$decodeFailures '
+        'dirtyNumericFields=$dirtyNumericFields '
+        'undecodableConversations=$undecodableConversations';
   }
 }
 

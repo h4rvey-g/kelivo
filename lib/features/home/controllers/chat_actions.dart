@@ -130,6 +130,22 @@ class ChatActions {
     required bool isTemporaryConversation,
   }) => deleteTrailingEnabled && isTemporaryConversation;
 
+  /// Whether regenerate should append a new assistant reply instead of adding
+  /// a version to an existing reply group.
+  ///
+  /// [targetGroupId] is null when the assistant is treated as a new reply, or
+  /// when the anchor is a user message with no following assistant group
+  /// (e.g. every generated version was deleted).
+  @visibleForTesting
+  static bool shouldBeginNewAssistantReply({
+    required String role,
+    required String? targetGroupId,
+    required bool assistantAsNewReply,
+  }) {
+    if (assistantAsNewReply && role == 'assistant') return true;
+    return targetGroupId == null && role == 'user';
+  }
+
   ChatActions({
     required this.chatService,
     required this.chatController,
@@ -229,8 +245,8 @@ class ChatActions {
   void Function(String messageId, String content, {bool immediate})?
   onScheduleImageSanitize;
 
-  /// Called when streaming finishes.
-  VoidCallback? onStreamFinished;
+  /// Called when streaming finishes for [conversationId].
+  void Function(String conversationId)? onStreamFinished;
 
   /// Called when a successful assistant reply is finalized.
   void Function(ChatMessage message)? onAssistantMessageFinished;
@@ -426,6 +442,15 @@ class ChatActions {
     );
   }
 
+  /// Elapsed milliseconds since [start], or null when unknown or when a
+  /// device clock rollback made the difference negative (the message_rows
+  /// CHECK constraint rejects negative durations).
+  int? _elapsedMsFrom(DateTime? start) {
+    if (start == null) return null;
+    final elapsed = DateTime.now().difference(start).inMilliseconds;
+    return elapsed < 0 ? null : elapsed;
+  }
+
   ChatMessage _streamingMessageSnapshot(stream_ctrl.StreamingState state) {
     final messageId = state.messageId;
     final index = _messages.indexWhere((message) => message.id == messageId);
@@ -438,18 +463,19 @@ class ChatActions {
       promptTokens: state.usage?.promptTokens,
       completionTokens: state.usage?.completionTokens,
       cachedTokens: state.usage?.cachedTokens,
-      durationMs: state.streamStartedAt == null
-          ? base.durationMs
-          : DateTime.now().difference(state.streamStartedAt!).inMilliseconds,
+      // copyWith keeps base.durationMs when this resolves to null.
+      durationMs: _elapsedMsFrom(state.streamStartedAt),
     );
   }
 
   void _scheduleStreamingCheckpoint(stream_ctrl.StreamingState state) {
     final writer = _checkpointWriters[state.messageId];
     if (writer == null || state.finishHandled) return;
-    final message = _streamingMessageSnapshot(state);
-    _activeAssistantMessages.put(message);
-    writer.add(_createStreamingCheckpoint(message));
+    writer.add(() {
+      final message = _streamingMessageSnapshot(state);
+      _activeAssistantMessages.put(message);
+      return _createStreamingCheckpoint(message);
+    });
   }
 
   _StreamingCheckpoint _createStreamingCheckpoint(ChatMessage message) {
@@ -1250,7 +1276,12 @@ class ChatActions {
     }
 
     late final ({ChatMessage assistantMessage, String? runId}) begin;
-    if (assistantAsNewReply && message.role == 'assistant') {
+    final targetGroupId = versioning.targetGroupId;
+    if (shouldBeginNewAssistantReply(
+      role: message.role,
+      targetGroupId: targetGroupId,
+      assistantAsNewReply: assistantAsNewReply,
+    )) {
       begin = await messageGenerationService.beginAssistantGeneration(
         conversationId: conversation.id,
         modelId: modelId,
@@ -1259,7 +1290,6 @@ class ChatActions {
         truncateFuture: truncateFuture,
       );
     } else {
-      final targetGroupId = versioning.targetGroupId;
       if (targetGroupId == null) {
         return ChatActionResult.error('invalid_versioning');
       }
@@ -1596,7 +1626,14 @@ class ChatActions {
       streamController.cleanupTimers(streaming.id);
 
       final idx = _messages.indexWhere((m) => m.id == streaming.id);
-      final latestStreaming = idx == -1 ? streaming : _messages[idx];
+      var latestStreaming = idx == -1 ? streaming : _messages[idx];
+      if (idx == -1) {
+        final writer = _checkpointWriters[streaming.id];
+        if (writer != null) {
+          await writer.barrier();
+          latestStreaming = _activeAssistantMessages[cid] ?? latestStreaming;
+        }
+      }
 
       streamController.finishReasoningIfNeeded(streaming.id);
       final finalizedMessage = _messageWithCurrentReasoning(
@@ -1814,19 +1851,7 @@ class ChatActions {
     ChatStreamChunk chunk,
     stream_ctrl.StreamingState state,
   ) async {
-    await streamController.handleReasoningChunk(
-      chunk,
-      state,
-      updateReasoningInDb:
-          (
-            String messageId, {
-            String? reasoningText,
-            DateTime? reasoningStartAt,
-            String? reasoningSegmentsJson,
-          }) async {
-            // The complete reasoning snapshot is coalesced after this chunk.
-          },
-    );
+    await streamController.handleReasoningChunk(chunk, state);
   }
 
   /// Handle tool calls chunk from stream.
@@ -1918,43 +1943,56 @@ class ChatActions {
       state.totalTokens = state.usage!.totalTokens;
     }
 
-    String streamingProcessed = _transformAssistantContent(state);
-    if (streamingProcessed.contains('data:image') &&
-        streamingProcessed.contains('base64,')) {
-      try {
-        final sanitized =
-            await MarkdownMediaSanitizer.replaceInlineBase64Images(
-              streamingProcessed,
-            );
-        if (sanitized != streamingProcessed) {
-          streamingProcessed = sanitized;
-          state.fullContentRaw = sanitized;
-        }
-      } catch (e) {
-        // ignore
-      }
+    final probe = state.inlineBase64TailProbe + chunkContent;
+    if (!state.hasInlineBase64 && probe.contains('data:image')) {
+      state.hasInlineBase64 = true;
+    }
+    if (chunkContent.isNotEmpty) {
+      state.inlineBase64TailProbe = chunkContent.length > 16
+          ? chunkContent.substring(chunkContent.length - 16)
+          : chunkContent;
     }
 
-    // After any await point, _finishStreaming may have already run and
-    // updated _messages[index] with the FULL final content. If we continue
-    // with this stale streamingProcessed we would overwrite the final content
-    // with a partial snapshot. Bail out early to prevent that.
-    if (state.finishHandled) return;
+    if (state.hasInlineBase64) {
+      String streamingProcessed = _transformAssistantContent(state);
+      if (streamingProcessed.contains('data:image') &&
+          streamingProcessed.contains('base64,')) {
+        try {
+          final sanitized =
+              await MarkdownMediaSanitizer.replaceInlineBase64Images(
+                streamingProcessed,
+              );
+          if (sanitized != streamingProcessed) {
+            streamingProcessed = sanitized;
+            state.fullContentRaw = sanitized;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
 
-    onScheduleImageSanitize?.call(
-      messageId,
-      streamingProcessed,
-      immediate: true,
-    );
-    if (state.ctx.streamOutput && _currentConversation?.id == conversationId) {
-      final index = _messages.indexWhere((m) => m.id == messageId);
-      if (index != -1) {
-        chatController.replaceMessageSnapshot(
-          _messages[index].copyWith(
-            content: streamingProcessed,
-            totalTokens: state.totalTokens,
-          ),
-        );
+      // After any await point, _finishStreaming may have already run and
+      // updated _messages[index] with the FULL final content. If we continue
+      // with this stale streamingProcessed we would overwrite the final content
+      // with a partial snapshot. Bail out early to prevent that.
+      if (state.finishHandled) return;
+
+      onScheduleImageSanitize?.call(
+        messageId,
+        streamingProcessed,
+        immediate: true,
+      );
+      if (state.ctx.streamOutput &&
+          _currentConversation?.id == conversationId) {
+        final index = _messages.indexWhere((m) => m.id == messageId);
+        if (index != -1) {
+          chatController.replaceMessageSnapshot(
+            _messages[index].copyWith(
+              content: streamingProcessed,
+              totalTokens: state.totalTokens,
+            ),
+          );
+        }
       }
     }
 
@@ -1975,7 +2013,7 @@ class ChatActions {
       streamController.scheduleThrottledUpdate(
         messageId,
         conversationId,
-        streamingProcessed,
+        () => _transformAssistantContent(state),
         totalTokens: state.totalTokens,
         contentSplitOffsets: state.contentSplitOffsets,
         reasoningCountAtSplit: state.reasoningCountAtSplit,
@@ -1983,9 +2021,7 @@ class ChatActions {
         promptTokens: state.usage?.promptTokens,
         completionTokens: state.usage?.completionTokens,
         cachedTokens: state.usage?.cachedTokens,
-        durationMs: state.streamStartedAt != null
-            ? DateTime.now().difference(state.streamStartedAt!).inMilliseconds
-            : null,
+        durationMs: _elapsedMsFrom(state.streamStartedAt),
         updateMessageInList: (id, content, tokens) {
           onContentUpdated?.call(id, content, tokens);
         },
@@ -2081,7 +2117,7 @@ class ChatActions {
 
     // Notify for background notification if needed
     if (!state.finishHandled) {
-      onStreamFinished?.call();
+      onStreamFinished?.call(conversationId);
     }
 
     // This finish handler runs inside the sequential drain, so awaiting the
@@ -2101,6 +2137,11 @@ class ChatActions {
 
     // Mark streaming as ended to allow UI rebuilds again
     streamController.markStreamingEnded(messageId);
+
+    // Let the smoothing buffer catch up first: cleanupTimers publishes the
+    // whole remaining backlog at once, which a bottom-pinned timeline shows as
+    // a single large jump just before the reply ends.
+    await streamController.drainSmoothStream(messageId);
 
     // Clean up stream throttle timer and flush final content
     streamController.cleanupTimers(messageId);
@@ -2124,9 +2165,7 @@ class ChatActions {
     final processedContent = _transformAssistantContent(state);
 
     // Compute final duration
-    final finalDurationMs = state.streamStartedAt != null
-        ? DateTime.now().difference(state.streamStartedAt!).inMilliseconds
-        : null;
+    final finalDurationMs = _elapsedMsFrom(state.streamStartedAt);
     final finalPromptTokens = state.usage?.promptTokens;
     final finalCompletionTokens = state.usage?.completionTokens;
     final finalCachedTokens = state.usage?.cachedTokens;
@@ -2186,6 +2225,10 @@ class ChatActions {
       }
       streamController.removeStreamingNotifier(messageId);
       _setConversationLoading(conversationId, false);
+      // Terminal widgets are usually taller than the streaming ones; pin
+      // once more after isGenerating becomes false so layout-phase follow
+      // does not miss that height change.
+      onStreamFinished?.call(conversationId);
     }
   }
 
@@ -2236,7 +2279,7 @@ class ChatActions {
       // handler itself and prevent the UI error callback below from firing.
       _conversationStreams.remove(conversationId);
       onStreamError?.call(errorText);
-      onStreamFinished?.call();
+      onStreamFinished?.call(conversationId);
       await _finishIosBackgroundGeneration(success: false, detail: errorText);
     }
   }
@@ -2251,6 +2294,10 @@ class ChatActions {
 
     // Ensure streaming is marked as ended
     streamController.markStreamingEnded(messageId);
+
+    // Same reason as in _finishStreaming: drain the smoothing buffer through
+    // its own tick instead of dumping it into one frame.
+    await streamController.drainSmoothStream(messageId);
 
     streamController.cleanupTimers(messageId);
 
@@ -2269,7 +2316,7 @@ class ChatActions {
     }
     // Idempotent: ensure notifier is removed even if _finishStreaming was skipped
     streamController.removeStreamingNotifier(messageId);
-    onStreamFinished?.call();
+    onStreamFinished?.call(conversationId);
     // The source stream is already done and this handler runs inside the
     // sequential drain; awaiting the barrier cancel here would wait on this
     // very drain and never complete, so only drop the map entry.
@@ -2296,8 +2343,11 @@ class ChatActions {
     }
     if (streaming == null) return;
 
-    // Use the UI-side content snapshot (may be ahead of last persisted chunk)
-    final latestContent = streaming.content;
+    // Prefer the full accumulated stream text over the typewriter prefix that
+    // may still be sitting on the in-memory message widget.
+    final latestContent =
+        streamController.getPendingStreamContent(streaming.id) ??
+        streaming.content;
     // Also capture reasoning progress if tracked in-memory
     final r = streamController.reasoning[streaming.id];
     final segs = streamController.reasoningSegments[streaming.id];
@@ -2328,7 +2378,7 @@ class ChatActions {
         _copyToolEvents(streaming.id),
       );
     } else {
-      writer.add(_createStreamingCheckpoint(snapshot));
+      writer.add(() => _createStreamingCheckpoint(snapshot));
       await writer.barrier();
     }
     // Ensure any inline data URLs get converted even if the user navigates away mid-stream

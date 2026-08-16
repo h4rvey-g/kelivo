@@ -205,6 +205,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   // The ASR provider owns microphone capture. This widget only owns the
   // composer presentation and an exact snapshot used by Cancel.
   final List<double> _voiceLevels = <double>[];
+  final ValueNotifier<int> _voiceLevelsVersion = ValueNotifier<int>(0);
   static const int _maxVoiceLevels = 400;
   Timer? _voiceLevelTimer;
   TextEditingValue? _voiceBaseValue;
@@ -216,11 +217,14 @@ class _ChatInputBarState extends State<ChatInputBar>
       Queue<_ImageProcessingTask>();
   final Set<int> _processingImageIds = <int>{};
   final Set<int> _failedImageIds = <int>{};
+  final Set<int> _pendingImagePasteIds = <int>{};
   final Set<int> _pendingTextPasteIds = <int>{};
   static const int _maxConcurrentImageTasks = 2;
   int _activeImageTasks = 0;
   int _nextImageId = 0;
+  int _nextImagePasteId = 0;
   int _nextTextPasteId = 0;
+  int _draftReplacementRevision = 0;
   Future<void> _textPasteWriteTail = Future<void>.value();
   final List<DocumentAttachment> _docs =
       <DocumentAttachment>[]; // files to upload
@@ -317,6 +321,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   bool get _hasUnreadyImages =>
       _processingImageIds.isNotEmpty ||
       _failedImageIds.isNotEmpty ||
+      _pendingImagePasteIds.isNotEmpty ||
       _pendingTextPasteIds.isNotEmpty;
 
   // Instance method for onChanged to avoid recreating the callback on every build.
@@ -481,23 +486,17 @@ class _ChatInputBarState extends State<ChatInputBar>
         dir,
         task.config,
       );
-      if (savedPath != null &&
-          task.deleteSourceAfterProcessing &&
-          !p.equals(
-            p.normalize(p.absolute(task.sourcePath)),
-            p.normalize(p.absolute(savedPath)),
-          )) {
-        try {
-          await File(task.sourcePath).delete();
-        } catch (error) {
-          debugPrint(
-            '[ChatInputBar] Failed to delete processed source ${task.sourcePath}: $error',
-          );
-        }
-      }
     } catch (_) {
       savedPath = null;
     } finally {
+      if (task.deleteSourceAfterProcessing &&
+          (savedPath == null ||
+              !p.equals(
+                p.normalize(p.absolute(task.sourcePath)),
+                p.normalize(p.absolute(savedPath)),
+              ))) {
+        await _deleteTemporaryImageSource(task.sourcePath);
+      }
       _activeImageTasks--;
     }
 
@@ -536,13 +535,22 @@ class _ChatInputBarState extends State<ChatInputBar>
 
   void _discardImageState(Iterable<int> ids) {
     final discarded = ids.toSet();
+    final discardedQueuedTasks = _imageProcessingQueue
+        .where((task) => discarded.contains(task.id))
+        .toList(growable: false);
     _processingImageIds.removeAll(discarded);
     _failedImageIds.removeAll(discarded);
     _imageProcessingQueue.removeWhere((task) => discarded.contains(task.id));
+    for (final task in discardedQueuedTasks) {
+      if (task.deleteSourceAfterProcessing) {
+        unawaited(_deleteTemporaryImageSource(task.sourcePath));
+      }
+    }
   }
 
   void _clearImages() {
     setState(() {
+      _pendingImagePasteIds.clear();
       _discardImageState(_images.map((image) => image.id));
       _images.clear();
     });
@@ -562,6 +570,8 @@ class _ChatInputBarState extends State<ChatInputBar>
 
   void _restoreInput(ChatInputData input) {
     setState(() {
+      _draftReplacementRevision++;
+      _pendingImagePasteIds.clear();
       _pendingTextPasteIds.clear();
       _discardImageState(_images.map((image) => image.id));
       _images
@@ -598,7 +608,9 @@ class _ChatInputBarState extends State<ChatInputBar>
 
   void _clearDraft() {
     setState(() {
+      _draftReplacementRevision++;
       _controller.clear();
+      _pendingImagePasteIds.clear();
       _pendingTextPasteIds.clear();
       _discardImageState(_images.map((image) => image.id));
       _images.clear();
@@ -666,14 +678,17 @@ class _ChatInputBarState extends State<ChatInputBar>
       } catch (_) {}
     }
     _repeatTimers.clear();
+    _pendingImagePasteIds.clear();
+    _pendingTextPasteIds.clear();
+    _discardImageState(_images.map((image) => image.id));
     _imageProcessingQueue.clear();
     _processingImageIds.clear();
     _failedImageIds.clear();
-    _pendingTextPasteIds.clear();
     widget.mediaController?._unbind(this);
     if (widget.controller == null) {
       _controller.dispose();
     }
+    _voiceLevelsVersion.dispose();
     super.dispose();
   }
 
@@ -797,7 +812,7 @@ class _ChatInputBarState extends State<ChatInputBar>
       final previous = _voiceLevels.isEmpty ? 0.03 : _voiceLevels.last;
       _voiceLevels.add(previous + (level - previous) * 0.55);
       if (_voiceLevels.length > _maxVoiceLevels) _voiceLevels.removeAt(0);
-      setState(() {});
+      _voiceLevelsVersion.value++;
     });
   }
 
@@ -964,11 +979,14 @@ class _ChatInputBarState extends State<ChatInputBar>
                           alpha: 0.72,
                         ),
                       )
-                    : _VoiceWaveform(
-                        key: const ValueKey('voice-waveform'),
-                        levels: _voiceLevels,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.85,
+                    : ValueListenableBuilder<int>(
+                        valueListenable: _voiceLevelsVersion,
+                        builder: (context, _, _) => _VoiceWaveform(
+                          key: const ValueKey('voice-waveform'),
+                          levels: _voiceLevels,
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.85,
+                          ),
                         ),
                       ),
               ),
@@ -1014,16 +1032,23 @@ class _ChatInputBarState extends State<ChatInputBar>
         _finishingVoice) {
       return;
     }
-    final text = _controller.text.trim();
+    final submittedValue = _controller.value;
+    final submittedText = submittedValue.text;
+    final text = submittedText.trim();
     if (text.isEmpty && _images.isEmpty && _docs.isEmpty) return;
+    final submittedImages = List<_DraftImage>.of(_images);
+    final submittedImageIds = submittedImages.map((image) => image.id).toSet();
+    final submittedDocuments = List<DocumentAttachment>.of(_docs);
+    final submittedDraftRevision = _draftReplacementRevision;
     _isSubmitting = true;
+    setState(_controller.clear);
     try {
       final result =
           await widget.onSend?.call(
             ChatInputData(
               text: text,
-              imagePaths: _images.map((image) => image.path).toList(),
-              documents: List.of(_docs),
+              imagePaths: submittedImages.map((image) => image.path).toList(),
+              documents: List<DocumentAttachment>.of(submittedDocuments),
               allowImagesApiRouting: _allowImagesApiRouting,
             ),
           ) ??
@@ -1031,10 +1056,12 @@ class _ChatInputBarState extends State<ChatInputBar>
       if (!mounted) return;
       if (result == ChatInputSubmissionResult.sent ||
           result == ChatInputSubmissionResult.queued) {
-        _controller.clear();
-        _discardImageState(_images.map((image) => image.id));
-        _images.clear();
-        _docs.clear();
+        if (_draftReplacementRevision != submittedDraftRevision) return;
+        _discardImageState(submittedImageIds);
+        _images.removeWhere((image) => submittedImageIds.contains(image.id));
+        for (final document in submittedDocuments) {
+          _docs.remove(document);
+        }
         setState(() {});
         // Keep focus on desktop so user can continue typing
         try {
@@ -1042,10 +1069,43 @@ class _ChatInputBarState extends State<ChatInputBar>
             widget.focusNode?.requestFocus();
           }
         } catch (_) {}
+      } else if (_draftReplacementRevision == submittedDraftRevision) {
+        setState(() => _restoreSubmittedText(submittedValue));
       }
+    } catch (_) {
+      if (mounted && _draftReplacementRevision == submittedDraftRevision) {
+        setState(() => _restoreSubmittedText(submittedValue));
+      }
+      rethrow;
     } finally {
       _isSubmitting = false;
     }
+  }
+
+  void _restoreSubmittedText(TextEditingValue submittedValue) {
+    final currentValue = _controller.value;
+    if (currentValue.text.isEmpty) {
+      _controller.value = submittedValue;
+      return;
+    }
+    final offset = submittedValue.text.length;
+    final selection = currentValue.selection.isValid
+        ? currentValue.selection.copyWith(
+            baseOffset: currentValue.selection.baseOffset + offset,
+            extentOffset: currentValue.selection.extentOffset + offset,
+          )
+        : currentValue.selection;
+    final composing = currentValue.composing.isValid
+        ? TextRange(
+            start: currentValue.composing.start + offset,
+            end: currentValue.composing.end + offset,
+          )
+        : currentValue.composing;
+    _controller.value = currentValue.copyWith(
+      text: submittedValue.text + currentValue.text,
+      selection: selection,
+      composing: composing,
+    );
   }
 
   void _insertNewlineAtCursor() {
@@ -1338,6 +1398,89 @@ class _ChatInputBarState extends State<ChatInputBar>
     return KeyEventResult.handled;
   }
 
+  Future<String?> _savePastedImageBytes(String format, Uint8List bytes) async {
+    File? reserved;
+    try {
+      final dir = await AppDirectories.getSystemCacheDirectory();
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final ext = format.toLowerCase();
+      final fileExt = ext == 'jpeg' ? 'jpg' : ext;
+      final baseName = 'paste_${DateTime.now().millisecondsSinceEpoch}';
+      var counter = 0;
+      while (true) {
+        final suffix = counter == 0 ? '' : '_$counter';
+        final file = File(p.join(dir.path, '$baseName$suffix.$fileExt'));
+        try {
+          await file.create(exclusive: true);
+          reserved = file;
+          break;
+        } on FileSystemException {
+          if (!await file.exists()) rethrow;
+          counter++;
+        }
+      }
+      await reserved.writeAsBytes(bytes, flush: true);
+      return reserved.path;
+    } catch (_) {
+      if (reserved != null) await _deleteTemporaryImageSource(reserved.path);
+      return null;
+    }
+  }
+
+  Future<void> _deleteTemporaryImageSource(String path) async {
+    try {
+      await File(path).delete();
+    } catch (error) {
+      debugPrint(
+        '[ChatInputBar] Failed to delete temporary image $path: $error',
+      );
+    }
+  }
+
+  void _handleInsertedContent(KeyboardInsertedContent content) {
+    final format = switch (content.mimeType.toLowerCase()) {
+      'image/png' => 'png',
+      'image/jpeg' || 'image/jpg' => 'jpeg',
+      'image/gif' => 'gif',
+      'image/webp' => 'webp',
+      _ => null,
+    };
+    final bytes = content.data;
+    if (!mounted || format == null || bytes == null || bytes.isEmpty) return;
+    final pasteId = _nextImagePasteId++;
+    setState(() => _pendingImagePasteIds.add(pasteId));
+    unawaited(_enqueueInsertedImage(pasteId, format, bytes));
+  }
+
+  Future<void> _enqueueInsertedImage(
+    int pasteId,
+    String format,
+    Uint8List bytes,
+  ) async {
+    final savedPath = await _savePastedImageBytes(format, bytes);
+    if (savedPath == null) {
+      if (mounted && _pendingImagePasteIds.contains(pasteId)) {
+        setState(() => _pendingImagePasteIds.remove(pasteId));
+      }
+      return;
+    }
+    if (!mounted || !_pendingImagePasteIds.contains(pasteId)) {
+      await _deleteTemporaryImageSource(savedPath);
+      return;
+    }
+    final compressConfig = context
+        .read<SettingsProvider>()
+        .resolveImageCompressConfig();
+    _pendingImagePasteIds.remove(pasteId);
+    _enqueueImages(
+      [savedPath],
+      compressConfig,
+      deleteSourcesAfterProcessing: true,
+    );
+  }
+
   Future<void> _handlePasteFromClipboard() async {
     final compressConfig = context
         .read<SettingsProvider>()
@@ -1374,30 +1517,6 @@ class _ChatInputBarState extends State<ChatInputBar>
               if (!completer.isCompleted) completer.complete(null);
             }
             return await completer.future;
-          } catch (_) {
-            return null;
-          }
-        }
-
-        // Helper: persist bytes as a file under upload directory
-        Future<String?> saveImageBytes(String format, Uint8List bytes) async {
-          try {
-            final dir = await AppDirectories.getUploadDirectory();
-            if (!await dir.exists()) {
-              await dir.create(recursive: true);
-            }
-            final ts = DateTime.now().millisecondsSinceEpoch;
-            final ext = format.toLowerCase();
-            final fileExt = ext == 'jpeg' ? 'jpg' : ext;
-            String name = 'paste_$ts.$fileExt';
-            String destPath = p.join(dir.path, name);
-            if (await File(destPath).exists()) {
-              name =
-                  'paste_${ts}_${DateTime.now().microsecondsSinceEpoch}.$fileExt';
-              destPath = p.join(dir.path, name);
-            }
-            await File(destPath).writeAsBytes(bytes, flush: true);
-            return destPath;
           } catch (_) {
             return null;
           }
@@ -1447,7 +1566,13 @@ class _ChatInputBarState extends State<ChatInputBar>
         }
 
         if (bytes != null && bytes.isNotEmpty && fmt != null) {
-          final savedPath = await saveImageBytes(fmt, bytes);
+          final savedPath = await _savePastedImageBytes(fmt, bytes);
+          if (!mounted) {
+            if (savedPath != null) {
+              await _deleteTemporaryImageSource(savedPath);
+            }
+            return;
+          }
           if (savedPath != null) {
             _enqueueImages(
               [savedPath],
@@ -2333,10 +2458,10 @@ class _ChatInputBarState extends State<ChatInputBar>
                                         height: 20,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                Colors.white, // color-gate: ignore (on scrim over photo)
-                                              ),
+                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                            Colors
+                                                .white, // color-gate: ignore (on scrim over photo)
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -2387,7 +2512,8 @@ class _ChatInputBarState extends State<ChatInputBar>
                             child: Icon(
                               Icons.close,
                               size: 11,
-                              color: Colors.white, // color-gate: ignore (on scrim over photo)
+                              color: Colors
+                                  .white, // color-gate: ignore (on scrim over photo)
                             ),
                           ),
                         ),
@@ -2665,6 +2791,18 @@ class _ChatInputBarState extends State<ChatInputBar>
                                             controller: _controller,
                                             focusNode: widget.focusNode,
                                             onChanged: _onTextChanged,
+                                            contentInsertionConfiguration:
+                                                ContentInsertionConfiguration(
+                                                  onContentInserted:
+                                                      _handleInsertedContent,
+                                                  allowedMimeTypes: const [
+                                                    'image/png',
+                                                    'image/jpeg',
+                                                    'image/jpg',
+                                                    'image/gif',
+                                                    'image/webp',
+                                                  ],
+                                                ),
                                             readOnly:
                                                 _composerLocked ||
                                                 _ownsVoiceSession ||

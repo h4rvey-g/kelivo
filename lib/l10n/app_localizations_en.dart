@@ -211,6 +211,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storageSpaceSubCacheSystem => 'System cache';
 
   @override
+  String get storageSpaceSubLogsContext => 'Context logs';
+
+  @override
   String get storageSpaceSubLogsFlutter => 'Flutter logs';
 
   @override
@@ -251,6 +254,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storageSpaceClearLegacyChatDataButton => 'Clear Old Chat Records';
+
+  @override
+  String get storageSpaceExportLegacyChatFileButton => 'Export';
+
+  @override
+  String storageSpaceExportDone(Object fileName) {
+    return '$fileName exported';
+  }
+
+  @override
+  String storageSpaceExportFailed(Object error) {
+    return 'Export failed: $error';
+  }
 
   @override
   String get storageSpaceClearLegacyChatDataConfirmMessage =>
@@ -2559,6 +2575,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sideDrawerMenuRegenerateTitle => 'Regenerate Title';
 
   @override
+  String get sideDrawerMenuCopy => 'Copy';
+
+  @override
   String get sideDrawerMenuMoveTo => 'Move to';
 
   @override
@@ -3258,7 +3277,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelDetailSheetBuiltinToolsDescription =>
-      'Built-in tools only support official APIs.';
+      'Built-in tools depend on the provider and API mode.';
 
   @override
   String get modelDetailSheetBuiltinToolsUnsupportedHint =>
@@ -3295,6 +3314,20 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get modelDetailSheetOpenaiBuiltinToolsResponsesOnlyHint =>
       'Requires OpenAI Responses API.';
+
+  @override
+  String get modelDetailSheetOpenrouterWebFetchTool => 'Web Fetch';
+
+  @override
+  String get modelDetailSheetOpenrouterWebFetchToolDescription =>
+      'Enable OpenRouter web fetch server tool';
+
+  @override
+  String get modelDetailSheetOpenrouterShellTool => 'Shell';
+
+  @override
+  String get modelDetailSheetOpenrouterShellToolDescription =>
+      'Run Shell commands in a hosted, isolated sandbox';
 
   @override
   String get modelDetailSheetOpenaiCodeInterpreterTool => 'Code Interpreter';
@@ -5277,6 +5310,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Bocha web search API. Accurate web results with optional summaries.';
 
   @override
+  String get searchServiceNameDoubao => 'Doubao';
+
+  @override
+  String get searchProviderDoubaoDescription =>
+      'Doubao web search API by Volcano Engine.';
+
+  @override
   String get searchServiceNameSerper => 'Serper';
 
   @override
@@ -5309,7 +5349,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get searchProviderFirecrawlDescription =>
-      'Firecrawl Search API v2. Requires a Bearer API key. Scrape is not supported here.';
+      'Firecrawl Search API v2. API key is optional. Scrape is not supported here.';
 
   @override
   String get searchServiceNameTinyFish => 'TinyFish';
@@ -5541,6 +5581,34 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get assistantEditLocalToolCalculateSubtitle =>
       'Evaluate mathematical expressions, supports + - * / power sqrt sin cos etc.';
+
+  @override
+  String get assistantEditLocalToolScreenTimeTitle => 'Screen Time';
+
+  @override
+  String get assistantEditLocalToolScreenTimeSubtitle =>
+      'Query app screen usage on this device, requires the Usage access permission.';
+
+  @override
+  String get chatMessageWidgetScreenTimeTotal => 'Total screen time';
+
+  @override
+  String get chatMessageWidgetScreenTimePermissionRequired =>
+      'Usage access permission is not granted. Please enable it in system settings and try again.';
+
+  @override
+  String get assistantEditLocalToolCalendarQueryTitle => 'Query Calendar';
+
+  @override
+  String get assistantEditLocalToolCalendarQuerySubtitle =>
+      'Read calendar events on this device, requires the calendar permission.';
+
+  @override
+  String get assistantEditLocalToolCalendarCreateTitle => 'Create Event';
+
+  @override
+  String get assistantEditLocalToolCalendarCreateSubtitle =>
+      'Create calendar events on this device with your confirmation, requires the calendar permission.';
 
   @override
   String get assistantEditMemorySwitchDescription =>
@@ -5834,6 +5902,79 @@ class AppLocalizationsEn extends AppLocalizations {
       'When enabled, Flutter errors and print output are written to logs/flutter_logs.txt (rotated daily).';
 
   @override
+  String get contextLogSettingTitle => 'Context Logging';
+
+  @override
+  String get contextLogSettingSubtitle =>
+      'When enabled, the exact messages sent to the model are written to logs/context_logs.txt (rotated daily).';
+
+  @override
+  String get contextLogViewerTitle => 'Context';
+
+  @override
+  String contextLogSnapshotMessages(int count) {
+    return '$count messages';
+  }
+
+  @override
+  String contextLogSnapshotTokens(int count) {
+    return '$count tokens';
+  }
+
+  @override
+  String get contextLogSourceSystemPrompt => 'System prompt';
+
+  @override
+  String get contextLogSourceMemoryRules => 'Memory rules';
+
+  @override
+  String get contextLogSourceSearchPrompt => 'Search prompt';
+
+  @override
+  String get contextLogSourceInstructionInjection => 'Instruction';
+
+  @override
+  String get contextLogSourceWorldBook => 'World book';
+
+  @override
+  String get contextLogSourceMemorySnapshot => 'Memory snapshot';
+
+  @override
+  String get contextLogSourceChatHistory => 'Chat history';
+
+  @override
+  String get contextLogSourceToolCall => 'Tool call';
+
+  @override
+  String get contextLogSourceToolResult => 'Tool result';
+
+  @override
+  String contextLogSnapshotsCount(int count) {
+    return '$count snapshots';
+  }
+
+  @override
+  String get contextLogSnapshotFallbackTitle => 'Snapshot';
+
+  @override
+  String get contextLogKindFull => 'Full snapshot';
+
+  @override
+  String get contextLogKindUpdate => 'Incremental update';
+
+  @override
+  String get contextLogSectionComposition => 'Composition';
+
+  @override
+  String get contextLogLoadOlder => 'Load earlier logs';
+
+  @override
+  String get contextLogLoading => 'Loading...';
+
+  @override
+  String get contextLogAllLoaded => 'All logs loaded';
+
+  @override
   String get logViewerTitle => 'Request Logs';
 
   @override
@@ -5901,6 +6042,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get logViewerSectionAttachments => 'Attachments';
+
+  @override
+  String get logViewerPayloadOmitted => 'omitted';
+
+  @override
+  String get logViewerShowMore => 'Show more';
+
+  @override
   String get logSettingsTitle => 'Log Settings';
 
   @override
@@ -5908,7 +6058,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get logSettingsSaveOutputSubtitle =>
-      'Log response body content (may use significant storage)';
+      'Log every streaming chunk (can slow generation). HTTP error bodies are always recorded.';
+
+  @override
+  String get logSettingsElidePayloads => 'Omit Large Payloads';
+
+  @override
+  String get logSettingsElidePayloadsSubtitle =>
+      'Replace inline base64 images and files with a placeholder. Keeps logs small and the viewer fast.';
 
   @override
   String get logSettingsAutoDelete => 'Auto-delete';
@@ -6485,6 +6642,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get legacyMemoryMigrationClose => 'Done';
+
+  @override
+  String get legacyMemoryModeTitle => 'Use legacy memory';
+
+  @override
+  String get legacyMemoryModeSubtitle =>
+      'Global setting for all assistants. Both datasets are kept; you can switch back anytime. Legacy memory is per-assistant only — no global memory, user profile, background organize, traces, or past-conversation search.';
+
+  @override
+  String get legacyMemoryModeCacheWarning =>
+      'Legacy mode writes all memories and the current time into the system prompt every turn, so prompt cache cannot hit and long chats cost more.';
 
   @override
   String get memoryUiContentLabel => 'Content';

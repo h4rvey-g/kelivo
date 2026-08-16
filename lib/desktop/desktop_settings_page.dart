@@ -143,6 +143,11 @@ class _DesktopSettingsPageState extends State<DesktopSettingsPage> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsProvider>();
+    final effectiveSelected =
+        settings.legacyMemoryMode && _selected == _SettingsMenuItem.memory
+        ? _SettingsMenuItem.display
+        : _selected;
 
     const double menuWidth = 250;
     final topBar = SizedBox(
@@ -176,7 +181,7 @@ class _DesktopSettingsPageState extends State<DesktopSettingsPage> {
               children: [
                 _SettingsMenu(
                   width: menuWidth,
-                  selected: _selected,
+                  selected: effectiveSelected,
                   onSelect: (it) => setState(() => _selected = it),
                 ),
                 VerticalDivider(
@@ -189,7 +194,7 @@ class _DesktopSettingsPageState extends State<DesktopSettingsPage> {
                     duration: const Duration(milliseconds: 200),
                     switchInCurve: Curves.easeOutCubic,
                     child: () {
-                      switch (_selected) {
+                      switch (effectiveSelected) {
                         case _SettingsMenuItem.display:
                           return const _DisplaySettingsBody(
                             key: ValueKey('display'),
@@ -275,6 +280,7 @@ class _SettingsMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsProvider>();
     final items = [
       (
         _SettingsMenuItem.display,
@@ -313,7 +319,12 @@ class _SettingsMenu extends StatelessWidget {
         lucide.Lucide.BookOpen,
         l10n.settingsPageWorldBook,
       ),
-      (_SettingsMenuItem.memory, lucide.Lucide.Brain, l10n.settingsPageMemory),
+      if (!settings.legacyMemoryMode)
+        (
+          _SettingsMenuItem.memory,
+          lucide.Lucide.Brain,
+          l10n.settingsPageMemory,
+        ),
       (_SettingsMenuItem.tts, lucide.Lucide.Volume2, l10n.settingsPageTts),
       (
         _SettingsMenuItem.networkProxy,

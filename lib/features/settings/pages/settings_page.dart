@@ -261,19 +261,21 @@ class SettingsPage extends StatelessWidget {
                   );
                 },
               ),
-              _iosDivider(context),
-              _iosNavRow(
-                context,
-                icon: Lucide.Brain,
-                label: l10n.settingsPageMemory,
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const MemorySettingsPage(),
-                    ),
-                  );
-                },
-              ),
+              if (!settings.legacyMemoryMode) ...[
+                _iosDivider(context),
+                _iosNavRow(
+                  context,
+                  icon: Lucide.Brain,
+                  label: l10n.settingsPageMemory,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MemorySettingsPage(),
+                      ),
+                    );
+                  },
+                ),
+              ],
               _iosDivider(context),
               _iosNavRow(
                 context,
@@ -378,7 +380,9 @@ class SettingsPage extends StatelessWidget {
                   }
                 },
               ),
-              if (settings.requestLogEnabled || settings.flutterLogEnabled) ...[
+              if (settings.requestLogEnabled ||
+                  settings.flutterLogEnabled ||
+                  settings.contextLogEnabled) ...[
                 _iosDivider(context),
                 _iosNavRow(
                   context,

@@ -20,6 +20,7 @@ import '../../../utils/unicode_sanitizer.dart';
 import 'builtin_tools.dart';
 import 'kimi_formula_search.dart';
 import 'gemini_tool_config.dart';
+import '../logging/context_log_models.dart';
 import '../logging/flutter_logger.dart';
 import '../model_override_resolver.dart';
 import '../model_override_payload_parser.dart';
@@ -510,6 +511,7 @@ class ChatApiService {
       final copy = Map<String, dynamic>.from(message);
       copy.remove(multimodalInternalMediaPathsKey);
       copy.remove(multimodalInternalRevisionIdKey);
+      copy.remove(kelivoContextSegmentsKey);
       if (copy.containsKey('content')) {
         copy['content'] = await _stripImageInputsFromContent(copy['content']);
       }
@@ -763,71 +765,23 @@ class ChatApiService {
           upstreamModelId: upstreamModelId,
         );
         if (config.useResponseApi == true) {
-          // Inject built-in web_search tool when enabled and supported
-          final toolsList = <Map<String, dynamic>>[];
-          bool isResponsesWebSearchSupported(String id) {
-            if (BuiltInToolsHelper.isOpenAIResponsesBuiltInSearchSupportedModel(
-              id,
-            )) {
-              return true;
-            }
-            if (BuiltInToolsHelper.isDashScopeProvider(config)) {
-              return BuiltInToolsHelper.isDashScopeResponsesBuiltInSearchSupportedModel(
-                id,
-              );
-            }
-            if (BuiltInToolsHelper.isArkProvider(config)) {
-              return BuiltInToolsHelper.isDoubaoResponsesBuiltInSearchSupportedModel(
-                id,
-              );
-            }
-            return false;
-          }
-
-          if (isResponsesWebSearchSupported(upstreamModelId)) {
-            final builtIns = _builtInTools(config, modelId);
-            if (builtIns.contains(BuiltInToolNames.search)) {
-              if (BuiltInToolsHelper.isDashScopeProvider(config) ||
-                  BuiltInToolsHelper.isArkProvider(config)) {
-                toolsList.add({'type': 'web_search'});
-              } else {
-                Map<String, dynamic> ws = const <String, dynamic>{};
-                try {
-                  final ov = config.modelOverrides[modelId];
-                  if (ov is Map && ov['webSearch'] is Map) {
-                    ws = (ov['webSearch'] as Map).cast<String, dynamic>();
-                  }
-                } catch (_) {}
-                final usePreview =
-                    (ws['preview'] == true) ||
-                    ((ws['tool'] ?? '').toString() == 'preview');
-                final entry = <String, dynamic>{
-                  'type': usePreview ? 'web_search_preview' : 'web_search',
-                };
-                if (ws['allowed_domains'] is List &&
-                    (ws['allowed_domains'] as List).isNotEmpty) {
-                  entry['filters'] = {
-                    'allowed_domains': List<String>.from(
-                      (ws['allowed_domains'] as List).map((e) => e.toString()),
-                    ),
-                  };
-                }
-                if (ws['user_location'] is Map) {
-                  entry['user_location'] = (ws['user_location'] as Map)
-                      .cast<String, dynamic>();
-                }
-                if (usePreview && ws['search_context_size'] is String) {
-                  entry['search_context_size'] = ws['search_context_size'];
-                }
-                toolsList.add(entry);
-              }
-            }
-          }
+          final builtInPayload = BuiltInToolsHelper.buildResponsesTools(
+            cfg: config,
+            modelId: modelId,
+            upstreamModelId: upstreamModelId,
+            configuredTools: _builtInTools(
+              config,
+              modelId,
+            ).where((name) => name == BuiltInToolNames.search),
+          );
+          final toolsList = builtInPayload.tools;
           body = {
             'model': upstreamModelId,
+            'stream': false,
             'input': [
               {'role': 'user', 'content': safePrompt},
             ],
+            ...builtInPayload.body,
             if (toolsList.isNotEmpty)
               'tools': _toResponsesToolsFormat(toolsList),
             if (toolsList.isNotEmpty) 'tool_choice': 'auto',
@@ -840,6 +794,7 @@ class ChatApiService {
         } else {
           body = {
             'model': upstreamModelId,
+            'stream': false,
             'messages': [
               {'role': 'user', 'content': safePrompt},
             ],
@@ -847,12 +802,6 @@ class ChatApiService {
               'reasoning_effort': effort,
           };
         }
-        _applyCompatibleBuiltInSearch(
-          body,
-          config: config,
-          modelId: modelId,
-          upstreamModelId: upstreamModelId,
-        );
         _applyOpenRouterClaudePromptCaching(
           body,
           config: config,
@@ -877,6 +826,18 @@ class ChatApiService {
         );
         final extra = _customBody(config, modelId, assistantBody: extraBody);
         if (extra.isNotEmpty) body.addAll(extra);
+        if (config.useResponseApi != true) {
+          _applyChatCompletionsBuiltInTools(
+            body,
+            config: config,
+            modelId: modelId,
+            upstreamModelId: upstreamModelId,
+            configuredTools: _builtInTools(
+              config,
+              modelId,
+            ).where((name) => name == BuiltInToolNames.search),
+          );
+        }
         // Vendor-specific reasoning knobs for chat-completions compatible hosts (non-streaming)
         if (config.useResponseApi != true) {
           _applyVendorReasoningKnobs(
@@ -978,6 +939,7 @@ class ChatApiService {
             : null;
         final body = <String, dynamic>{
           'model': upstreamModelId,
+          'stream': false,
           'max_tokens': 512,
           'messages': [
             {'role': 'user', 'content': safePrompt},
@@ -1479,10 +1441,10 @@ class _GeminiSignatureMeta {
 }
 
 class _ResponsesImageGenerationResult {
-  final String base64;
+  final String source;
   final String? outputFormat;
 
-  const _ResponsesImageGenerationResult({this.base64 = '', this.outputFormat});
+  const _ResponsesImageGenerationResult({this.source = '', this.outputFormat});
 }
 
 class ChatStreamChunk {

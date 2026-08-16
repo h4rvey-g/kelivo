@@ -69,12 +69,18 @@ class MarkdownWithCodeHighlight extends StatefulWidget {
     super.key,
     required this.text,
     this.onCitationTap,
+    this.citationIndexResolver,
     this.baseStyle,
     this.streaming = false,
   });
 
   final String text;
   final void Function(String id)? onCitationTap;
+
+  /// Resolves a citation id (from `[cite:id]` markers) to its display index
+  /// using the search tool results of the enclosing message. Returns null
+  /// when the id has no matching result.
+  final String? Function(String id)? citationIndexResolver;
   final TextStyle? baseStyle; // optional override for base markdown text style
   final bool streaming;
 
@@ -95,8 +101,12 @@ class MarkdownWithCodeHighlight extends StatefulWidget {
 
 class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   static const int _streamingDebounceThresholdChars = 8000;
+  // Matches the stream controller's publish interval. A longer window would
+  // batch several publishes into one render, and since the timeline is pinned
+  // to the tail while generating, each batch lands as a single upward step
+  // instead of the steady crawl the character smoothing is there to produce.
   static const Duration _streamingLongRenderDebounce = Duration(
-    milliseconds: 120,
+    milliseconds: 50,
   );
 
   late String _renderText;
@@ -169,7 +179,7 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
     }
 
     final useIncrementalBlocks =
-        widget.streaming && sanitizedText.length >= 4096;
+        widget.streaming && sanitizedText.length >= 512;
     final sourceBlocks = useIncrementalBlocks
         ? _incrementalDocument.update(sanitizedText)
         : const <IncrementalMarkdownBlock>[];
@@ -387,30 +397,58 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
       },
       linkBuilder: (ctx, span, url, style) {
         final label = span.toPlainText().trim();
-        // Special handling: [citation](index:id)
+        // Special handling: [citation](id) and legacy [citation](index:id)
         if (label.toLowerCase() == 'citation') {
           final citation = _parseCitationRef(url);
           if (citation != null) {
             final cs = Theme.of(ctx).colorScheme;
-            return GestureDetector(
-              onTap: () {
-                if (widget.onCitationTap != null && citation.id.isNotEmpty) {
-                  widget.onCitationTap!(citation.id);
-                } else {
-                  // Fallback: do nothing
-                }
-              },
-              child: Container(
-                width: 20,
-                height: 20,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.20),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  citation.indexText,
-                  style: TextStyle(fontSize: 12, height: 1.0),
+            // Prefer the index resolved from this message's search results;
+            // fall back to the inline index for legacy `index:id` markers.
+            final resolved = widget.citationIndexResolver?.call(citation.id);
+            final String display;
+            if (resolved != null && resolved.isNotEmpty) {
+              display = resolved;
+            } else if (citation.indexText != citation.id) {
+              display = citation.indexText; // legacy index:id marker
+            } else if (int.tryParse(citation.indexText) != null) {
+              display = citation.indexText; // legacy pure-index shorthand
+            } else {
+              display = '?'; // id-only marker with no matching result
+            }
+            // gpt_markdown embeds this widget baseline-aligned. The capsule is
+            // taller than the text ascent, so without correction it hangs
+            // below the line. Translate it up (layout-neutral) so it looks
+            // vertically centered, and pad horizontally so adjacent capsules
+            // don't touch.
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1.5),
+              child: Transform.translate(
+                offset: const Offset(0, -2),
+                child: GestureDetector(
+                  onTap: () {
+                    if (widget.onCitationTap != null &&
+                        citation.id.isNotEmpty) {
+                      widget.onCitationTap!(citation.id);
+                    } else {
+                      // Fallback: do nothing
+                    }
+                  },
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 20),
+                    height: 20,
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.20),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Center(
+                      widthFactor: 1.0,
+                      child: Text(
+                        display,
+                        style: TextStyle(fontSize: 12, height: 1.0),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             );
@@ -558,13 +596,25 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
     final markdownWidget = useIncrementalBlocks
         ? _MarkdownBlockColumn(
             children: [
-              for (final block in sourceBlocks)
+              for (var i = 0; i < sourceBlocks.length; i++) ...[
+                // Rendering the document as one string keeps the blank line
+                // between two blocks as a real line box. Rendering block by
+                // block drops it, so a long reply is laid out tighter while it
+                // streams and then grows by one line per block the moment it
+                // finishes and switches to the whole-document render. Put the
+                // separator back so both paths agree. A list block already ends
+                // with its own break, so it takes no separator after it.
+                if (i > 0 && !sourceBlocks[i - 1].isList)
+                  _MarkdownBlockSeparator(style: baseTextStyle),
                 _CachedMarkdownBlock(
-                  key: ValueKey('markdown-source-block-${block.start}'),
-                  content: normalize(block.text),
+                  key: ValueKey(
+                    'markdown-source-block-${sourceBlocks[i].start}',
+                  ),
+                  content: normalize(sourceBlocks[i].text),
                   signature: themeSignature,
                   builder: buildMarkdown,
                 ),
+              ],
             ],
           )
         : _CachedMarkdownBlock(
@@ -650,6 +700,37 @@ class _CachedMarkdownBlockState extends State<_CachedMarkdownBlock> {
     return _rendered ??= widget.builder(
       widget.content,
       ValueKey('parsed-markdown-${widget.signature}'),
+    );
+  }
+}
+
+/// The blank line a whole-document render keeps between two blocks.
+///
+/// `gpt_markdown` renders a run of blank lines through its `NewLines` inline
+/// component, which is a span of the base font size at a fixed line height of
+/// [_newLinesHeight]. This mirrors that exactly, so a block-by-block render
+/// comes out the same height as a whole-document render of the same text.
+class _MarkdownBlockSeparator extends StatelessWidget {
+  const _MarkdownBlockSeparator({required this.style});
+
+  /// The `height` hardcoded by `NewLines` in `gpt_markdown`.
+  static const double _newLinesHeight = 1.15;
+
+  /// The `fontSize` `NewLines` falls back to when the config carries no style.
+  static const double _fallbackFontSize = 14;
+
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    // RichText, not Text, so the ambient DefaultTextStyle cannot merge its own
+    // line height back in: the separator has to be exactly one `NewLines` line
+    // box. An empty span lays out at `fontSize * height`, which is that box.
+    // The text engine rounds a line box up to a whole pixel, so the spacer has
+    // to round the same way or the two paths drift by a fraction per boundary.
+    return SizedBox(
+      height: ((style?.fontSize ?? _fallbackFontSize) * _newLinesHeight)
+          .ceilToDouble(),
     );
   }
 }
@@ -845,6 +926,7 @@ String _preprocessFences(
     return '[$text]($url)';
   });
   out = _normalizeRawCitationMetadata(out);
+  out = _normalizeCiteMarkers(out);
 
   // Normalize inline $...$ math into \( ... \) so it always matches the LaTeX
   // renderer (even when vendors emit single-dollar math mixed with prose).
@@ -969,6 +1051,23 @@ String _normalizeRawCitationMetadata(String input) {
     final refs = _parseCitationRefList(match.group(1) ?? '');
     if (refs.isEmpty) return match.group(0)!;
     return refs.map((ref) => '[citation](${ref.markdownTarget})').join(' ');
+  });
+}
+
+/// Normalize Cherry-style `[cite:id]` markers (optionally comma-separated,
+/// e.g. `[cite:a1b2c3, d4e5f6]`) into `[citation](id)` markdown links so the
+/// linkBuilder renders them as numbered capsules.
+String _normalizeCiteMarkers(String input) {
+  final citeMarker = RegExp(
+    r'\[cite:\s*([A-Za-z0-9_-]+(?:\s*,\s*[A-Za-z0-9_-]+)*)\s*\]',
+    caseSensitive: false,
+  );
+  return input.replaceAllMapped(citeMarker, (match) {
+    final ids = (match.group(1) ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty);
+    return ids.map((id) => '[citation]($id)').join(' ');
   });
 }
 
@@ -5766,11 +5865,12 @@ class HtmlAnchorMd extends InlineMd {
 }
 
 /// Whitelist-based HTML tag renderer.
-/// Currently supports simple paragraph and line-break tags.
 class AllowedHtmlTagsMd extends InlineMd {
   @override
-  RegExp get exp =>
-      RegExp(r"<br\s*/?>|<p(?:\s+[^>]*)?>|<\/p\s*>", caseSensitive: false);
+  RegExp get exp => RegExp(
+    r"<br\s*/?>|<p(?:\s+[^>]*)?>|<\/p\s*>|<\/?theater\s*>",
+    caseSensitive: false,
+  );
 
   @override
   InlineSpan span(BuildContext context, String text, GptMarkdownConfig config) {

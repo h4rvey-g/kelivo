@@ -300,8 +300,9 @@ class ChatService extends ChangeNotifier {
       if (!abort.isCompleted) abort.complete();
     }
     _messageOrderBackfillAbort.clear();
-    final orderBackfills =
-        List<Future<void>>.of(_messageOrderBackfillFutures.values);
+    final orderBackfills = List<Future<void>>.of(
+      _messageOrderBackfillFutures.values,
+    );
     _messageOrderBackfillFutures.clear();
     for (final backfill in orderBackfills) {
       try {
@@ -1800,6 +1801,19 @@ class ChatService extends ChangeNotifier {
     await _cleanupOrphanUploads();
 
     notifyListeners();
+  }
+
+  Future<Conversation?> duplicateConversation(String id) async {
+    if (!_initialized) await init();
+    final duplicate = await _repo.duplicateConversation(id);
+    if (duplicate == null) return null;
+
+    _conversationsCache[duplicate.id] = duplicate;
+    _messageOrderIds[duplicate.id] = List<String>.of(duplicate.messageIds);
+    _messageCounts[duplicate.id] = duplicate.messageIds.length;
+    _bumpConversationListRevision();
+    notifyListeners();
+    return duplicate;
   }
 
   Future<bool> _deleteDraftConversation(String id) async {
