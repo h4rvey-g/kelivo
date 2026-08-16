@@ -1002,6 +1002,10 @@
   "assistantEditRecentChatsSummaryFrequencyCustomInvalid": "請輸入大於 0 的整數",
   "defaultModelPageTranslateModelTitle": "翻譯模型",
   "defaultModelPageTranslateModelSubtitle": "用於翻譯訊息內容的模型，推薦使用快速且準確的模型",
+  "defaultModelPageInputTranslationTitle": "三空格快捷翻譯",
+  "defaultModelPageInputTranslationSubtitle": "連續輸入三個空格，翻譯並取代輸入框中的文字",
+  "defaultModelPageInputTranslationTargetLanguage": "目標語言",
+  "chatInputBarEmptyTranslationResponse": "翻譯模型傳回了空內容",
   "defaultModelPageOcrModelTitle": "OCR 模型",
   "backgroundTaskFailed": "{task}失敗：{error}",
   "@backgroundTaskFailed": {

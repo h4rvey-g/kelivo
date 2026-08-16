@@ -2944,6 +2944,19 @@ class AppLocalizationsZh extends AppLocalizations {
       '用于翻译消息内容的模型，推荐使用快速且准确的模型';
 
   @override
+  String get defaultModelPageInputTranslationTitle => '三空格快捷翻译';
+
+  @override
+  String get defaultModelPageInputTranslationSubtitle =>
+      '连续输入三个空格，翻译并替换输入框中的文字';
+
+  @override
+  String get defaultModelPageInputTranslationTargetLanguage => '目标语言';
+
+  @override
+  String get chatInputBarEmptyTranslationResponse => '翻译模型返回了空内容';
+
+  @override
   String get defaultModelPageOcrModelTitle => 'OCR 模型';
 
   @override
@@ -10011,6 +10024,19 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
       '用于翻译消息内容的模型，推荐使用快速且准确的模型';
 
   @override
+  String get defaultModelPageInputTranslationTitle => '三空格快捷翻译';
+
+  @override
+  String get defaultModelPageInputTranslationSubtitle =>
+      '连续输入三个空格，翻译并替换输入框中的文字';
+
+  @override
+  String get defaultModelPageInputTranslationTargetLanguage => '目标语言';
+
+  @override
+  String get chatInputBarEmptyTranslationResponse => '翻译模型返回了空内容';
+
+  @override
   String get defaultModelPageOcrModelTitle => 'OCR 模型';
 
   @override
@@ -17001,6 +17027,19 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   @override
   String get defaultModelPageTranslateModelSubtitle =>
       '用於翻譯訊息內容的模型，推薦使用快速且準確的模型';
+
+  @override
+  String get defaultModelPageInputTranslationTitle => '三空格快捷翻譯';
+
+  @override
+  String get defaultModelPageInputTranslationSubtitle =>
+      '連續輸入三個空格，翻譯並取代輸入框中的文字';
+
+  @override
+  String get defaultModelPageInputTranslationTargetLanguage => '目標語言';
+
+  @override
+  String get chatInputBarEmptyTranslationResponse => '翻譯模型傳回了空內容';
 
   @override
   String get defaultModelPageOcrModelTitle => 'OCR 模型';

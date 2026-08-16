@@ -372,94 +372,96 @@ class DefaultModelPage extends StatelessWidget {
               top: 12,
               bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _ThinkingSwitchRow(task: _BackgroundModelTask.translate),
-                const SizedBox(height: 18),
-                Text(
-                  l10n.defaultModelPagePromptLabel,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: AppFontWeights.semibold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: controller,
-                  maxLines: 8,
-                  decoration: InputDecoration(
-                    hintText: l10n.defaultModelPageTranslatePromptHint,
-                    filled: true,
-                    fillColor: ctx.appColors.surfaceFill,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: cs.outlineVariant.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: cs.outlineVariant.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: cs.primary.withValues(alpha: 0.5),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: cs.onSurface.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(999),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () async {
-                        await settings.resetTranslatePrompt();
-                        await settings
-                            .resetTranslateGenerationThinkingEnabled();
-                        controller.text = settings.translatePrompt;
-                      },
-                      child: Text(l10n.defaultModelPageResetDefault),
+                  const SizedBox(height: 14),
+                  _ThinkingSwitchRow(task: _BackgroundModelTask.translate),
+                  const SizedBox(height: 18),
+                  Text(
+                    l10n.defaultModelPagePromptLabel,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: AppFontWeights.semibold,
                     ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: () async {
-                        await settings.setTranslatePrompt(
-                          controller.text.trim(),
-                        );
-                        if (ctx.mounted) Navigator.of(ctx).pop();
-                      },
-                      child: Text(l10n.defaultModelPageSave),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    maxLines: 8,
+                    decoration: InputDecoration(
+                      hintText: l10n.defaultModelPageTranslatePromptHint,
+                      filled: true,
+                      fillColor: ctx.appColors.surfaceFill,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: cs.outlineVariant.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: cs.outlineVariant.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: cs.primary.withValues(alpha: 0.5),
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  l10n.defaultModelPageTranslateVars(
-                    '{source_text}',
-                    '{target_lang}',
                   ),
-                  style: TextStyle(
-                    color: cs.onSurface.withValues(alpha: 0.6),
-                    fontSize: 12,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () async {
+                          await settings.resetTranslatePrompt();
+                          await settings
+                              .resetTranslateGenerationThinkingEnabled();
+                          controller.text = settings.translatePrompt;
+                        },
+                        child: Text(l10n.defaultModelPageResetDefault),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: () async {
+                          await settings.setTranslatePrompt(
+                            controller.text.trim(),
+                          );
+                          if (ctx.mounted) Navigator.of(ctx).pop();
+                        },
+                        child: Text(l10n.defaultModelPageSave),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Text(
+                    l10n.defaultModelPageTranslateVars(
+                      '{source_text}',
+                      '{target_lang}',
+                    ),
+                    style: TextStyle(
+                      color: cs.onSurface.withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

@@ -100,6 +100,10 @@ class _DisplaySettingsBody extends StatelessWidget {
               _SettingsCard(
                 title: l10n.displaySettingsPageBehaviorStartupTitle,
                 children: const [
+                  _ToggleRowInputTranslation(),
+                  _RowDivider(),
+                  _InputTranslationTargetLanguageRow(),
+                  _RowDivider(),
                   _ToggleRowAutoSwitchTopicsDesktop(),
                   _RowDivider(),
                   _ToggleRowAutoCollapseThinking(),
@@ -508,7 +512,9 @@ class _ThemeModeSegmentedState extends State<_ThemeModeSegmented> {
                         );
                       }
                       if (_hover == i) {
-                        return cs.onSurface.withValues(alpha: isDark ? 0.10 : 0.06);
+                        return cs.onSurface.withValues(
+                          alpha: isDark ? 0.10 : 0.06,
+                        );
                       }
                       return Colors.transparent;
                     }(),
@@ -2054,8 +2060,7 @@ Future<String?> _showDesktopFontChooserDialog(
                         isDense: true,
                         filled: true,
                         hintText: l10n.desktopFontFilterHint,
-                        fillColor:
-                            context.appColors.surfaceFill,
+                        fillColor: context.appColors.surfaceFill,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: BorderSide(
@@ -2692,6 +2697,51 @@ class _ToggleRowShowUpdates extends StatelessWidget {
       label: l10n.displaySettingsPageShowUpdatesTitle,
       value: sp.showAppUpdates,
       onChanged: (v) => context.read<SettingsProvider>().setShowAppUpdates(v),
+    );
+  }
+}
+
+class _ToggleRowInputTranslation extends StatelessWidget {
+  const _ToggleRowInputTranslation();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.defaultModelPageInputTranslationTitle,
+      value: settings.inputTranslationEnabled,
+      onChanged: settings.setInputTranslationEnabled,
+    );
+  }
+}
+
+class _InputTranslationTargetLanguageRow extends StatelessWidget {
+  const _InputTranslationTargetLanguageRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsProvider>();
+    final language = defaultTranslationLanguage(
+      Localizations.localeOf(context),
+      preferredCode: settings.translateTargetLang,
+    );
+    return _LabeledRow(
+      label: l10n.defaultModelPageInputTranslationTargetLanguage,
+      trailing: DesktopSelectDropdown<String>(
+        value: language.code,
+        options: [
+          for (final option in supportedLanguages)
+            DesktopSelectOption(
+              value: option.code,
+              label: '${option.flag} ${languageDisplayName(l10n, option.code)}',
+            ),
+        ],
+        minWidth: 170,
+        maxLabelWidth: 190,
+        onSelected: settings.setTranslateTargetLang,
+      ),
     );
   }
 }

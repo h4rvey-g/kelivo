@@ -47,4 +47,36 @@ void main() {
     expect(find.text('Dark'), findsOneWidget);
     expect(find.byType(SfSlider), findsNWidgets(2));
   });
+
+  testWidgets('behavior and startup exposes input translation preferences', (
+    tester,
+  ) async {
+    final settings = SettingsProvider(createBusinessTestPreferences());
+    addTearDown(settings.dispose);
+    await settings.loaded;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsProvider>.value(
+        value: settings,
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BehaviorStartupSettingsPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Triple-space translation'), findsOneWidget);
+    expect(find.text('Target language'), findsOneWidget);
+    expect(find.textContaining('English'), findsOneWidget);
+
+    await tester.tap(find.text('Target language'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Japanese'));
+    await tester.pumpAndSettle();
+
+    expect(settings.translateTargetLang, 'ja');
+    expect(find.textContaining('Japanese'), findsOneWidget);
+  });
 }

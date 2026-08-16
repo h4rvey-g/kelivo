@@ -1009,6 +1009,10 @@
   "assistantEditRecentChatsSummaryFrequencyCustomInvalid": "请输入大于 0 的整数",
   "defaultModelPageTranslateModelTitle": "翻译模型",
   "defaultModelPageTranslateModelSubtitle": "用于翻译消息内容的模型，推荐使用快速且准确的模型",
+  "defaultModelPageInputTranslationTitle": "三空格快捷翻译",
+  "defaultModelPageInputTranslationSubtitle": "连续输入三个空格，翻译并替换输入框中的文字",
+  "defaultModelPageInputTranslationTargetLanguage": "目标语言",
+  "chatInputBarEmptyTranslationResponse": "翻译模型返回了空内容",
   "defaultModelPageOcrModelTitle": "OCR 模型",
   "backgroundTaskFailed": "{task}失败：{error}",
   "@backgroundTaskFailed": {

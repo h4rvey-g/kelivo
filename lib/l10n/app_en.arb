@@ -1301,6 +1301,10 @@
   "assistantEditRecentChatsSummaryFrequencyCustomInvalid": "Please enter a whole number greater than 0",
   "defaultModelPageTranslateModelTitle": "Translation Model",
   "defaultModelPageTranslateModelSubtitle": "Used for translating message content; prefer fast & accurate models",
+  "defaultModelPageInputTranslationTitle": "Triple-space translation",
+  "defaultModelPageInputTranslationSubtitle": "Type three spaces in a row to translate and replace the input text",
+  "defaultModelPageInputTranslationTargetLanguage": "Target language",
+  "chatInputBarEmptyTranslationResponse": "The translation model returned an empty response",
   "defaultModelPageOcrModelTitle": "OCR Model",
   "backgroundTaskFailed": "{task} failed: {error}",
   "@backgroundTaskFailed": {

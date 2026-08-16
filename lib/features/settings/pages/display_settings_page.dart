@@ -17,6 +17,7 @@ import '../../../shared/widgets/ios_switch.dart';
 import '../../../core/services/haptics.dart';
 import 'package:file_picker/file_picker.dart';
 import 'google_fonts_picker_page.dart';
+import '../widgets/language_select_sheet.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
 
@@ -2091,6 +2092,10 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final sp = context.watch<SettingsProvider>();
+    final translationLanguage = defaultTranslationLanguage(
+      Localizations.localeOf(context),
+      preferredCode: sp.translateTargetLang,
+    );
     return Scaffold(
       appBar: AppBar(
         leading: Tooltip(
@@ -2109,6 +2114,34 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
         children: [
           _iosSectionCard(
             children: [
+              _iosSwitchRow(
+                context,
+                icon: Lucide.Languages,
+                label: l10n.defaultModelPageInputTranslationTitle,
+                value: sp.inputTranslationEnabled,
+                onChanged: (value) => context
+                    .read<SettingsProvider>()
+                    .setInputTranslationEnabled(value),
+              ),
+              _iosDivider(context),
+              _iosNavRow(
+                context,
+                icon: Lucide.Globe,
+                label: l10n.defaultModelPageInputTranslationTargetLanguage,
+                detailText:
+                    '${translationLanguage.flag} ${languageDisplayName(l10n, translationLanguage.code)}',
+                onTap: () async {
+                  final selected = await showLanguageSelector(
+                    context,
+                    allowClear: false,
+                    selectedCode: translationLanguage.code,
+                  );
+                  if (selected != null) {
+                    await sp.setTranslateTargetLang(selected.code);
+                  }
+                },
+              ),
+              _iosDivider(context),
               _iosSwitchRow(
                 context,
                 icon: Lucide.Brain,

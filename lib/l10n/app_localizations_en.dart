@@ -3050,6 +3050,22 @@ class AppLocalizationsEn extends AppLocalizations {
       'Used for translating message content; prefer fast & accurate models';
 
   @override
+  String get defaultModelPageInputTranslationTitle =>
+      'Triple-space translation';
+
+  @override
+  String get defaultModelPageInputTranslationSubtitle =>
+      'Type three spaces in a row to translate and replace the input text';
+
+  @override
+  String get defaultModelPageInputTranslationTargetLanguage =>
+      'Target language';
+
+  @override
+  String get chatInputBarEmptyTranslationResponse =>
+      'The translation model returned an empty response';
+
+  @override
   String get defaultModelPageOcrModelTitle => 'OCR Model';
 
   @override

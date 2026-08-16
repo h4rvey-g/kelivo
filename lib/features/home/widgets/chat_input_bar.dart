@@ -30,6 +30,8 @@ import '../../../utils/sandbox_path_resolver.dart';
 import '../../../shared/widgets/ios_tactile.dart';
 import '../../../shared/widgets/snackbar.dart';
 import '../../../utils/app_directories.dart';
+import '../../settings/widgets/language_select_sheet.dart';
+import '../utils/input_translation_trigger.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../../../desktop/desktop_context_menu.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
@@ -239,6 +241,9 @@ class _ChatInputBarState extends State<ChatInputBar>
   // Suppress context menu briefly after app resume to avoid flickering
   bool _suppressContextMenu = false;
   bool _isSubmitting = false;
+  bool _isTranslatingInput = false;
+  late TextEditingValue _lastTextEditingValue;
+  late final String _inputTranslationRequestId;
   String? _imageModeModelKey;
   String? _lastImageModeModelKey;
   String? _dismissedImageModeModelKey;
@@ -314,8 +319,114 @@ class _ChatInputBarState extends State<ChatInputBar>
       _failedImageIds.isNotEmpty ||
       _pendingTextPasteIds.isNotEmpty;
 
-  // Instance method for onChanged to avoid recreating the callback on every build
-  void _onTextChanged(String _) => setState(() {});
+  // Instance method for onChanged to avoid recreating the callback on every build.
+  void _onTextChanged(String _) {
+    final previous = _lastTextEditingValue;
+    final current = _controller.value;
+    _lastTextEditingValue = current;
+
+    final settings = context.read<SettingsProvider>();
+    final sourceValue = settings.inputTranslationEnabled && !_isTranslatingInput
+        ? stripInputTranslationTrigger(previous: previous, current: current)
+        : null;
+    if (sourceValue != null) {
+      _controller.value = sourceValue;
+      _lastTextEditingValue = sourceValue;
+      setState(() {});
+      unawaited(_translateInput(sourceValue));
+      return;
+    }
+    setState(() {});
+  }
+
+  Future<void> _translateInput(TextEditingValue sourceValue) async {
+    if (_isTranslatingInput || !mounted) return;
+
+    final settings = context.read<SettingsProvider>();
+    final assistant = context.read<AssistantProvider>().currentAssistant;
+    final String? providerKey;
+    final String? modelId;
+    if (settings.translateModelProvider != null &&
+        settings.translateModelId != null) {
+      providerKey = settings.translateModelProvider;
+      modelId = settings.translateModelId;
+    } else if (assistant?.chatModelProvider != null &&
+        assistant?.chatModelId != null) {
+      providerKey = assistant?.chatModelProvider;
+      modelId = assistant?.chatModelId;
+    } else {
+      providerKey = settings.currentModelProvider;
+      modelId = settings.currentModelId;
+    }
+    final l10n = AppLocalizations.of(context)!;
+    if (providerKey == null || modelId == null) {
+      showAppSnackBar(
+        context,
+        message: l10n.homePagePleaseSetupTranslateModel,
+        type: NotificationType.warning,
+      );
+      return;
+    }
+
+    final sourceText = sourceValue.text.trim();
+    final language = defaultTranslationLanguage(
+      Localizations.localeOf(context),
+      preferredCode: settings.translateTargetLang,
+    );
+    final prompt = settings.translatePrompt
+        .replaceAll('{source_text}', sourceText)
+        .replaceAll('{target_lang}', language.displayName);
+
+    setState(() => _isTranslatingInput = true);
+    try {
+      final provider = settings.getProviderConfig(providerKey);
+      final buffer = StringBuffer();
+      final stream = ChatApiService.sendMessageStream(
+        config: provider,
+        modelId: modelId,
+        messages: [
+          {'role': 'user', 'content': prompt},
+        ],
+        thinkingBudget: settings.translateGenerationThinkingBudgetFor(
+          assistant?.thinkingBudget,
+        ),
+        requestId: _inputTranslationRequestId,
+      );
+      await for (final chunk in stream) {
+        if (chunk.content.isNotEmpty) buffer.write(chunk.content);
+      }
+
+      if (!mounted || _controller.text != sourceValue.text) return;
+      final translated = buffer.toString().trim();
+      if (translated.isEmpty) {
+        showAppSnackBar(
+          context,
+          message: l10n.homePageTranslateFailed(
+            l10n.chatInputBarEmptyTranslationResponse,
+          ),
+          type: NotificationType.error,
+        );
+        return;
+      }
+
+      final translatedValue = TextEditingValue(
+        text: translated,
+        selection: TextSelection.collapsed(offset: translated.length),
+      );
+      _controller.value = translatedValue;
+      _lastTextEditingValue = translatedValue;
+      _ensureCaretVisible();
+    } catch (error) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        message: l10n.homePageTranslateFailed(error.toString()),
+        type: NotificationType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _isTranslatingInput = false);
+    }
+  }
 
   void _addImages(List<String> paths) {
     if (paths.isEmpty) return;
@@ -510,6 +621,9 @@ class _ChatInputBarState extends State<ChatInputBar>
   void initState() {
     super.initState();
     _controller = widget.controller ?? TextEditingController();
+    _lastTextEditingValue = _controller.value;
+    _inputTranslationRequestId =
+        'chat-input-translation-${identityHashCode(this)}';
     widget.mediaController?._bind(this);
     widget.asrProvider?.addListener(_handleAsrChanged);
     WidgetsBinding.instance.addObserver(this);
@@ -541,6 +655,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ChatApiService.cancelRequest(_inputTranslationRequestId);
     _stopVoiceLevelSampling();
     final asr = widget.asrProvider;
     asr?.removeListener(_handleAsrChanged);
@@ -893,6 +1008,7 @@ class _ChatInputBarState extends State<ChatInputBar>
 
   Future<void> _handleSend() async {
     if (_isSubmitting ||
+        _isTranslatingInput ||
         _hasUnreadyImages ||
         _ownsVoiceSession ||
         _finishingVoice) {
@@ -2551,7 +2667,8 @@ class _ChatInputBarState extends State<ChatInputBar>
                                             onChanged: _onTextChanged,
                                             readOnly:
                                                 _composerLocked ||
-                                                _ownsVoiceSession,
+                                                _ownsVoiceSession ||
+                                                _isTranslatingInput,
                                             minLines: 1,
                                             maxLines: _isExpanded ? 25 : 5,
                                             // On mobile, optionally show "Send" on the return key and submit on tap.
@@ -2605,7 +2722,25 @@ class _ChatInputBarState extends State<ChatInputBar>
                                 ),
                               ),
                               // Expand/Collapse icon button (only shown when 3+ lines)
-                              if (_showExpandButton)
+                              if (_isTranslatingInput)
+                                Positioned(
+                                  top: 10,
+                                  right: 12,
+                                  child: Semantics(
+                                    label: AppLocalizations.of(
+                                      context,
+                                    )!.homePageTranslating,
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else if (_showExpandButton)
                                 Positioned(
                                   top: 10,
                                   right: 12,
@@ -2735,6 +2870,7 @@ class _ChatInputBarState extends State<ChatInputBar>
                                                       hasImages ||
                                                       hasDocs) &&
                                                   !_hasUnreadyImages &&
+                                                  !_isTranslatingInput &&
                                                   !widget.loading,
                                               loading: widget.loading,
                                               onSend: _handleSend,

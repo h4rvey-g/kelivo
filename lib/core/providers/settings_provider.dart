@@ -302,6 +302,8 @@ class SettingsProvider extends ChangeNotifier {
   static const String _translateModelKey = 'translate_model_v1';
   static const String _translatePromptKey = 'translate_prompt_v1';
   static const String _translateTargetLangKey = 'translate_target_lang_v1';
+  static const String _inputTranslationEnabledKey =
+      'input_translation_enabled_v1';
   static const String _ocrEnabledKey = 'ocr_enabled_v1';
   static const String _learningModeEnabledKey = 'learning_mode_enabled_v1';
   static const String _learningModePromptKey = 'learning_mode_prompt_v1';
@@ -797,6 +799,8 @@ class SettingsProvider extends ChangeNotifier {
     if (targetLang != null && targetLang.trim().isNotEmpty) {
       _translateTargetLang = targetLang.trim();
     }
+    _inputTranslationEnabled =
+        prefs.getBool(_inputTranslationEnabledKey) ?? true;
     // load OCR model
     final ocrSel = prefs.getString(_ocrModelKey);
     if (ocrSel != null && ocrSel.contains('::')) {
@@ -3244,6 +3248,8 @@ Please translate the <source_text> section:
   String get translatePrompt => _translatePrompt;
   String? _translateTargetLang;
   String? get translateTargetLang => _translateTargetLang;
+  bool _inputTranslationEnabled = true;
+  bool get inputTranslationEnabled => _inputTranslationEnabled;
 
   Future<void> setTranslateModel(String providerKey, String modelId) async {
     _translateModelProvider = providerKey;
@@ -3284,6 +3290,13 @@ Please translate the <source_text> section:
     notifyListeners();
     final prefs = _preferences;
     await prefs.remove(_translateTargetLangKey);
+  }
+
+  Future<void> setInputTranslationEnabled(bool enabled) async {
+    if (_inputTranslationEnabled == enabled) return;
+    _inputTranslationEnabled = enabled;
+    notifyListeners();
+    await _preferences.setBool(_inputTranslationEnabledKey, enabled);
   }
 
   // OCR model, prompt and toggle
@@ -4933,6 +4946,7 @@ Requirements:
     copy._translateModelId = _translateModelId;
     copy._translatePrompt = _translatePrompt;
     copy._translateTargetLang = _translateTargetLang;
+    copy._inputTranslationEnabled = _inputTranslationEnabled;
     copy._ocrModelProvider = _ocrModelProvider;
     copy._ocrModelId = _ocrModelId;
     copy._ocrPrompt = _ocrPrompt;

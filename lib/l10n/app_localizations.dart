@@ -5704,6 +5704,30 @@ abstract class AppLocalizations {
   /// **'Used for translating message content; prefer fast & accurate models'**
   String get defaultModelPageTranslateModelSubtitle;
 
+  /// No description provided for @defaultModelPageInputTranslationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Triple-space translation'**
+  String get defaultModelPageInputTranslationTitle;
+
+  /// No description provided for @defaultModelPageInputTranslationSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Type three spaces in a row to translate and replace the input text'**
+  String get defaultModelPageInputTranslationSubtitle;
+
+  /// No description provided for @defaultModelPageInputTranslationTargetLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Target language'**
+  String get defaultModelPageInputTranslationTargetLanguage;
+
+  /// No description provided for @chatInputBarEmptyTranslationResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'The translation model returned an empty response'**
+  String get chatInputBarEmptyTranslationResponse;
+
   /// No description provided for @defaultModelPageOcrModelTitle.
   ///
   /// In en, this message translates to:
