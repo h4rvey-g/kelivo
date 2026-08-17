@@ -287,6 +287,65 @@ void main() {
     focusNode.dispose();
   });
 
+  testWidgets('粘贴会在异步媒体探测前锁定临时剪贴板文本', (tester) async {
+    final nativeClipboardContext = MockMessageChannelContext()
+      ..registerMockMethodCallHandler('ClipboardReader', (_) {
+        throw PlatformException(code: 'unavailable-in-widget-test');
+      });
+    setContextOverride(nativeClipboardContext);
+
+    var clipboardText = 'Typeless transcript';
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.getData') {
+        return <String, dynamic>{'text': clipboardText};
+      }
+      return null;
+    });
+
+    final mediaProbeStarted = Completer<void>();
+    final mediaProbeGate = Completer<void>();
+    const clipboardFilesChannel = MethodChannel('app.clipboard');
+    messenger.setMockMethodCallHandler(clipboardFilesChannel, (call) async {
+      if (call.method == 'getClipboardImages') {
+        if (!mediaProbeStarted.isCompleted) mediaProbeStarted.complete();
+        await mediaProbeGate.future;
+      }
+      return <String>[];
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      messenger.setMockMethodCallHandler(clipboardFilesChannel, null);
+    });
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    await tester.pumpWidget(
+      buildHarness(
+        controller: controller,
+        focusNode: focusNode,
+        onSend: (_) async => ChatInputSubmissionResult.rejected,
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+
+    await _invokePasteShortcut(tester, focusNode);
+    await tester.runAsync(
+      () => mediaProbeStarted.future.timeout(const Duration(seconds: 2)),
+    );
+
+    clipboardText = 'previous clipboard content';
+    mediaProbeGate.complete();
+
+    expect(await pumpUntil(tester, () => controller.text.isNotEmpty), isTrue);
+    expect(controller.text, 'Typeless transcript');
+
+    controller.dispose();
+    focusNode.dispose();
+  });
+
   testWidgets('输入法图片落盘期间阻止发送并在取消时清理缓存', (tester) async {
     final controller = TextEditingController(text: 'send with image');
     final focusNode = FocusNode();

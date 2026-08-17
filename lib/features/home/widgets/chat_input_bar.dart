@@ -663,7 +663,12 @@ class _ChatInputBarState extends State<ChatInputBar>
         state == AppLifecycleState.paused) {
       // When going to background, hide any open toolbar
       _suppressContextMenu = true;
-      widget.focusNode?.unfocus();
+      // Desktop dictation tools briefly deactivate the app, then inject their
+      // result into the previously focused field. Keep the text input
+      // connection alive so that handoff does not lose the insertion.
+      if (Platform.isAndroid || Platform.isIOS) {
+        widget.focusNode?.unfocus();
+      }
       if (_ownsVoiceSession) unawaited(_cancelVoiceInput());
     }
   }
@@ -1346,7 +1351,7 @@ class _ChatInputBarState extends State<ChatInputBar>
           keys.contains(LogicalKeyboardKey.controlLeft) ||
           keys.contains(LogicalKeyboardKey.controlRight);
       if (meta || ctrl) {
-        _handlePasteFromClipboard();
+        unawaited(_handlePasteFromClipboard());
         return KeyEventResult.handled;
       }
     }
@@ -1486,6 +1491,14 @@ class _ChatInputBarState extends State<ChatInputBar>
   }
 
   Future<void> _handlePasteFromClipboard() async {
+    // Dictation tools such as Typeless temporarily replace the clipboard,
+    // synthesize Cmd/Ctrl+V, then restore the previous clipboard shortly
+    // afterwards. Start reading text before any asynchronous image/file probes
+    // so this paste keeps the content that existed when the shortcut arrived.
+    final Future<String?>? plainTextSnapshot =
+        Platform.isMacOS || Platform.isWindows || Platform.isLinux
+        ? _readPlainTextClipboard()
+        : null;
     final compressConfig = context
         .read<SettingsProvider>()
         .resolveImageCompressConfig();
@@ -1587,7 +1600,16 @@ class _ChatInputBarState extends State<ChatInputBar>
           }
         }
 
-        // If clipboard has plain text via super_clipboard, paste it
+        if (plainTextSnapshot != null) {
+          final snapshotText = await plainTextSnapshot;
+          if (snapshotText != null && snapshotText.isNotEmpty) {
+            await _handlePastedText(snapshotText);
+            return;
+          }
+        }
+
+        // If Flutter could not read text, fall back to the reader captured
+        // above before continuing to legacy image and file probes.
         if (reader.canProvide(Formats.plainText)) {
           try {
             final String? text = await reader.readValue(Formats.plainText);
@@ -1647,13 +1669,19 @@ class _ChatInputBarState extends State<ChatInputBar>
     } catch (_) {}
     if (handledFiles) return;
 
-    // 4) Last resort: paste text via Flutter Clipboard API
+    // 4) Last resort: use the text captured when paste was invoked
+    final text = await (plainTextSnapshot ?? _readPlainTextClipboard());
+    if (text == null || text.isEmpty) return;
+    await _handlePastedText(text);
+  }
+
+  Future<String?> _readPlainTextClipboard() async {
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
-      final text = data?.text ?? '';
-      if (text.isEmpty) return;
-      await _handlePastedText(text);
-    } catch (_) {}
+      return data?.text;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _handlePastedText(String text) async {

@@ -44,17 +44,20 @@ void main() {
     );
   }
 
-  testWidgets('应用恢复前台时重新聚焦对话输入框', (tester) async {
+  testWidgets('桌面应用失活期间保留对话输入焦点以支持外部听写', (tester) async {
     final controller = TextEditingController();
     final focusNode = FocusNode();
 
     await tester.pumpWidget(
       buildHarness(controller: controller, focusNode: focusNode),
     );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await tester.pump();
-    expect(focusNode.hasFocus, isFalse);
+    expect(focusNode.hasFocus, isTrue);
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
