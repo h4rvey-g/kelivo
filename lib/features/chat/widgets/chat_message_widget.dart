@@ -1549,40 +1549,42 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
             ],
           ),
           const SizedBox(height: 8),
-          // Message content (context menu: long-press on mobile, right-click on desktop)
-          GestureDetector(
-            onLongPressStart: (_) {
-              final isDesktop =
-                  defaultTargetPlatform == TargetPlatform.macOS ||
-                  defaultTargetPlatform == TargetPlatform.windows ||
-                  defaultTargetPlatform == TargetPlatform.linux;
-              if (isDesktop) return; // Desktop uses right-click menu
-              _showUserContextMenu();
-            },
-            onSecondaryTapDown: (details) {
-              final isDesktop =
-                  defaultTargetPlatform == TargetPlatform.macOS ||
-                  defaultTargetPlatform == TargetPlatform.windows ||
-                  defaultTargetPlatform == TargetPlatform.linux;
-              if (!isDesktop) return; // Mobile keeps long-press
-              _showUserContextMenuAt(details.globalPosition);
-            },
-            behavior: HitTestBehavior.translucent,
-            child: Container(
-              key: _userBubbleKey,
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * 0.75,
-              ),
-              child: Column(
-                key: ValueKey('user-message-content:${widget.message.id}'),
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (mediaPreview != null) mediaPreview,
-                  if (mediaPreview != null && textBubble != null)
-                    const SizedBox(height: 8),
-                  if (textBubble != null) textBubble,
-                ],
-              ),
+          // Text owns long-press/right-click gestures for selection. Keep the
+          // message action menu on attachments, which are not selectable.
+          Container(
+            key: _userBubbleKey,
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.75,
+            ),
+            child: Column(
+              key: ValueKey('user-message-content:${widget.message.id}'),
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (mediaPreview != null)
+                  GestureDetector(
+                    onLongPressStart: (_) {
+                      final isDesktop =
+                          defaultTargetPlatform == TargetPlatform.macOS ||
+                          defaultTargetPlatform == TargetPlatform.windows ||
+                          defaultTargetPlatform == TargetPlatform.linux;
+                      if (isDesktop) return;
+                      _showUserContextMenu();
+                    },
+                    onSecondaryTapDown: (details) {
+                      final isDesktop =
+                          defaultTargetPlatform == TargetPlatform.macOS ||
+                          defaultTargetPlatform == TargetPlatform.windows ||
+                          defaultTargetPlatform == TargetPlatform.linux;
+                      if (!isDesktop) return;
+                      _showUserContextMenuAt(details.globalPosition);
+                    },
+                    behavior: HitTestBehavior.translucent,
+                    child: mediaPreview,
+                  ),
+                if (mediaPreview != null && textBubble != null)
+                  const SizedBox(height: 8),
+                if (textBubble != null) textBubble,
+              ],
             ),
           ),
           if (showUserActions || showVersionSwitcher) ...[
@@ -1803,12 +1805,13 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
       );
     }
 
-    return isDesktop
-        ? AutoScrollSelectionArea(
-            selectionAreaKey: ValueKey('user_${widget.message.id}'),
-            child: content,
-          )
-        : content;
+    return RepaintBoundary(
+      child: _MarkdownSelectionArea(
+        areaKey: ValueKey('user_${widget.message.id}'),
+        markdownSource: visualText,
+        child: content,
+      ),
+    );
   }
 
   /// Attachment previews in [parts] ordinal order (not images-then-files).
