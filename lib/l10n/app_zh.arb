@@ -1422,6 +1422,25 @@
       }
     }
   },
+  "aboutPageCheckForUpdates": "检查更新",
+  "aboutPageCheckingForUpdates": "正在检查更新…",
+  "aboutPageUpToDate": "当前已是最新版本",
+  "aboutPageUpdateAvailable": "发现新版本：{version}",
+  "@aboutPageUpdateAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "aboutPageUpdateCheckFailed": "检查更新失败：{error}",
+  "@aboutPageUpdateCheckFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "aboutPageSystem": "系统",
   "aboutPageLoadingPlaceholder": "...",
   "aboutPageUnknownPlaceholder": "-",

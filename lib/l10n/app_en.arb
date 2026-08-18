@@ -1812,6 +1812,25 @@
       }
     }
   },
+  "aboutPageCheckForUpdates": "Check for updates",
+  "aboutPageCheckingForUpdates": "Checking for updates…",
+  "aboutPageUpToDate": "You're using the latest version",
+  "aboutPageUpdateAvailable": "New version available: {version}",
+  "@aboutPageUpdateAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "aboutPageUpdateCheckFailed": "Unable to check for updates: {error}",
+  "@aboutPageUpdateCheckFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "aboutPageSystem": "System",
   "aboutPageLoadingPlaceholder": "...",
   "aboutPageUnknownPlaceholder": "-",

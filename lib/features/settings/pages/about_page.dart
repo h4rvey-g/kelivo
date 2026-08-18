@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:Kelivo/theme/app_font_weights.dart';
 
@@ -9,9 +10,11 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../icons/lucide_adapter.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/providers/update_provider.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/widgets/ios_switch.dart';
 import '../../../shared/widgets/qq_group_join_sheet.dart';
+import '../../../shared/widgets/snackbar.dart';
 import '../../../core/services/haptics.dart';
 import 'debug_page.dart';
 import 'log_viewer_page.dart';
@@ -65,6 +68,88 @@ class _AboutPageState extends State<AboutPage> {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       // Fallback: try in-app web view
       await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+  }
+
+  Future<void> _checkForUpdates() async {
+    final updates = context.read<UpdateProvider>();
+    if (updates.checking || updates.installing) return;
+
+    await updates.checkForUpdates();
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    final error = updates.error;
+    if (error != null) {
+      showAppSnackBar(
+        context,
+        message: l10n.aboutPageUpdateCheckFailed(error),
+        type: NotificationType.error,
+      );
+      return;
+    }
+
+    final info = updates.available;
+    if (info == null) {
+      showAppSnackBar(
+        context,
+        message: l10n.aboutPageUpToDate,
+        type: NotificationType.success,
+      );
+      return;
+    }
+
+    showAppSnackBar(
+      context,
+      message: l10n.aboutPageUpdateAvailable(info.version),
+      type: NotificationType.info,
+      duration: const Duration(seconds: 8),
+      actionLabel: info.bestInstallableArtifact() == null
+          ? l10n.sideDrawerUpdateOpenPageAction
+          : l10n.sideDrawerUpdateDownloadAction,
+      onAction: () => unawaited(_installUpdate(info)),
+    );
+  }
+
+  Future<void> _installUpdate(UpdateInfo info) async {
+    if (!mounted) return;
+    final updates = context.read<UpdateProvider>();
+    if (updates.installing) return;
+
+    final fallbackUrl = info.bestDownloadUrl();
+    final result = await updates.downloadAndInstall();
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    switch (result) {
+      case UpdateInstallResult.opened:
+        showAppSnackBar(
+          context,
+          message: l10n.sideDrawerUpdateInstallerOpened,
+          type: NotificationType.success,
+        );
+      case UpdateInstallResult.unavailable:
+        if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+          await _openUrl(fallbackUrl);
+        } else {
+          showAppSnackBar(
+            context,
+            message: l10n.sideDrawerUpdateInstallFailed(
+              l10n.sideDrawerUpdateUnknownError,
+            ),
+            type: NotificationType.error,
+          );
+        }
+      case UpdateInstallResult.failed:
+        showAppSnackBar(
+          context,
+          message: l10n.sideDrawerUpdateInstallFailed(
+            updates.installError ?? l10n.sideDrawerUpdateUnknownError,
+          ),
+          type: NotificationType.error,
+        );
+      case UpdateInstallResult.busy:
+        break;
     }
   }
 
@@ -367,6 +452,8 @@ class _AboutPageState extends State<AboutPage> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
+    final updates = context.watch<UpdateProvider>();
+    final updateBusy = updates.checking || updates.installing;
 
     return Scaffold(
       appBar: AppBar(
@@ -467,6 +554,27 @@ class _AboutPageState extends State<AboutPage> {
                 detailBuilder: (_) =>
                     Text(_systemInfo.isEmpty ? '...' : _systemInfo),
                 onTap: null, // informational only
+              ),
+              _iosDivider(context),
+              _iosNavRow(
+                context,
+                icon: Lucide.RefreshCw,
+                label: updates.checking
+                    ? l10n.aboutPageCheckingForUpdates
+                    : updates.installing
+                    ? l10n.sideDrawerUpdateDownloading
+                    : l10n.aboutPageCheckForUpdates,
+                detailBuilder: updateBusy
+                    ? (_) => SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.primary,
+                        ),
+                      )
+                    : null,
+                onTap: updateBusy ? null : _checkForUpdates,
               ),
               _iosDivider(context),
               _iosNavRow(

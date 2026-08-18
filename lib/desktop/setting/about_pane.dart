@@ -1,14 +1,18 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/providers/update_provider.dart';
 import '../../icons/lucide_adapter.dart' as lucide;
 import '../../l10n/app_localizations.dart';
 import '../../features/settings/pages/debug_page.dart';
 import '../../shared/widgets/qq_group_join_sheet.dart';
+import '../../shared/widgets/snackbar.dart';
 import '../../theme/app_font_weights.dart';
 
 class DesktopAboutPane extends StatefulWidget {
@@ -74,10 +78,94 @@ class _DesktopAboutPaneState extends State<DesktopAboutPane> {
     }
   }
 
+  Future<void> _checkForUpdates() async {
+    final updates = context.read<UpdateProvider>();
+    if (updates.checking || updates.installing) return;
+
+    await updates.checkForUpdates();
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    final error = updates.error;
+    if (error != null) {
+      showAppSnackBar(
+        context,
+        message: l10n.aboutPageUpdateCheckFailed(error),
+        type: NotificationType.error,
+      );
+      return;
+    }
+
+    final info = updates.available;
+    if (info == null) {
+      showAppSnackBar(
+        context,
+        message: l10n.aboutPageUpToDate,
+        type: NotificationType.success,
+      );
+      return;
+    }
+
+    showAppSnackBar(
+      context,
+      message: l10n.aboutPageUpdateAvailable(info.version),
+      type: NotificationType.info,
+      duration: const Duration(seconds: 8),
+      actionLabel: info.bestInstallableArtifact() == null
+          ? l10n.sideDrawerUpdateOpenPageAction
+          : l10n.sideDrawerUpdateDownloadAction,
+      onAction: () => unawaited(_installUpdate(info)),
+    );
+  }
+
+  Future<void> _installUpdate(UpdateInfo info) async {
+    if (!mounted) return;
+    final updates = context.read<UpdateProvider>();
+    if (updates.installing) return;
+
+    final fallbackUrl = info.bestDownloadUrl();
+    final result = await updates.downloadAndInstall();
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    switch (result) {
+      case UpdateInstallResult.opened:
+        showAppSnackBar(
+          context,
+          message: l10n.sideDrawerUpdateInstallerOpened,
+          type: NotificationType.success,
+        );
+      case UpdateInstallResult.unavailable:
+        if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+          await _openUrl(fallbackUrl);
+        } else {
+          showAppSnackBar(
+            context,
+            message: l10n.sideDrawerUpdateInstallFailed(
+              l10n.sideDrawerUpdateUnknownError,
+            ),
+            type: NotificationType.error,
+          );
+        }
+      case UpdateInstallResult.failed:
+        showAppSnackBar(
+          context,
+          message: l10n.sideDrawerUpdateInstallFailed(
+            updates.installError ?? l10n.sideDrawerUpdateUnknownError,
+          ),
+          type: NotificationType.error,
+        );
+      case UpdateInstallResult.busy:
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
+    final updates = context.watch<UpdateProvider>();
+    final updateBusy = updates.checking || updates.installing;
 
     String localizeSystem(String systemId) {
       switch (systemId) {
@@ -161,6 +249,26 @@ class _DesktopAboutPaneState extends State<DesktopAboutPane> {
                     icon: lucide.Lucide.Phone,
                     label: l10n.aboutPageSystem,
                     detail: systemDetail,
+                  ),
+                  const _DeskRowDivider(),
+                  _DeskNavRow(
+                    icon: lucide.Lucide.RefreshCw,
+                    label: updates.checking
+                        ? l10n.aboutPageCheckingForUpdates
+                        : updates.installing
+                        ? l10n.sideDrawerUpdateDownloading
+                        : l10n.aboutPageCheckForUpdates,
+                    trailing: updateBusy
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: cs.primary,
+                            ),
+                          )
+                        : null,
+                    onTap: updateBusy ? null : _checkForUpdates,
                   ),
                   const _DeskRowDivider(),
                   _DeskNavRow(
@@ -429,11 +537,13 @@ class _DeskNavRow extends StatefulWidget {
   const _DeskNavRow({
     required this.icon,
     required this.label,
-    required this.onTap,
+    this.onTap,
+    this.trailing,
   });
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final Widget? trailing;
   @override
   State<_DeskNavRow> createState() => _DeskNavRowState();
 }
@@ -449,7 +559,9 @@ class _DeskNavRowState extends State<_DeskNavRow> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
+      cursor: widget.onTap == null
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
@@ -481,11 +593,12 @@ class _DeskNavRowState extends State<_DeskNavRow> {
                   ),
                 ),
               ),
-              Icon(
-                lucide.Lucide.ChevronRight,
-                size: 16,
-                color: cs.onSurface.withValues(alpha: 0.6),
-              ),
+              widget.trailing ??
+                  Icon(
+                    lucide.Lucide.ChevronRight,
+                    size: 16,
+                    color: cs.onSurface.withValues(alpha: 0.6),
+                  ),
             ],
           ),
         ),

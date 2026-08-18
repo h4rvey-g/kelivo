@@ -4068,6 +4068,25 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get aboutPageCheckForUpdates => '检查更新';
+
+  @override
+  String get aboutPageCheckingForUpdates => '正在检查更新…';
+
+  @override
+  String get aboutPageUpToDate => '当前已是最新版本';
+
+  @override
+  String aboutPageUpdateAvailable(String version) {
+    return '发现新版本：$version';
+  }
+
+  @override
+  String aboutPageUpdateCheckFailed(String error) {
+    return '检查更新失败：$error';
+  }
+
+  @override
   String get aboutPageSystem => '系统';
 
   @override
@@ -11347,6 +11366,25 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   }
 
   @override
+  String get aboutPageCheckForUpdates => '检查更新';
+
+  @override
+  String get aboutPageCheckingForUpdates => '正在检查更新…';
+
+  @override
+  String get aboutPageUpToDate => '当前已是最新版本';
+
+  @override
+  String aboutPageUpdateAvailable(String version) {
+    return '发现新版本：$version';
+  }
+
+  @override
+  String aboutPageUpdateCheckFailed(String error) {
+    return '检查更新失败：$error';
+  }
+
+  @override
   String get aboutPageSystem => '系统';
 
   @override
@@ -18547,6 +18585,25 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   @override
   String aboutPageVersionDetail(String version, String buildNumber) {
     return '$version / $buildNumber';
+  }
+
+  @override
+  String get aboutPageCheckForUpdates => '檢查更新';
+
+  @override
+  String get aboutPageCheckingForUpdates => '正在檢查更新…';
+
+  @override
+  String get aboutPageUpToDate => '目前已是最新版本';
+
+  @override
+  String aboutPageUpdateAvailable(String version) {
+    return '發現新版本：$version';
+  }
+
+  @override
+  String aboutPageUpdateCheckFailed(String error) {
+    return '檢查更新失敗：$error';
   }
 
   @override

@@ -4218,6 +4218,25 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get aboutPageCheckForUpdates => 'Check for updates';
+
+  @override
+  String get aboutPageCheckingForUpdates => 'Checking for updates…';
+
+  @override
+  String get aboutPageUpToDate => 'You\'re using the latest version';
+
+  @override
+  String aboutPageUpdateAvailable(String version) {
+    return 'New version available: $version';
+  }
+
+  @override
+  String aboutPageUpdateCheckFailed(String error) {
+    return 'Unable to check for updates: $error';
+  }
+
+  @override
   String get aboutPageSystem => 'System';
 
   @override

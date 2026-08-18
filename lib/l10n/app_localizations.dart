@@ -7819,6 +7819,36 @@ abstract class AppLocalizations {
   /// **'{version} / {buildNumber}'**
   String aboutPageVersionDetail(String version, String buildNumber);
 
+  /// No description provided for @aboutPageCheckForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get aboutPageCheckForUpdates;
+
+  /// No description provided for @aboutPageCheckingForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for updates…'**
+  String get aboutPageCheckingForUpdates;
+
+  /// No description provided for @aboutPageUpToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re using the latest version'**
+  String get aboutPageUpToDate;
+
+  /// No description provided for @aboutPageUpdateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'New version available: {version}'**
+  String aboutPageUpdateAvailable(String version);
+
+  /// No description provided for @aboutPageUpdateCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to check for updates: {error}'**
+  String aboutPageUpdateCheckFailed(String error);
+
   /// No description provided for @aboutPageSystem.
   ///
   /// In en, this message translates to:
