@@ -3,6 +3,10 @@ name: PR Checks
 env:
   FLUTTER_VERSION: '3.44.6'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     branches: [master]
@@ -11,12 +15,16 @@ jobs:
   checks:
     name: Analyze / Test / L10n / Format
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+
+      - name: Fetch PR base
+        run: git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2

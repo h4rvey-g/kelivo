@@ -72,6 +72,7 @@ jobs:
   prepare:
     name: 检查发布版本
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       should_build: ${{ steps.release.outputs.should_build }}
       publish_release: ${{ steps.release.outputs.publish_release }}
@@ -154,13 +155,14 @@ jobs:
     if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_android) }}
     name: 构建 Android
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions: write-all
 
     steps:
       - name: 📦 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: ☕ 配置 Java 环境
         uses: actions/setup-java@v4
@@ -235,13 +237,14 @@ jobs:
     if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_ios) }}
     name: 构建 iOS
     runs-on: macos-latest
+    timeout-minutes: 30
     permissions: write-all
 
     steps:
       - name: 📦 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: 🐦 安装 Flutter
         uses: subosito/flutter-action@v2
@@ -285,13 +288,14 @@ jobs:
     if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_mac) }}
     name: 构建 macOS
     runs-on: macos-latest
+    timeout-minutes: 30
     permissions: write-all
 
     steps:
       - name: 📦 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: 🐦 安装 Flutter
         uses: subosito/flutter-action@v2
@@ -319,19 +323,17 @@ jobs:
 
       - name: 📦 创建 DMG
         run: |
-          brew install create-dmg
-          create-dmg \
-            --volname "Kelivo" \
-            --window-pos 200 120 \
-            --window-size 800 400 \
-            --icon-size 100 \
-            --app-drop-link 600 185 \
-            "Kelivo_macos_${VERSION}.dmg" \
-            "build/macos/Build/Products/Release/kelivo.app" || true
-          # 如果 create-dmg 失败，使用简单方式
-          if [ ! -f "Kelivo_macos_${VERSION}.dmg" ]; then
-            hdiutil create -volname Kelivo -srcfolder build/macos/Build/Products/Release/kelivo.app -ov -format UDZO Kelivo_macos_${VERSION}.dmg
-          fi
+          # Use built-in tooling and keep the drag-to-Applications workflow.
+          dmg_staging="$(mktemp -d)"
+          trap 'rm -rf "$dmg_staging"' EXIT
+          cp -R "build/macos/Build/Products/Release/kelivo.app" "$dmg_staging/kelivo.app"
+          ln -s /Applications "$dmg_staging/Applications"
+          hdiutil create \
+            -volname "Kelivo" \
+            -srcfolder "$dmg_staging" \
+            -ov \
+            -format UDZO \
+            "Kelivo_macos_${VERSION}.dmg"
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4
         with:
@@ -344,13 +346,16 @@ jobs:
     if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_windows) }}
     name: 构建 Windows
     runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
     permissions: write-all
 
     steps:
       - name: 📦 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: 🔧 安装最新 CMake
         uses: lukka/get-cmake@latest
@@ -369,9 +374,6 @@ jobs:
           cat > lib/secrets/fallback.dart <<'EOF'
           const String siliconflowFallbackKey = '${{ secrets.SILICONFLOW_KEY }}';
           EOF
-      - name: 🔧 获取依赖
-        run: flutter pub get
-
       - name: 🔍 验证 CMake 版本
         shell: pwsh
         run: |
@@ -492,21 +494,29 @@ jobs:
     if: ${{ needs.prepare.outputs.should_build == 'true' && (github.event_name == 'push' || inputs.build_linux) }}
     name: 构建 Linux
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     permissions: write-all
 
     steps:
       - name: 📦 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: 🔧 安装依赖
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          set -euo pipefail
+          apt_options=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+          )
+          sudo apt-get update -qq "${apt_options[@]}"
+          sudo env DEBIAN_FRONTEND=noninteractive \
+            apt-get "${apt_options[@]}" install -y --no-install-recommends \
             clang cmake ninja-build pkg-config libgtk-3-dev \
             libgstreamer1.0-dev libunwind-dev libgstreamer-plugins-base1.0-dev \
-            gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
             rpm patchelf libfuse2 file \
             libkeybinder-3.0-dev libayatana-appindicator3-dev
       - name: 🐦 安装 Flutter
@@ -779,6 +789,7 @@ jobs:
          needs.linux.result == 'success')
       }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
