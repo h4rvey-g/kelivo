@@ -287,7 +287,7 @@ void main() {
     focusNode.dispose();
   });
 
-  testWidgets('粘贴会在异步媒体探测前锁定临时剪贴板文本', (tester) async {
+  testWidgets('真实快捷键会在异步媒体探测前锁定临时剪贴板文本', (tester) async {
     final nativeClipboardContext = MockMessageChannelContext()
       ..registerMockMethodCallHandler('ClipboardReader', (_) {
         throw PlatformException(code: 'unavailable-in-widget-test');
@@ -331,14 +331,12 @@ void main() {
     await tester.tap(find.byType(TextField));
     await tester.pump();
 
-    await _invokePasteShortcut(tester, focusNode);
+    await _invokePasteShortcutThroughFocus(tester, focusNode);
     await tester.runAsync(
       () => mediaProbeStarted.future.timeout(const Duration(seconds: 2)),
     );
-
     clipboardText = 'previous clipboard content';
     mediaProbeGate.complete();
-
     expect(await pumpUntil(tester, () => controller.text.isNotEmpty), isTrue);
     expect(controller.text, 'Typeless transcript');
 
@@ -959,6 +957,20 @@ Future<void> _invokePasteShortcut(
     await Future<void>.delayed(const Duration(milliseconds: 20));
   });
   await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+}
+
+Future<void> _invokePasteShortcutThroughFocus(
+  WidgetTester tester,
+  FocusNode focusNode,
+) async {
+  expect(focusNode.hasFocus, isTrue);
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.keyV);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.keyV);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 20)),
+  );
 }
 
 Future<void> _forceDelete(Directory dir) async {

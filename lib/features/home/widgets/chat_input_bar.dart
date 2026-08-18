@@ -1741,20 +1741,34 @@ class _ChatInputBarState extends State<ChatInputBar>
     if (!mounted) return;
     final value = _controller.value;
     final selection = value.selection;
-    if (!selection.isValid) {
-      _controller.text = value.text + text;
-      _controller.selection = TextSelection.collapsed(
-        offset: _controller.text.length,
+    final focusNode = widget.focusNode ?? Focus.maybeOf(context);
+    final editable = focusNode?.context
+        ?.findAncestorStateOfType<EditableTextState>();
+    final TextEditingValue nextValue;
+    if (selection.isValid) {
+      final collapsedTextEditingValue = value.copyWith(
+        selection: TextSelection.collapsed(
+          offset: math.max(selection.start, selection.end),
+        ),
       );
+      nextValue = collapsedTextEditingValue.replaced(selection, text);
     } else {
-      final start = selection.start;
-      final end = selection.end;
-      final newText = value.text.replaceRange(start, end, text);
-      _controller.value = value.copyWith(
-        text: newText,
-        selection: TextSelection.collapsed(offset: start + text.length),
+      nextValue = value.copyWith(
+        text: value.text + text,
+        selection: TextSelection.collapsed(
+          offset: value.text.length + text.length,
+        ),
         composing: TextRange.empty,
       );
+    }
+
+    if (editable != null) {
+      editable.userUpdateTextEditingValue(
+        nextValue,
+        SelectionChangedCause.keyboard,
+      );
+    } else {
+      _controller.value = nextValue;
     }
     setState(() {});
   }
