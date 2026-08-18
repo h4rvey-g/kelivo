@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:io';
 import '../../../core/models/chat_input_data.dart';
 import '../../../utils/clipboard_images.dart';
+import '../../../utils/transient_text_paste_bridge.dart';
 import '../../../core/providers/asr_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/assistant_provider.dart';
@@ -201,6 +202,9 @@ class ChatInputBar extends StatefulWidget {
 class _ChatInputBarState extends State<ChatInputBar>
     with WidgetsBindingObserver {
   late TextEditingController _controller;
+  StreamSubscription<TransientTextPaste>? _transientTextPasteSubscription;
+  late final String _transientTextPasteTarget;
+  bool? _transientTextPasteTargetFocused;
   bool _isExpanded = false; // Track expand/collapse state for input field
   // The ASR provider owns microphone capture. This widget only owns the
   // composer presentation and an exact snapshot used by Cancel.
@@ -633,12 +637,26 @@ class _ChatInputBarState extends State<ChatInputBar>
   void initState() {
     super.initState();
     _controller = widget.controller ?? TextEditingController();
+    _transientTextPasteTarget = 'chat-input-${identityHashCode(this)}';
+    if (Platform.isMacOS) {
+      _transientTextPasteSubscription = TransientTextPasteBridge.events.listen(
+        _handleTransientTextPaste,
+      );
+      widget.focusNode?.addListener(_handleTransientTextPasteFocusChanged);
+      scheduleMicrotask(_syncTransientTextPasteTarget);
+    }
     _lastTextEditingValue = _controller.value;
     _inputTranslationRequestId =
         'chat-input-translation-${identityHashCode(this)}';
     widget.mediaController?._bind(this);
     widget.asrProvider?.addListener(_handleAsrChanged);
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (Platform.isMacOS) scheduleMicrotask(_syncTransientTextPasteTarget);
   }
 
   @override
@@ -676,6 +694,16 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.focusNode?.removeListener(_handleTransientTextPasteFocusChanged);
+    unawaited(_transientTextPasteSubscription?.cancel());
+    if (_transientTextPasteTargetFocused == true) {
+      unawaited(
+        TransientTextPasteBridge.setTarget(
+          _transientTextPasteTarget,
+          focused: false,
+        ),
+      );
+    }
     ChatApiService.cancelRequest(_inputTranslationRequestId);
     _stopVoiceLevelSampling();
     final asr = widget.asrProvider;
@@ -704,6 +732,14 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   void didUpdateWidget(covariant ChatInputBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.focusNode, widget.focusNode) && Platform.isMacOS) {
+      oldWidget.focusNode?.removeListener(
+        _handleTransientTextPasteFocusChanged,
+      );
+      widget.focusNode?.addListener(_handleTransientTextPasteFocusChanged);
+      _transientTextPasteTargetFocused = null;
+      scheduleMicrotask(_syncTransientTextPasteTarget);
+    }
     if (!identical(oldWidget.asrProvider, widget.asrProvider)) {
       _stopVoiceLevelSampling();
       oldWidget.asrProvider?.removeListener(_handleAsrChanged);
@@ -723,6 +759,39 @@ class _ChatInputBarState extends State<ChatInputBar>
   String _hint(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     return l10n.chatInputBarHint;
+  }
+
+  void _syncTransientTextPasteTarget() {
+    if (!Platform.isMacOS || !mounted) return;
+    final route = ModalRoute.of(context);
+    final focused =
+        (route == null || route.isCurrent) &&
+        (widget.focusNode?.hasFocus ?? false);
+    if (_transientTextPasteTargetFocused == focused) return;
+    _transientTextPasteTargetFocused = focused;
+    unawaited(
+      TransientTextPasteBridge.setTarget(
+        _transientTextPasteTarget,
+        focused: focused,
+      ),
+    );
+  }
+
+  void _handleTransientTextPasteFocusChanged() {
+    scheduleMicrotask(_syncTransientTextPasteTarget);
+  }
+
+  void _handleTransientTextPaste(TransientTextPaste paste) {
+    if (!mounted || paste.target != _transientTextPasteTarget) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    if (widget.focusNode?.hasFocus != true ||
+        _composerLocked ||
+        _ownsVoiceSession ||
+        _isTranslatingInput) {
+      return;
+    }
+    unawaited(_handlePastedText(paste.text));
   }
 
   /// Returns the number of lines in the input text (minimum 1).

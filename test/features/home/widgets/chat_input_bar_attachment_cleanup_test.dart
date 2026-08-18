@@ -287,36 +287,40 @@ void main() {
     focusNode.dispose();
   });
 
-  testWidgets('真实快捷键会在异步媒体探测前锁定临时剪贴板文本', (tester) async {
+  testWidgets('macOS 使用快捷键到达时捕获的临时剪贴板文本', (tester) async {
     final nativeClipboardContext = MockMessageChannelContext()
       ..registerMockMethodCallHandler('ClipboardReader', (_) {
         throw PlatformException(code: 'unavailable-in-widget-test');
       });
     setContextOverride(nativeClipboardContext);
 
-    var clipboardText = 'Typeless transcript';
+    const transcript = 'Typeless transcript';
+    const previousClipboardText = 'previous clipboard content';
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
       if (call.method == 'Clipboard.getData') {
-        return <String, dynamic>{'text': clipboardText};
+        return <String, dynamic>{'text': previousClipboardText};
       }
       return null;
     });
 
-    final mediaProbeStarted = Completer<void>();
-    final mediaProbeGate = Completer<void>();
-    const clipboardFilesChannel = MethodChannel('app.clipboard');
-    messenger.setMockMethodCallHandler(clipboardFilesChannel, (call) async {
-      if (call.method == 'getClipboardImages') {
-        if (!mediaProbeStarted.isCompleted) mediaProbeStarted.complete();
-        await mediaProbeGate.future;
+    String? transientPasteTarget;
+    const transientPasteChannel = MethodChannel(
+      'com.psyche.kelivo/transient_text_paste',
+    );
+    messenger.setMockMethodCallHandler(transientPasteChannel, (call) async {
+      if (call.method == 'setTarget') {
+        final arguments = call.arguments as Map<Object?, Object?>;
+        if (arguments['focused'] == true) {
+          transientPasteTarget = arguments['target']?.toString();
+        }
       }
       return <String>[];
     });
     addTearDown(() {
       messenger.setMockMethodCallHandler(SystemChannels.platform, null);
-      messenger.setMockMethodCallHandler(clipboardFilesChannel, null);
+      messenger.setMockMethodCallHandler(transientPasteChannel, null);
     });
 
     final controller = TextEditingController();
@@ -331,18 +335,34 @@ void main() {
     await tester.tap(find.byType(TextField));
     await tester.pump();
 
-    await _invokePasteShortcutThroughFocus(tester, focusNode);
-    await tester.runAsync(
-      () => mediaProbeStarted.future.timeout(const Duration(seconds: 2)),
+    expect(await pumpUntil(tester, () => transientPasteTarget != null), isTrue);
+    await _emitPlatformMethodCall(
+      channel: 'com.psyche.kelivo/transient_text_paste',
+      method: 'onTextPaste',
+      arguments: <String, Object>{
+        'target': transientPasteTarget!,
+        'text': transcript,
+      },
     );
-    clipboardText = 'previous clipboard content';
-    mediaProbeGate.complete();
     expect(await pumpUntil(tester, () => controller.text.isNotEmpty), isTrue);
-    expect(controller.text, 'Typeless transcript');
+    expect(controller.text, transcript);
+
+    focusNode.unfocus();
+    await tester.pump();
+    await _emitPlatformMethodCall(
+      channel: 'com.psyche.kelivo/transient_text_paste',
+      method: 'onTextPaste',
+      arguments: <String, Object>{
+        'target': transientPasteTarget!,
+        'text': 'must not be inserted',
+      },
+    );
+    await tester.pump();
+    expect(controller.text, transcript);
 
     controller.dispose();
     focusNode.dispose();
-  });
+  }, skip: !Platform.isMacOS);
 
   testWidgets('输入法图片落盘期间阻止发送并在取消时清理缓存', (tester) async {
     final controller = TextEditingController(text: 'send with image');
@@ -959,18 +979,18 @@ Future<void> _invokePasteShortcut(
   await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 }
 
-Future<void> _invokePasteShortcutThroughFocus(
-  WidgetTester tester,
-  FocusNode focusNode,
-) async {
-  expect(focusNode.hasFocus, isTrue);
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.keyV);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.keyV);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-  await tester.runAsync(
-    () => Future<void>.delayed(const Duration(milliseconds: 20)),
+Future<void> _emitPlatformMethodCall({
+  required String channel,
+  required String method,
+  Object? arguments,
+}) async {
+  final data = const StandardMethodCodec().encodeMethodCall(
+    MethodCall(method, arguments),
   );
+  final completer = Completer<void>();
+  await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(channel, data, (_) => completer.complete());
+  await completer.future;
 }
 
 Future<void> _forceDelete(Directory dir) async {

@@ -4,6 +4,56 @@ import FlutterMacOS
 class MainFlutterWindow: NSWindow {
   private var selectedTextAccessibilityController:
     SelectedTextAccessibilityController?
+  private var transientTextPasteChannel: FlutterMethodChannel?
+  private var transientTextPasteTarget: String?
+  private weak var transientTextPasteResponder: NSResponder?
+  private var transientPasteMonitor: Any?
+  private var transientPasteKeyDownPending = false
+
+  deinit {
+    if let transientPasteMonitor {
+      NSEvent.removeMonitor(transientPasteMonitor)
+    }
+  }
+
+  private func installTransientPasteMonitor() {
+    transientPasteMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) {
+      [weak self] event in
+      guard let self,
+            event.window === self ||
+              (event.window == nil &&
+                (NSApp.keyWindow == nil || NSApp.keyWindow === self)) else {
+        return event
+      }
+      if event.type == .keyUp {
+        guard self.transientPasteKeyDownPending,
+              TransientPasteboardTextCapture.isVKeyEvent(event) else {
+          return event
+        }
+        self.transientPasteKeyDownPending = false
+        return nil
+      }
+      self.transientPasteKeyDownPending = false
+      guard self.firstResponder is NSTextInputClient else { return event }
+      guard self.firstResponder === self.transientTextPasteResponder else {
+        return event
+      }
+      guard let target = self.transientTextPasteTarget,
+            let channel = self.transientTextPasteChannel,
+            let text = TransientPasteboardTextCapture.capture(
+              event: event,
+              pasteboard: .general
+            ) else {
+        return event
+      }
+      channel.invokeMethod(
+        "onTextPaste",
+        arguments: ["target": target, "text": text]
+      )
+      self.transientPasteKeyDownPending = true
+      return nil
+    }
+  }
 
   override var accessibilityFocusedUIElement: Any? {
     if let focusedElement =
@@ -145,6 +195,50 @@ class MainFlutterWindow: NSWindow {
     self.selectedTextAccessibilityController =
       selectedTextAccessibilityController
 
+    let transientTextPasteChannel = FlutterMethodChannel(
+      name: "com.psyche.kelivo/transient_text_paste",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    self.transientTextPasteChannel = transientTextPasteChannel
+    transientTextPasteChannel.setMethodCallHandler {
+      [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
+      guard call.method == "setTarget" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let self else {
+        result(FlutterError(
+          code: "window_unavailable",
+          message: "The main window is no longer available",
+          details: nil
+        ))
+        return
+      }
+      guard let arguments = call.arguments as? [String: Any],
+            let target = arguments["target"] as? String,
+            !target.isEmpty,
+            let focused = arguments["focused"] as? Bool else {
+        result(FlutterError(
+          code: "invalid_arguments",
+          message: "A target and focused state are required",
+          details: nil
+        ))
+        return
+      }
+      if focused {
+        if self.transientTextPasteTarget != target {
+          self.transientPasteKeyDownPending = false
+        }
+        self.transientTextPasteTarget = target
+        self.transientTextPasteResponder = self.firstResponder
+      } else if self.transientTextPasteTarget == target {
+        self.transientTextPasteTarget = nil
+        self.transientTextPasteResponder = nil
+        self.transientPasteKeyDownPending = false
+      }
+      result(nil)
+    }
+
     let channel = FlutterMethodChannel(name: "app.clipboard", binaryMessenger: flutterViewController.engine.binaryMessenger)
     channel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
       if call.method == "getClipboardImages" {
@@ -214,5 +308,6 @@ class MainFlutterWindow: NSWindow {
     }
 
     super.awakeFromNib()
+    installTransientPasteMonitor()
   }
 }

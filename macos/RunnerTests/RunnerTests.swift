@@ -6,6 +6,84 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
+  func testTransientCommandVCapturesPasteboardText() throws {
+    let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+    let item = NSPasteboardItem()
+    item.setString("transcript", forType: .string)
+    item.setData(Data(), forType: TransientPasteboardTextCapture.markerType)
+    XCTAssertTrue(pasteboard.writeObjects([item]))
+
+    XCTAssertEqual(
+      TransientPasteboardTextCapture.capture(
+        event: try commandVEvent(), pasteboard: pasteboard
+      ),
+      "transcript"
+    )
+  }
+
+  func testOrdinaryClipboardIsNotCaptured() throws {
+    let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+    pasteboard.clearContents()
+    pasteboard.setString("ordinary", forType: .string)
+
+    XCTAssertNil(
+      TransientPasteboardTextCapture.capture(
+        event: try commandVEvent(), pasteboard: pasteboard
+      )
+    )
+  }
+
+  func testTransientCaptureRejectsModifiedShortcut() throws {
+    let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+    let item = NSPasteboardItem()
+    item.setString("transcript", forType: .string)
+    item.setData(Data(), forType: TransientPasteboardTextCapture.markerType)
+    XCTAssertTrue(pasteboard.writeObjects([item]))
+
+    XCTAssertNil(
+      TransientPasteboardTextCapture.capture(
+        event: try commandVEvent(modifiers: [.command, .option]),
+        pasteboard: pasteboard
+      )
+    )
+  }
+
+  func testTransientCaptureAcceptsSyntheticVKeyCodeWithoutCharacters() throws {
+    let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+    let item = NSPasteboardItem()
+    item.setString("transcript", forType: .string)
+    item.setData(Data(), forType: TransientPasteboardTextCapture.markerType)
+    XCTAssertTrue(pasteboard.writeObjects([item]))
+
+    XCTAssertEqual(
+      TransientPasteboardTextCapture.capture(
+        event: try commandVEvent(characters: ""),
+        pasteboard: pasteboard
+      ),
+      "transcript"
+    )
+  }
+
+  private func commandVEvent(
+    modifiers: NSEvent.ModifierFlags = [.command],
+    characters: String = "v"
+  ) throws -> NSEvent {
+    try XCTUnwrap(
+      NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        characters: characters,
+        charactersIgnoringModifiers: characters,
+        isARepeat: false,
+        keyCode: 9
+      )
+    )
+  }
+
   func testSelectionReplacementIgnoresStaleClearAndPreservesFocus() {
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
