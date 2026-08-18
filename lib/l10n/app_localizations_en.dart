@@ -2673,6 +2673,37 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sideDrawerLinkCopied => 'Link copied';
 
   @override
+  String get sideDrawerUpdateDownloadAction => 'Download and install';
+
+  @override
+  String get sideDrawerUpdateOpenPageAction => 'Open download page';
+
+  @override
+  String get sideDrawerUpdateDownloading => 'Downloading update…';
+
+  @override
+  String sideDrawerUpdateDownloadProgress(int percent) {
+    return 'Downloading update… $percent%';
+  }
+
+  @override
+  String get sideDrawerUpdatePreparingInstaller => 'Preparing installer…';
+
+  @override
+  String get sideDrawerUpdateOpeningInstaller => 'Opening installer…';
+
+  @override
+  String get sideDrawerUpdateInstallerOpened => 'Installer opened';
+
+  @override
+  String sideDrawerUpdateInstallFailed(String error) {
+    return 'Update failed: $error';
+  }
+
+  @override
+  String get sideDrawerUpdateUnknownError => 'Unknown error';
+
+  @override
   String get sideDrawerPinnedLabel => 'Pinned';
 
   @override

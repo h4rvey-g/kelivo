@@ -2578,6 +2578,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sideDrawerLinkCopied => '已复制下载链接';
 
   @override
+  String get sideDrawerUpdateDownloadAction => '下载并安装';
+
+  @override
+  String get sideDrawerUpdateOpenPageAction => '打开下载页面';
+
+  @override
+  String get sideDrawerUpdateDownloading => '正在下载更新…';
+
+  @override
+  String sideDrawerUpdateDownloadProgress(int percent) {
+    return '正在下载更新… $percent%';
+  }
+
+  @override
+  String get sideDrawerUpdatePreparingInstaller => '正在准备安装程序…';
+
+  @override
+  String get sideDrawerUpdateOpeningInstaller => '正在打开安装程序…';
+
+  @override
+  String get sideDrawerUpdateInstallerOpened => '已打开安装程序';
+
+  @override
+  String sideDrawerUpdateInstallFailed(String error) {
+    return '更新失败：$error';
+  }
+
+  @override
+  String get sideDrawerUpdateUnknownError => '未知错误';
+
+  @override
   String get sideDrawerPinnedLabel => '置顶';
 
   @override
@@ -9826,6 +9857,37 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get sideDrawerLinkCopied => '已复制下载链接';
 
   @override
+  String get sideDrawerUpdateDownloadAction => '下载并安装';
+
+  @override
+  String get sideDrawerUpdateOpenPageAction => '打开下载页面';
+
+  @override
+  String get sideDrawerUpdateDownloading => '正在下载更新…';
+
+  @override
+  String sideDrawerUpdateDownloadProgress(int percent) {
+    return '正在下载更新… $percent%';
+  }
+
+  @override
+  String get sideDrawerUpdatePreparingInstaller => '正在准备安装程序…';
+
+  @override
+  String get sideDrawerUpdateOpeningInstaller => '正在打开安装程序…';
+
+  @override
+  String get sideDrawerUpdateInstallerOpened => '已打开安装程序';
+
+  @override
+  String sideDrawerUpdateInstallFailed(String error) {
+    return '更新失败：$error';
+  }
+
+  @override
+  String get sideDrawerUpdateUnknownError => '未知错误';
+
+  @override
   String get sideDrawerPinnedLabel => '置顶';
 
   @override
@@ -16997,6 +17059,37 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get sideDrawerLinkCopied => '已複製下載連結';
+
+  @override
+  String get sideDrawerUpdateDownloadAction => '下載並安裝';
+
+  @override
+  String get sideDrawerUpdateOpenPageAction => '開啟下載頁面';
+
+  @override
+  String get sideDrawerUpdateDownloading => '正在下載更新…';
+
+  @override
+  String sideDrawerUpdateDownloadProgress(int percent) {
+    return '正在下載更新… $percent%';
+  }
+
+  @override
+  String get sideDrawerUpdatePreparingInstaller => '正在準備安裝程式…';
+
+  @override
+  String get sideDrawerUpdateOpeningInstaller => '正在開啟安裝程式…';
+
+  @override
+  String get sideDrawerUpdateInstallerOpened => '已開啟安裝程式';
+
+  @override
+  String sideDrawerUpdateInstallFailed(String error) {
+    return '更新失敗：$error';
+  }
+
+  @override
+  String get sideDrawerUpdateUnknownError => '未知錯誤';
 
   @override
   String get sideDrawerPinnedLabel => '置頂';

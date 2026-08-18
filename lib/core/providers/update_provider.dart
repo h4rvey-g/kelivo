@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'dart:ffi' show Abi;
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+
+import '../services/update/update_installer.dart';
 
 const String _updateRepository = 'h4rvey-g/kelivo';
 const String _releasesApiUrl =
@@ -20,6 +20,7 @@ class UpdateInfo {
   final String? notes;
   final bool mandatory;
   final Map<String, String> downloads;
+  final Map<String, UpdateArtifact> artifacts;
 
   const UpdateInfo({
     required this.app,
@@ -29,21 +30,23 @@ class UpdateInfo {
     this.notes,
     this.mandatory = false,
     this.downloads = const {},
+    this.artifacts = const {},
   });
 
   String? bestDownloadUrl() {
-    if (Platform.isIOS) {
+    final target = detectUpdateTarget();
+    if (target == UpdateTarget.ios) {
       return downloads['ios'] ??
           downloads['iosAppStore'] ??
           downloads['universal'];
     }
-    if (Platform.isAndroid) {
-      if (Abi.current() == Abi.androidArm64) {
+    if (target.isAndroid) {
+      if (target == UpdateTarget.androidArm64) {
         return downloads['androidArm64'] ??
             downloads['android'] ??
             downloads['universal'];
       }
-      if (Abi.current() == Abi.androidArm) {
+      if (target == UpdateTarget.androidArm) {
         return downloads['androidArm'] ??
             downloads['android'] ??
             downloads['universal'];
@@ -52,17 +55,17 @@ class UpdateInfo {
           downloads['android'] ??
           downloads['universal'];
     }
-    if (Platform.isMacOS) {
+    if (target == UpdateTarget.macos) {
       return downloads['macos'] ??
           downloads['mac'] ??
           downloads['darwin'] ??
           downloads['universal'];
     }
-    if (Platform.isWindows) {
+    if (target == UpdateTarget.windows) {
       return downloads['windows'] ?? downloads['win'] ?? downloads['universal'];
     }
-    if (Platform.isLinux) {
-      if (Abi.current() == Abi.linuxArm64) {
+    if (target.isLinux) {
+      if (target == UpdateTarget.linuxArm64) {
         return downloads['linuxArm64'] ??
             downloads['linuxX64'] ??
             downloads['universal'];
@@ -72,6 +75,32 @@ class UpdateInfo {
           downloads['universal'];
     }
     return downloads['universal'] ?? downloads['android'] ?? downloads['ios'];
+  }
+
+  UpdateArtifact? bestInstallableArtifact() =>
+      bestInstallableArtifactFor(detectUpdateTarget());
+
+  UpdateArtifact? bestInstallableArtifactFor(UpdateTarget target) {
+    UpdateArtifact? firstAvailable(List<String> keys) {
+      for (final key in keys) {
+        final artifact = artifacts[key];
+        if (artifact != null && isInstallableUpdateArtifact(artifact, target)) {
+          return artifact;
+        }
+      }
+      return null;
+    }
+
+    return switch (target) {
+      UpdateTarget.androidArm64 => firstAvailable(['androidArm64', 'android']),
+      UpdateTarget.androidArm => firstAvailable(['androidArm', 'android']),
+      UpdateTarget.androidX64 => firstAvailable(['androidX64', 'android']),
+      UpdateTarget.macos => firstAvailable(['macos', 'mac', 'darwin']),
+      UpdateTarget.windows => firstAvailable(['windows', 'win']),
+      UpdateTarget.linuxArm64 => firstAvailable(['linuxArm64']),
+      UpdateTarget.linuxX64 => firstAvailable(['linuxX64']),
+      UpdateTarget.ios || UpdateTarget.unsupported => null,
+    };
   }
 
   factory UpdateInfo.fromJson(Map<String, dynamic> json) {
@@ -100,13 +129,21 @@ class UpdateInfo {
   }
 
   factory UpdateInfo.fromGitHubRelease(Map<String, dynamic> json) {
-    final assets = <_ReleaseAsset>[];
+    final assets = <UpdateArtifact>[];
     for (final rawAsset in (json['assets'] as List?) ?? const []) {
       if (rawAsset is! Map) continue;
       final name = rawAsset['name']?.toString() ?? '';
       final url = rawAsset['browser_download_url']?.toString() ?? '';
-      if (name.isNotEmpty && url.isNotEmpty) {
-        assets.add(_ReleaseAsset(name: name, url: url));
+      final uri = Uri.tryParse(url);
+      if (name.isNotEmpty && uri != null && uri.hasScheme) {
+        final parsedSize = int.tryParse(rawAsset['size']?.toString() ?? '');
+        assets.add(
+          UpdateArtifact(
+            name: name,
+            uri: uri,
+            sizeBytes: parsedSize != null && parsedSize > 0 ? parsedSize : null,
+          ),
+        );
       }
     }
 
@@ -116,10 +153,13 @@ class UpdateInfo {
           ? releasePage!
           : _latestReleasePageUrl,
     };
+    final artifactsByPlatform = <String, UpdateArtifact>{};
 
     void addAsset(String key, List<bool Function(String)> matchers) {
-      final url = _findAssetUrl(assets, matchers);
-      if (url != null) downloads[key] = url;
+      final artifact = _findAsset(assets, matchers);
+      if (artifact == null) return;
+      downloads[key] = artifact.uri.toString();
+      artifactsByPlatform[key] = artifact;
     }
 
     addAsset('androidArm64', [(name) => name.endsWith('_arm64-v8a.apk')]);
@@ -161,6 +201,7 @@ class UpdateInfo {
       releasedAt: publishedAt == null ? null : DateTime.tryParse(publishedAt),
       notes: json['body']?.toString(),
       downloads: downloads,
+      artifacts: artifactsByPlatform,
     );
   }
 
@@ -175,20 +216,13 @@ class UpdateInfo {
   }
 }
 
-class _ReleaseAsset {
-  final String name;
-  final String url;
-
-  const _ReleaseAsset({required this.name, required this.url});
-}
-
-String? _findAssetUrl(
-  List<_ReleaseAsset> assets,
+UpdateArtifact? _findAsset(
+  List<UpdateArtifact> assets,
   List<bool Function(String)> matchers,
 ) {
   for (final matches in matchers) {
     for (final asset in assets) {
-      if (matches(asset.name.toLowerCase())) return asset.url;
+      if (matches(asset.name.toLowerCase())) return asset;
     }
   }
   return null;
@@ -217,13 +251,74 @@ String _versionFromReleaseTag(String tag) {
   return match?.group(1) ?? tag.replaceFirst(RegExp(r'^[vV]'), '');
 }
 
+enum UpdateInstallResult { opened, unavailable, busy, failed }
+
 class UpdateProvider extends ChangeNotifier {
+  UpdateProvider({
+    UpdateInstallationService? installationService,
+    @visibleForTesting UpdateInfo? initialAvailable,
+    @visibleForTesting UpdateTarget Function()? targetResolver,
+  }) : _installationService = installationService ?? InternalUpdateInstaller(),
+       _ownsInstallationService = installationService == null,
+       _available = initialAvailable,
+       _targetResolver = targetResolver ?? detectUpdateTarget;
+
+  final UpdateInstallationService _installationService;
+  final bool _ownsInstallationService;
+  final UpdateTarget Function() _targetResolver;
+
   UpdateInfo? _available;
   UpdateInfo? get available => _available;
   bool _checking = false;
   bool get checking => _checking;
   String? _error;
   String? get error => _error;
+  UpdateInstallProgress? _installProgress;
+  UpdateInstallProgress? get installProgress => _installProgress;
+  bool get installing => _installProgress != null;
+  String? _installError;
+  String? get installError => _installError;
+
+  Future<UpdateInstallResult> downloadAndInstall() async {
+    if (installing) return UpdateInstallResult.busy;
+    final info = _available;
+    final target = _targetResolver();
+    final artifact = info?.bestInstallableArtifactFor(target);
+    if (artifact == null) return UpdateInstallResult.unavailable;
+
+    _installError = null;
+    _installProgress = const UpdateInstallProgress(
+      phase: UpdateInstallPhase.downloading,
+      receivedBytes: 0,
+      totalBytes: null,
+    );
+    notifyListeners();
+    var result = UpdateInstallResult.failed;
+    try {
+      await _installationService.downloadAndOpen(
+        artifact,
+        target: target,
+        onProgress: _setInstallProgress,
+      );
+      result = UpdateInstallResult.opened;
+    } catch (error) {
+      _installError = error.toString();
+    } finally {
+      _installProgress = null;
+      notifyListeners();
+    }
+    return result;
+  }
+
+  void _setInstallProgress(UpdateInstallProgress progress) {
+    final previous = _installProgress;
+    if (previous?.phase == progress.phase &&
+        previous?.percent == progress.percent) {
+      return;
+    }
+    _installProgress = progress;
+    notifyListeners();
+  }
 
   Future<void> checkForUpdates() async {
     if (_checking) return;
@@ -290,5 +385,11 @@ class UpdateProvider extends ChangeNotifier {
     if (a[1] != b[1]) return a[1] > b[1];
     if (a[2] != b[2]) return a[2] > b[2];
     return false;
+  }
+
+  @override
+  void dispose() {
+    if (_ownsInstallationService) _installationService.dispose();
+    super.dispose();
   }
 }

@@ -17,6 +17,7 @@ import '../../translate/pages/translate_page.dart';
 import '../../backup/pages/backup_page.dart';
 import '../../../core/providers/assistant_provider.dart';
 import '../../../core/providers/update_provider.dart';
+import '../../../core/services/update/update_installer.dart';
 import '../../../core/models/assistant.dart';
 import '../../chat/pages/chat_history_page.dart';
 import '../../../desktop/chat_history_dialog.dart';
@@ -3460,6 +3461,58 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
     );
   }
 
+  Future<void> _handleUpdateTap(
+    BuildContext context,
+    UpdateProvider provider,
+    UpdateInfo info,
+  ) async {
+    final fallbackUrl = info.bestDownloadUrl();
+    final result = await provider.downloadAndInstall();
+    if (!context.mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    switch (result) {
+      case UpdateInstallResult.opened:
+        showAppSnackBar(
+          context,
+          message: l10n.sideDrawerUpdateInstallerOpened,
+          type: NotificationType.success,
+        );
+      case UpdateInstallResult.unavailable:
+        if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+          await _openExternalUpdate(context, fallbackUrl);
+        }
+      case UpdateInstallResult.failed:
+        showAppSnackBar(
+          context,
+          message: l10n.sideDrawerUpdateInstallFailed(
+            provider.installError ?? l10n.sideDrawerUpdateUnknownError,
+          ),
+          type: NotificationType.error,
+        );
+      case UpdateInstallResult.busy:
+        break;
+    }
+  }
+
+  Future<void> _openExternalUpdate(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
+    var launched = false;
+    if (uri != null) {
+      try {
+        launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+    if (launched) return;
+
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    showAppSnackBar(
+      context,
+      message: AppLocalizations.of(context)!.sideDrawerLinkCopied,
+      type: NotificationType.success,
+    );
+  }
+
   // Build conversations list area, optionally including the update banner.
   // Owns scrolling via [ListView.builder] over the flattened [rows].
   Widget _buildConversationsList(
@@ -3503,6 +3556,22 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
               final title = build != null
                   ? l10n.sideDrawerUpdateTitleWithBuild(ver, build)
                   : l10n.sideDrawerUpdateTitle(ver);
+              final artifact = info.bestInstallableArtifact();
+              final progress = upd.installProgress;
+              String? status;
+              if (progress != null) {
+                switch (progress.phase) {
+                  case UpdateInstallPhase.downloading:
+                    final percent = progress.percent;
+                    status = percent == null
+                        ? l10n.sideDrawerUpdateDownloading
+                        : l10n.sideDrawerUpdateDownloadProgress(percent);
+                  case UpdateInstallPhase.requestingPermission:
+                    status = l10n.sideDrawerUpdatePreparingInstaller;
+                  case UpdateInstallPhase.openingInstaller:
+                    status = l10n.sideDrawerUpdateOpeningInstaller;
+                }
+              }
               final cs2 = Theme.of(context).colorScheme;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -3511,21 +3580,9 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () async {
-                      final uri = Uri.parse(url);
-                      try {
-                        // ignore: deprecated_member_use
-                        await launchUrl(uri);
-                      } catch (_) {
-                        Clipboard.setData(ClipboardData(text: url));
-                        if (!context.mounted) return;
-                        showAppSnackBar(
-                          context,
-                          message: l10n.sideDrawerLinkCopied,
-                          type: NotificationType.success,
-                        );
-                      }
-                    },
+                    onTap: upd.installing
+                        ? null
+                        : () => _handleUpdateTap(context, upd, info),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(
@@ -3547,8 +3604,53 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
                                   ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              Tooltip(
+                                message: artifact == null
+                                    ? l10n.sideDrawerUpdateOpenPageAction
+                                    : l10n.sideDrawerUpdateDownloadAction,
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: progress == null
+                                      ? Icon(
+                                          artifact == null
+                                              ? Lucide.ExternalLink
+                                              : Lucide.Download,
+                                          size: 18,
+                                          color: cs2.primary,
+                                        )
+                                      : CircularProgressIndicator(
+                                          value: progress.fraction,
+                                          strokeWidth: 2,
+                                          color: cs2.primary,
+                                        ),
+                                ),
+                              ),
                             ],
                           ),
+                          if (status != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              status,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: cs2.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(2),
+                              child: LinearProgressIndicator(
+                                value: progress?.fraction,
+                                minHeight: 3,
+                                color: cs2.primary,
+                                backgroundColor: cs2.primary.withValues(
+                                  alpha: 0.12,
+                                ),
+                              ),
+                            ),
+                          ],
                           if ((info.notes ?? '').trim().isNotEmpty) ...[
                             const SizedBox(height: 6),
                             Text(

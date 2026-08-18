@@ -4990,6 +4990,60 @@ abstract class AppLocalizations {
   /// **'Link copied'**
   String get sideDrawerLinkCopied;
 
+  /// No description provided for @sideDrawerUpdateDownloadAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Download and install'**
+  String get sideDrawerUpdateDownloadAction;
+
+  /// No description provided for @sideDrawerUpdateOpenPageAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open download page'**
+  String get sideDrawerUpdateOpenPageAction;
+
+  /// No description provided for @sideDrawerUpdateDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading update…'**
+  String get sideDrawerUpdateDownloading;
+
+  /// No description provided for @sideDrawerUpdateDownloadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading update… {percent}%'**
+  String sideDrawerUpdateDownloadProgress(int percent);
+
+  /// No description provided for @sideDrawerUpdatePreparingInstaller.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing installer…'**
+  String get sideDrawerUpdatePreparingInstaller;
+
+  /// No description provided for @sideDrawerUpdateOpeningInstaller.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening installer…'**
+  String get sideDrawerUpdateOpeningInstaller;
+
+  /// No description provided for @sideDrawerUpdateInstallerOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'Installer opened'**
+  String get sideDrawerUpdateInstallerOpened;
+
+  /// No description provided for @sideDrawerUpdateInstallFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed: {error}'**
+  String sideDrawerUpdateInstallFailed(String error);
+
+  /// No description provided for @sideDrawerUpdateUnknownError.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown error'**
+  String get sideDrawerUpdateUnknownError;
+
   /// No description provided for @sideDrawerPinnedLabel.
   ///
   /// In en, this message translates to:

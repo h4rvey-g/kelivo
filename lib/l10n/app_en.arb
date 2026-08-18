@@ -1155,6 +1155,29 @@
     }
   },
   "sideDrawerLinkCopied": "Link copied",
+  "sideDrawerUpdateDownloadAction": "Download and install",
+  "sideDrawerUpdateOpenPageAction": "Open download page",
+  "sideDrawerUpdateDownloading": "Downloading update…",
+  "sideDrawerUpdateDownloadProgress": "Downloading update… {percent}%",
+  "@sideDrawerUpdateDownloadProgress": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "sideDrawerUpdatePreparingInstaller": "Preparing installer…",
+  "sideDrawerUpdateOpeningInstaller": "Opening installer…",
+  "sideDrawerUpdateInstallerOpened": "Installer opened",
+  "sideDrawerUpdateInstallFailed": "Update failed: {error}",
+  "@sideDrawerUpdateInstallFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "sideDrawerUpdateUnknownError": "Unknown error",
   "sideDrawerPinnedLabel": "Pinned",
   "sideDrawerHistory": "History",
   "sideDrawerSettings": "Settings",

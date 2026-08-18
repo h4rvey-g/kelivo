@@ -3,6 +3,8 @@
     <!-- Photo access for picking images -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Required for handing an internally downloaded APK to Package Installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.VIBRATE"/>
     <!-- Microphone access for voice input waveform -->
