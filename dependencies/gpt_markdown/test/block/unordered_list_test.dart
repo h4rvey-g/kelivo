@@ -46,5 +46,25 @@ void main() {
       // Should have 2 list items
       expect('UL_ITEM'.allMatches(output).length, equals(2));
     });
+
+    testWidgets('nested items keep increasing indentation beyond two levels', (
+      tester,
+    ) async {
+      await pumpMarkdown(tester, '''
+- Level 1
+  - Level 2
+    - Level 3
+      - Level 4
+''');
+
+      final leftEdges = [
+        for (var level = 1; level <= 4; level++)
+          tester.getTopLeft(find.text('Level $level', findRichText: true)).dx,
+      ];
+
+      for (var index = 1; index < leftEdges.length; index++) {
+        expect(leftEdges[index], greaterThan(leftEdges[index - 1]));
+      }
+    });
   });
 }
