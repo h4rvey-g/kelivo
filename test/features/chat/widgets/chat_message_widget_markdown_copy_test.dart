@@ -10,7 +10,9 @@ import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart'
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -40,6 +42,14 @@ Widget _buildHarness(Widget child) {
       home: Scaffold(body: child),
     ),
   );
+}
+
+Offset _textOffsetToPosition(RenderParagraph paragraph, int offset) {
+  const caret = Rect.fromLTWH(0, 0, 2, 20);
+  final localOffset =
+      paragraph.getOffsetForCaret(TextPosition(offset: offset), caret) +
+      Offset(0, paragraph.preferredLineHeight - 2);
+  return paragraph.localToGlobal(localOffset);
 }
 
 void main() {
@@ -151,6 +161,118 @@ void main() {
       'text': '•Alpha\n•Beta',
     });
   });
+
+  testWidgets(
+    'right click after a desktop drag preserves its selection range',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      MethodCall? clipboardCall;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') clipboardCall = call;
+        return null;
+      });
+
+      try {
+        const content = 'Alpha Beta Gamma';
+        await tester.pumpWidget(
+          _buildHarness(
+            SingleChildScrollView(
+              child: ChatMessageWidget(
+                message: ChatMessage(
+                  id: 'desktop-right-click-selection',
+                  role: 'user',
+                  content: content,
+                  conversationId: 'conversation-1',
+                ),
+                showUserAvatar: false,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final areaFinder = find.byType(SelectionArea);
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find
+              .descendant(of: areaFinder, matching: find.byType(RichText))
+              .first,
+        );
+        final selectionGesture = await tester.startGesture(
+          _textOffsetToPosition(paragraph, 0),
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(selectionGesture.removePointer);
+        await tester.pump();
+        final selectionEnd = _textOffsetToPosition(paragraph, 8);
+        await selectionGesture.moveTo(selectionEnd);
+        await tester.pump();
+        await selectionGesture.up();
+        await tester.pumpAndSettle();
+
+        final selectableChild = find.descendant(
+          of: areaFinder,
+          matching: find.byType(RichText),
+        );
+        Actions.invoke(
+          tester.element(selectableChild.first),
+          CopySelectionTextIntent.copy,
+        );
+        await tester.pump();
+        final selectedBeforeRightClick = Map<String, dynamic>.from(
+          clipboardCall!.arguments as Map,
+        );
+        expect(selectedBeforeRightClick['text'], isNot('Beta'));
+        clipboardCall = null;
+
+        final rightClick = await tester.startGesture(
+          selectionEnd + const Offset(8, 0),
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        addTearDown(rightClick.removePointer);
+        await tester.pump();
+        await rightClick.up();
+        await tester.pump();
+
+        Actions.invoke(
+          tester.element(selectableChild.first),
+          CopySelectionTextIntent.copy,
+        );
+        await tester.pump();
+
+        expect(clipboardCall?.method, 'Clipboard.setData');
+        expect(clipboardCall?.arguments, selectedBeforeRightClick);
+
+        final areaState = tester.state<SelectionAreaState>(areaFinder);
+        areaState.selectableRegion.clearSelection();
+        areaState.selectableRegion.hideToolbar();
+        clipboardCall = null;
+        await tester.pump();
+
+        final wordClick = await tester.startGesture(
+          selectionEnd + const Offset(8, 0),
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        addTearDown(wordClick.removePointer);
+        await tester.pump();
+        await wordClick.up();
+        await tester.pump();
+        Actions.invoke(
+          tester.element(selectableChild.first),
+          CopySelectionTextIntent.copy,
+        );
+        await tester.pump();
+
+        expect(clipboardCall?.arguments, <String, dynamic>{'text': 'Beta'});
+      } finally {
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
 
   testWidgets('user long press selects text on mobile', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;

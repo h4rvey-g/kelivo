@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -84,7 +85,18 @@ class _AutoScrollSelectionContainerState
   @override
   Widget build(BuildContext context) {
     if (_scrollable == null) return widget.child;
-    return SelectionContainer(delegate: _delegate, child: widget.child);
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        if (event.kind == PointerDeviceKind.mouse &&
+            event.buttons & kSecondaryMouseButton != 0) {
+          _delegate.beginSecondaryTap();
+        }
+      },
+      onPointerUp: (_) => _delegate.endSecondaryTap(),
+      onPointerCancel: (_) => _delegate.endSecondaryTap(),
+      child: SelectionContainer(delegate: _delegate, child: widget.child),
+    );
   }
 }
 
@@ -95,7 +107,17 @@ class _AutoScrollSelectionDelegate extends StaticSelectionContainerDelegate {
   ScrollPosition? _position;
   EdgeDraggingAutoScroller? _autoScroller;
   bool _layoutChangeScheduled = false;
+  bool _preserveSelectionOnNextSelectWord = false;
   bool _disposed = false;
+
+  void beginSecondaryTap() {
+    _preserveSelectionOnNextSelectWord =
+        value.status == SelectionStatus.uncollapsed;
+  }
+
+  void endSecondaryTap() {
+    _preserveSelectionOnNextSelectWord = false;
+  }
 
   set scrollable(ScrollableState? value) {
     final nextPosition = value?.position;
@@ -138,6 +160,17 @@ class _AutoScrollSelectionDelegate extends StaticSelectionContainerDelegate {
     return super.handleClearSelection(event);
   }
 
+  @override
+  SelectionResult handleSelectWord(SelectWordSelectionEvent event) {
+    // macOS maps a secondary tap to select-word even when a range already
+    // exists. Keep the range captured when that secondary tap began.
+    if (_preserveSelectionOnNextSelectWord) {
+      _preserveSelectionOnNextSelectWord = false;
+      return SelectionResult.end;
+    }
+    return super.handleSelectWord(event);
+  }
+
   void _scheduleLayoutChange() {
     if (_layoutChangeScheduled || _disposed) return;
     _layoutChangeScheduled = true;
@@ -152,6 +185,7 @@ class _AutoScrollSelectionDelegate extends StaticSelectionContainerDelegate {
   void dispose() {
     _disposed = true;
     _layoutChangeScheduled = false;
+    _preserveSelectionOnNextSelectWord = false;
     _position?.removeListener(_scheduleLayoutChange);
     _autoScroller?.stopAutoScroll();
     _autoScroller = null;
