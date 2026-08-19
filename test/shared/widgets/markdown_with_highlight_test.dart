@@ -18,6 +18,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_math_fork/tex.dart' show TexEncoderExt;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gpt_markdown/custom_widgets/unordered_ordered_list.dart';
 import 'package:gpt_markdown/gpt_markdown.dart' show GptMarkdown;
 import 'package:provider/provider.dart';
 
@@ -452,6 +453,75 @@ Inline ***strong emphasis*** text.
         ),
         findsOneWidget,
       );
+    },
+  );
+
+  testWidgets(
+    'MarkdownWithCodeHighlight uses coordinated nested list indentation',
+    (tester) async {
+      await tester.pumpWidget(
+        _markdownHarness('''
+- Level 1
+    - Level 2
+        - Level 3
+            - Level 4
+''', width: 360),
+      );
+      await tester.pump();
+
+      final leftEdges = [
+        for (var level = 1; level <= 4; level++)
+          tester.getTopLeft(find.text('Level $level', findRichText: true)).dx,
+      ];
+      for (var index = 1; index < leftEdges.length; index++) {
+        expect(leftEdges[index] - leftEdges[index - 1], closeTo(31, 0.75));
+      }
+      expect(find.byType(UnorderedListView), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'MarkdownWithCodeHighlight aligns mixed list content at the same depth',
+    (tester) async {
+      await tester.pumpWidget(
+        _markdownHarness('''
+- Parent
+    - Bullet child
+    1. Number child
+''', width: 360),
+      );
+      await tester.pump();
+
+      final bulletLeft = tester
+          .getTopLeft(find.text('Bullet child', findRichText: true))
+          .dx;
+      final numberLeft = tester
+          .getTopLeft(find.text('Number child', findRichText: true))
+          .dx;
+      expect(numberLeft, closeTo(bulletLeft, 0.5));
+    },
+  );
+
+  testWidgets(
+    'MarkdownWithCodeHighlight keeps deep lists within narrow layouts',
+    (tester) async {
+      await tester.pumpWidget(
+        _markdownHarness('''
+- Level 1
+    - Level 2
+        - Level 3
+            - Deep list content wraps without overflowing the viewport
+''', width: 240),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final deepest = find.textContaining(
+        'Deep list content',
+        findRichText: true,
+      );
+      expect(deepest, findsOneWidget);
+      expect(tester.getRect(deepest).right, lessThanOrEqualTo(240.5));
     },
   );
 

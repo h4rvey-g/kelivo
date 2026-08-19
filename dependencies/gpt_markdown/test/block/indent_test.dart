@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gpt_markdown/custom_widgets/unordered_ordered_list.dart';
 import '../utils/test_helpers.dart';
 
 void main() {
@@ -8,6 +9,7 @@ void main() {
       await pumpMarkdown(tester, '  Indented text');
       // Verify content is rendered
       expect(find.byType(RichText), findsWidgets);
+      expect(find.byType(UnorderedListView), findsNothing);
     });
 
     testWidgets('four-space indent renders', (tester) async {

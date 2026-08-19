@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gpt_markdown/custom_widgets/unordered_ordered_list.dart';
 import '../utils/test_helpers.dart';
 
 void main() {
@@ -59,7 +61,7 @@ void main() {
   1. Level 2
     1. Level 3
       1. Level 4
-''');
+''', style: const TextStyle(fontSize: 16));
 
       final leftEdges = [
         for (var level = 1; level <= 4; level++)
@@ -67,8 +69,9 @@ void main() {
       ];
 
       for (var index = 1; index < leftEdges.length; index++) {
-        expect(leftEdges[index], greaterThan(leftEdges[index - 1]));
+        expect(leftEdges[index] - leftEdges[index - 1], closeTo(32, 0.5));
       }
+      expect(find.byType(UnorderedListView), findsNothing);
     });
   });
 }

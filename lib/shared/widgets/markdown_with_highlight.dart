@@ -307,6 +307,25 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
     }
 
     final appFontFamily = resolveAppFont();
+    final listMarkerWidth =
+        MarkdownComponent.listIndentEm * (baseTextStyle?.fontSize ?? 15.5);
+
+    Widget buildListMarker(String marker, TextStyle style) {
+      return SizedBox(
+        width: listMarkerWidth,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.only(end: 6),
+          child: Text(
+            marker,
+            textAlign: TextAlign.end,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.visible,
+            style: style,
+          ),
+        ),
+      );
+    }
 
     // Everything baked into the memoized markdown widget below must be part of
     // this signature (theme colors, math flags, fonts, font metrics, streaming
@@ -486,10 +505,7 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
               textBaseline: TextBaseline.alphabetic,
               crossAxisAlignment: CrossAxisAlignment.baseline,
               children: [
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 6, end: 6),
-                  child: Text("$no.", style: style),
-                ),
+                buildListMarker('$no.', style),
                 // Keep child as-is so it inherits context MediaQuery scaling once
                 Flexible(child: child),
               ],
@@ -519,10 +535,7 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
               textBaseline: TextBaseline.alphabetic,
               crossAxisAlignment: CrossAxisAlignment.baseline,
               children: [
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 6, end: 6),
-                  child: Text('•', style: style),
-                ),
+                buildListMarker('•', style),
                 // Keep child untouched to follow context scaling exactly once
                 Flexible(child: child),
               ],

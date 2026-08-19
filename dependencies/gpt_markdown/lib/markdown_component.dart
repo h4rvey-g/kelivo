@@ -2,6 +2,9 @@ part of 'gpt_markdown.dart';
 
 /// Markdown components
 abstract class MarkdownComponent {
+  /// Visual indentation applied for each nested list level.
+  static const double listIndentEm = 2;
+
   static List<MarkdownComponent> get globalComponents => [
     CodeBlockMd(),
     LatexMathMultiLine(),
@@ -43,6 +46,8 @@ abstract class MarkdownComponent {
             ? config.components ?? MarkdownComponent.globalComponents
             : config.inlineComponents ?? MarkdownComponent.inlineComponents;
     List<InlineSpan> spans = [];
+    final listDepths =
+        includeGlobalComponents ? _listDepths(text) : const <int, int>{};
     Iterable<String> regexes = components.map<String>((e) => e.exp.pattern);
     final combinedRegex = RegExp(
       regexes.join("|"),
@@ -61,7 +66,15 @@ abstract class MarkdownComponent {
             dotAll: each.exp.isDotAll,
           );
           if (exp.hasMatch(element)) {
-            spans.add(each.span(context, element, config));
+            final listDepth =
+                each is UnOrderedList || each is OrderedList
+                    ? listDepths[p0.start]
+                    : null;
+            spans.add(
+              each is BlockMd
+                  ? each.spanWithListDepth(context, element, config, listDepth)
+                  : each.span(context, element, config),
+            );
             return "";
           }
         }
@@ -82,6 +95,46 @@ abstract class MarkdownComponent {
     );
 
     return spans;
+  }
+
+  // Normalize distinct source indentation columns into semantic list levels.
+  static Map<int, int> _listDepths(String text) {
+    final depths = <int, int>{};
+    final indentationStack = <int>[];
+    final listItem = RegExp(r'^( *)(?:(?:-|\*) |[0-9]+\. )[^\n]+$');
+    var lineStart = 0;
+
+    while (lineStart <= text.length) {
+      final newline = text.indexOf('\n', lineStart);
+      final lineEnd = newline < 0 ? text.length : newline;
+      final line = text.substring(lineStart, lineEnd);
+      final match = listItem.firstMatch(line);
+
+      if (match != null) {
+        final indentation = match[1]!.length;
+        while (indentationStack.length > 1 &&
+            indentation < indentationStack.last) {
+          indentationStack.removeLast();
+        }
+        if (indentationStack.isEmpty || indentation < indentationStack.first) {
+          indentationStack
+            ..clear()
+            ..add(indentation);
+        } else if (indentation > indentationStack.last) {
+          indentationStack.add(indentation);
+        }
+        depths[lineStart] = indentationStack.length - 1;
+      } else if (line.trim().isNotEmpty && indentationStack.isNotEmpty) {
+        final indentation = line.length - line.trimLeft().length;
+        if (indentation <= indentationStack.first) {
+          indentationStack.clear();
+        }
+      }
+
+      if (newline < 0) break;
+      lineStart = newline + 1;
+    }
+    return depths;
   }
 
   InlineSpan span(
@@ -123,15 +176,33 @@ abstract class BlockMd extends MarkdownComponent {
     BuildContext context,
     String text,
     final GptMarkdownConfig config,
+  ) => spanWithListDepth(context, text, config, null);
+
+  InlineSpan spanWithListDepth(
+    BuildContext context,
+    String text,
+    final GptMarkdownConfig config,
+    int? listDepth,
   ) {
-    var matches = RegExp(r'^(?<spaces>\ \ +).*').firstMatch(text);
-    var indentation = matches?.namedGroup('spaces')?.length ?? 0;
+    final matches = RegExp(r'^(?<spaces>\ \ +).*').firstMatch(text);
+    final indentation = matches?.namedGroup('spaces')?.length ?? 0;
     var child = build(context, text, config);
     if (indentation > 0) {
-      child = UnorderedListView(
-        spacing: indentation.toDouble(),
+      final fontSize =
+          config.style?.fontSize ??
+          DefaultTextStyle.of(context).style.fontSize ??
+          kDefaultFontSize;
+      child = Directionality(
         textDirection: config.textDirection,
-        child: child,
+        child: Padding(
+          padding: EdgeInsetsDirectional.only(
+            start:
+                listDepth == null
+                    ? indentation * fontSize / 2
+                    : listDepth * fontSize * MarkdownComponent.listIndentEm,
+          ),
+          child: child,
+        ),
       );
     }
     child = Row(
