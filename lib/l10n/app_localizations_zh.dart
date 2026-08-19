@@ -1412,6 +1412,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get markdownTableCopiedMarkdownSnackbar => '已复制表格';
 
   @override
+  String get markdownTableHorizontalScrollHint => '横向滚动查看更多列';
+
+  @override
+  String markdownTableSemantics(int rows, int columns) {
+    return '$rows 行，$columns 列';
+  }
+
+  @override
+  String markdownTableRowsDisplayed(int visible, int total) {
+    return '已显示 $visible/$total 行';
+  }
+
+  @override
   String codeBlockCollapsedLines(int n) {
     return '… 已折叠 $n 行';
   }
@@ -8710,6 +8723,19 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get markdownTableCopiedMarkdownSnackbar => '已复制表格';
 
   @override
+  String get markdownTableHorizontalScrollHint => '横向滚动查看更多列';
+
+  @override
+  String markdownTableSemantics(int rows, int columns) {
+    return '$rows 行，$columns 列';
+  }
+
+  @override
+  String markdownTableRowsDisplayed(int visible, int total) {
+    return '已显示 $visible/$total 行';
+  }
+
+  @override
   String codeBlockCollapsedLines(int n) {
     return '… 已折叠 $n 行';
   }
@@ -15932,6 +15958,19 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get markdownTableCopiedMarkdownSnackbar => '已複製表格';
+
+  @override
+  String get markdownTableHorizontalScrollHint => '橫向捲動查看更多欄';
+
+  @override
+  String markdownTableSemantics(int rows, int columns) {
+    return '$rows 行，$columns 欄';
+  }
+
+  @override
+  String markdownTableRowsDisplayed(int visible, int total) {
+    return '已顯示 $visible/$total 行';
+  }
 
   @override
   String codeBlockCollapsedLines(int n) {

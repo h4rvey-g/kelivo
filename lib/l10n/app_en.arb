@@ -588,6 +588,29 @@
   "markdownTableDefaultFileNameStem": "table",
   "markdownTableCopiedCsvSnackbar": "CSV copied. Long press Copy to copy as image.",
   "markdownTableCopiedMarkdownSnackbar": "Table copied.",
+  "markdownTableHorizontalScrollHint": "Scroll horizontally to see more columns",
+  "markdownTableSemantics": "{rows} rows, {columns} columns",
+  "@markdownTableSemantics": {
+    "placeholders": {
+      "rows": {
+        "type": "int"
+      },
+      "columns": {
+        "type": "int"
+      }
+    }
+  },
+  "markdownTableRowsDisplayed": "{visible} of {total} rows",
+  "@markdownTableRowsDisplayed": {
+    "placeholders": {
+      "visible": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "codeBlockCollapsedLines": "… {n} lines folded",
   "@codeBlockCollapsedLines": {
     "placeholders": {

@@ -1,5 +1,6 @@
 import "../../support/business_test_harness.dart";
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:Kelivo/core/database/business_preferences.dart';
 import 'package:Kelivo/features/chat/pages/image_viewer_page.dart';
@@ -860,6 +861,35 @@ Inline ***strong emphasis*** text.
     );
   });
 
+  testWidgets('MarkdownWithCodeHighlight exposes table semantics', (
+    tester,
+  ) async {
+    _overrideMarkdownTablePlatform(TargetPlatform.android);
+    final semanticsHandle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _markdownHarness('''
+| Name | Value |
+| - | - |
+| Alpha | 42 |
+''', width: 360),
+    );
+    await tester.pump();
+
+    expect(
+      find.semantics.byPredicate(
+        (node) => node.getSemanticsData().role == ui.SemanticsRole.table,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.semantics.byPredicate(
+        (node) => node.getSemanticsData().role == ui.SemanticsRole.columnHeader,
+      ),
+      findsNWidgets(2),
+    );
+    semanticsHandle.dispose();
+  });
+
   testWidgets('MarkdownWithCodeHighlight does not scroll narrow table', (
     tester,
   ) async {
@@ -914,6 +944,30 @@ Inline ***strong emphasis*** text.
           ),
         ),
         findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'MarkdownWithCodeHighlight scrolls long three-column narrow table',
+    (tester) async {
+      _overrideMarkdownTablePlatform(TargetPlatform.android);
+      await tester.pumpWidget(
+        _markdownHarness('''
+| Long description | Another description | Third description |
+| - | - | - |
+| A long value that needs room | Another long value | Yet another long value |
+''', width: 320),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('markdown-table-horizontal-scroll')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('markdown-table-horizontal-scrollbar')),
+        findsOneWidget,
       );
     },
   );
@@ -996,6 +1050,91 @@ Inline ***strong emphasis*** text.
       ),
     );
     expect(scrollView.physics, isA<ClampingScrollPhysics>());
+    expect(scrollView.controller!.position.maxScrollExtent, greaterThan(0));
+    expect(
+      find.byKey(const ValueKey('markdown-table-horizontal-scrollbar')),
+      findsOneWidget,
+    );
+    final scrollbar = tester.widget<Scrollbar>(
+      find.byKey(const ValueKey('markdown-table-horizontal-scrollbar')),
+    );
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(scrollbar.thickness, 5);
+    expect(scrollbar.scrollbarOrientation, ScrollbarOrientation.bottom);
+    expect(
+      find.byKey(const ValueKey('markdown-table-scroll-end-hint')),
+      findsOneWidget,
+    );
+
+    scrollView.controller!.jumpTo(
+      scrollView.controller!.position.maxScrollExtent,
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('markdown-table-scroll-end-hint')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('MarkdownWithCodeHighlight shows Markdown copy on table hover', (
+    tester,
+  ) async {
+    _overrideMarkdownTablePlatform(TargetPlatform.macOS);
+    String? clipboardText;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            final data = Map<String, dynamic>.from(call.arguments as Map);
+            clipboardText = data['text'] as String?;
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+    await tester.pumpWidget(
+      _markdownHarness('''
+| Name | Value |
+| - | - |
+| Alpha | 42 |
+''', width: 760),
+    );
+    await tester.pump();
+
+    final tableBlock = find.byKey(const ValueKey('markdown-table-block'));
+    expect(tableBlock, findsOneWidget);
+    expect(tester.getSize(tableBlock).height, lessThan(120));
+    expect(
+      find.byKey(const ValueKey('markdown-table-hover-copy')),
+      findsNothing,
+    );
+
+    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(tableBlock));
+    await tester.pump();
+
+    final hoverCopy = find.byKey(const ValueKey('markdown-table-hover-copy'));
+    expect(hoverCopy, findsOneWidget);
+    expect(find.byTooltip('Copy'), findsOneWidget);
+
+    await tester.tap(hoverCopy);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
+    expect(
+      clipboardText,
+      '| Name | Value |\n'
+      '| --- | --- |\n'
+      '| Alpha | 42 |',
+    );
+
+    await mouse.moveTo(
+      tester.getRect(tableBlock).bottomRight + const Offset(20, 20),
+    );
+    await tester.pump();
+    expect(hoverCopy, findsNothing);
   });
 
   testWidgets(
@@ -1101,6 +1240,35 @@ ${rows.join('\n')}
     },
   );
 
+  testWidgets('MarkdownWithCodeHighlight shows forty body rows without pager', (
+    tester,
+  ) async {
+    final rows = List<String>.generate(40, (i) => '| row$i | value$i |');
+    await tester.pumpWidget(
+      _markdownHarness('''
+| Name | Value |
+| - | - |
+${rows.join('\n')}
+''', width: 360),
+    );
+    await tester.pump();
+
+    final tableText = tester
+        .widgetList<RichText>(
+          find.descendant(
+            of: find.byKey(const ValueKey('markdown-table-body')),
+            matching: find.byType(RichText),
+          ),
+        )
+        .map((widget) => widget.text.toPlainText())
+        .join('\n');
+    expect(tableText, contains('row39'));
+    expect(
+      find.byKey(const ValueKey('markdown-table-row-pager')),
+      findsNothing,
+    );
+  });
+
   testWidgets('D5 completed table builds bounded row pages', (tester) async {
     final rows = List<String>.generate(
       1000,
@@ -1131,6 +1299,8 @@ ${rows.join('\n')}
       find.byKey(const ValueKey('markdown-table-row-pager')),
       findsOneWidget,
     );
+    expect(find.text('40 of 1000 rows'), findsOneWidget);
+    expect(find.text('Show 100 more'), findsOneWidget);
 
     tester
         .widget<TextButton>(
@@ -1141,6 +1311,7 @@ ${rows.join('\n')}
 
     expect(renderedTableText(), contains('row100'));
     expect(renderedTableText(), isNot(contains('row999')));
+    expect(find.text('140 of 1000 rows'), findsOneWidget);
   });
 
   testWidgets('D5 completed code uses a lazy chunk viewport', (tester) async {

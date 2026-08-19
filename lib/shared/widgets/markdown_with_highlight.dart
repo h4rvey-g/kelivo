@@ -3079,12 +3079,28 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
   static const int _initialRows = 40;
   static const int _rowPageSize = 100;
   final GlobalKey _tableBoundaryKey = GlobalKey();
-  int _visibleRows = _initialRows;
+  final ScrollController _horizontalTableScrollController = ScrollController();
+  int _visibleRows = _initialRows + 1;
+  bool _showHorizontalEndHint = false;
+  bool _isDesktopTableHovered = false;
 
   _MarkdownTableData get rows => widget.rows;
   TextStyle get style => widget.style;
   GptMarkdownConfig get config => widget.config;
   String? get appFontFamily => widget.appFontFamily;
+
+  @override
+  void initState() {
+    super.initState();
+    _horizontalTableScrollController.addListener(_updateHorizontalEndHint);
+  }
+
+  @override
+  void dispose() {
+    _horizontalTableScrollController.removeListener(_updateHorizontalEndHint);
+    _horizontalTableScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3109,27 +3125,25 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
         final bool useCompactTable =
             !isDesktopPlatform || constraints.maxWidth < 520;
 
-        final columnWidth = _compactColumnWidth(
-          constraints.maxWidth.isFinite
-              ? constraints.maxWidth
-              : MediaQuery.sizeOf(context).width,
-          rows.columnCount,
-        );
         final viewportWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
+        final preferredColumnWidths = _preferredColumnWidths();
         final shouldScrollHorizontally =
             !isExporting &&
             useCompactTable &&
-            rows.columnCount >= 4 &&
-            columnWidth * rows.columnCount > viewportWidth;
+            preferredColumnWidths.fold<double>(0, (sum, width) => sum + width) >
+                viewportWidth;
         final table = _buildTable(
           context,
           borderColor: borderColor,
           headerBg: headerBg,
           compact: useCompactTable,
-          columnWidth: columnWidth,
+          preferredColumnWidths: preferredColumnWidths,
           fixedColumns: shouldScrollHorizontally,
+          reserveHeaderActionSpace:
+              isDesktopPlatform && !useCompactTable && !isExporting,
+          semanticsLabel: _tableSemanticsLabel(context),
           rowCount: isExporting
               ? rows.rows.length
               : math.min(rows.rows.length, _visibleRows),
@@ -3144,15 +3158,50 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
         );
 
         if (!useCompactTable) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                tableSurface,
-                if (!isExporting) _buildRowPager(context),
-              ],
+          if (isExporting) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: tableSurface,
+            );
+          }
+          final joinedTableSurface = _buildTableSurface(
+            context,
+            table: table,
+            bodyBg: bodyBg,
+            borderColor: borderColor,
+            compact: true,
+          );
+          return MouseRegion(
+            onEnter: (_) => _setDesktopTableHovered(true),
+            onExit: (_) => _setDesktopTableHovered(false),
+            child: Container(
+              key: const ValueKey('markdown-table-block'),
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color: bodyBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: borderColor, width: 0.8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Stack(
+                    children: [
+                      joinedTableSurface,
+                      if (_isDesktopTableHovered)
+                        PositionedDirectional(
+                          top: 3,
+                          end: 4,
+                          child: _buildDesktopHoverCopyAction(context),
+                        ),
+                    ],
+                  ),
+                  _buildRowPager(context),
+                ],
+              ),
             ),
           );
         }
@@ -3179,27 +3228,18 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _MarkdownTableToolbar(
-                  label: l10n.markdownTableLabel,
+                _buildTableToolbar(
+                  context,
+                  isDesktopPlatform: isDesktopPlatform,
                   backgroundColor: headerBg,
-                  copyLabel: l10n.shareProviderSheetCopyButton,
-                  exportLabel: l10n.markdownTableExportCsvTooltip,
-                  imageActionLabel: isDesktopPlatform
-                      ? l10n.messageExportSheetExportImage
-                      : l10n.markdownTableSaveImageTooltip,
-                  onCopy: () => _copyMarkdown(context),
-                  onCopyImage: () => _copyImage(context),
-                  onExport: () => _exportCsv(context),
-                  onExportImage: () => _exportImage(context),
-                  onImageAction: () => isDesktopPlatform
-                      ? _exportImage(context)
-                      : _saveImageToGallery(context),
                 ),
                 GestureDetector(
                   key: const ValueKey('markdown-table-body'),
                   behavior: HitTestBehavior.opaque,
                   child: _buildMobileTableViewport(
+                    context,
                     scrollable: shouldScrollHorizontally,
+                    scrollHint: l10n.markdownTableHorizontalScrollHint,
                     child: tableSurface,
                   ),
                 ),
@@ -3217,72 +3257,163 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
     required Color borderColor,
     required Color headerBg,
     required bool compact,
-    required double columnWidth,
+    required List<double> preferredColumnWidths,
     required bool fixedColumns,
+    required bool reserveHeaderActionSpace,
+    required String semanticsLabel,
     required int rowCount,
   }) {
     final columnWidths = <int, TableColumnWidth>{
       for (int i = 0; i < rows.columnCount; i++)
         i: fixedColumns
-            ? FixedColumnWidth(columnWidth)
-            : const FlexColumnWidth(),
+            ? FixedColumnWidth(preferredColumnWidths[i])
+            : FlexColumnWidth(preferredColumnWidths[i]),
     };
 
-    return Table(
-      defaultColumnWidth: fixedColumns
-          ? FixedColumnWidth(columnWidth)
-          : const FlexColumnWidth(),
-      columnWidths: columnWidths,
-      border: TableBorder(
-        horizontalInside: BorderSide(color: borderColor, width: 0.5),
-        verticalInside: BorderSide(color: borderColor, width: 0.5),
+    return Semantics(
+      container: true,
+      label: semanticsLabel,
+      child: Table(
+        defaultColumnWidth: fixedColumns && preferredColumnWidths.isNotEmpty
+            ? FixedColumnWidth(preferredColumnWidths.first)
+            : const FlexColumnWidth(),
+        columnWidths: columnWidths,
+        border: TableBorder(
+          horizontalInside: BorderSide(color: borderColor, width: 0.5),
+          verticalInside: BorderSide(color: borderColor, width: 0.5),
+        ),
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        children: [
+          for (int r = 0; r < rowCount; r++)
+            TableRow(
+              decoration: r == 0 ? BoxDecoration(color: headerBg) : null,
+              children: [
+                for (int c = 0; c < rows.columnCount; c++)
+                  _MarkdownTableCell(
+                    data: rows.rows[r].cells[c],
+                    header: r == 0,
+                    style: style,
+                    config: config,
+                    appFontFamily: appFontFamily,
+                    selectable: !compact,
+                    reserveTrailingActionSpace:
+                        reserveHeaderActionSpace &&
+                        r == 0 &&
+                        c == rows.columnCount - 1,
+                  ),
+              ],
+            ),
+        ],
       ),
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: [
-        for (int r = 0; r < rowCount; r++)
-          TableRow(
-            decoration: r == 0 ? BoxDecoration(color: headerBg) : null,
-            children: [
-              for (int c = 0; c < rows.columnCount; c++)
-                _MarkdownTableCell(
-                  data: rows.rows[r].cells[c],
-                  header: r == 0,
-                  style: style,
-                  config: config,
-                  appFontFamily: appFontFamily,
-                  selectable: !compact,
-                ),
-            ],
-          ),
-      ],
     );
   }
 
-  Widget _buildRowPager(BuildContext context) {
-    if (rows.rows.length <= _initialRows) return const SizedBox.shrink();
-    final remaining = rows.rows.length - _visibleRows;
+  Widget _buildTableToolbar(
+    BuildContext context, {
+    required bool isDesktopPlatform,
+    Color? backgroundColor,
+  }) {
     final l10n = AppLocalizations.of(context)!;
-    return Row(
+    return _MarkdownTableToolbar(
+      label: l10n.markdownTableLabel,
+      backgroundColor: backgroundColor ?? Theme.of(context).colorScheme.surface,
+      copyLabel: l10n.shareProviderSheetCopyButton,
+      exportLabel: l10n.markdownTableExportCsvTooltip,
+      imageActionLabel: isDesktopPlatform
+          ? l10n.messageExportSheetExportImage
+          : l10n.markdownTableSaveImageTooltip,
+      onCopy: () => _copyMarkdown(context),
+      onCopyImage: () => _copyImage(context),
+      onExport: () => _exportCsv(context),
+      onExportImage: () => _exportImage(context),
+      onImageAction: () => isDesktopPlatform
+          ? _exportImage(context)
+          : _saveImageToGallery(context),
+    );
+  }
+
+  Widget _buildDesktopHoverCopyAction(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final copyLabel = AppLocalizations.of(
+      context,
+    )!.shareProviderSheetCopyButton;
+    return Container(
+      key: const ValueKey('markdown-table-hover-copy'),
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(
+          alpha: theme.brightness == Brightness.dark ? 0.96 : 0.98,
+        ),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.42 : 0.55,
+          ),
+          width: 0.8,
+        ),
+      ),
+      child: Tooltip(
+        message: copyLabel,
+        child: IosIconButton(
+          icon: Lucide.Copy,
+          semanticLabel: copyLabel,
+          onTap: () => _copyMarkdown(context),
+          size: 15,
+          minSize: 32,
+          padding: const EdgeInsets.all(6),
+          color: cs.onSurfaceVariant.withValues(alpha: 0.82),
+        ),
+      ),
+    );
+  }
+
+  void _setDesktopTableHovered(bool hovered) {
+    if (_isDesktopTableHovered == hovered) return;
+    setState(() => _isDesktopTableHovered = hovered);
+  }
+
+  Widget _buildRowPager(BuildContext context) {
+    final totalBodyRows = math.max(0, rows.rows.length - 1);
+    if (totalBodyRows <= _initialRows) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context)!;
+    final visibleBodyRows = math.max(
+      0,
+      math.min(rows.rows.length, _visibleRows) - 1,
+    );
+    final remainingBodyRows = totalBodyRows - visibleBodyRows;
+    final nextPageSize = math.min(remainingBodyRows, _rowPageSize);
+    return Padding(
       key: const ValueKey('markdown-table-row-pager'),
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (_visibleRows > _initialRows)
-          TextButton(
-            onPressed: () => setState(() => _visibleRows = _initialRows),
-            child: Text(l10n.largeContentCollapse),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text(
+            l10n.markdownTableRowsDisplayed(visibleBodyRows, totalBodyRows),
+            style: Theme.of(context).textTheme.labelSmall,
           ),
-        if (remaining > 0)
-          TextButton(
-            key: const ValueKey('markdown-table-show-more'),
-            onPressed: () => setState(
-              () => _visibleRows = math.min(
-                rows.rows.length,
-                _visibleRows + _rowPageSize,
-              ),
+          if (visibleBodyRows > _initialRows)
+            TextButton(
+              onPressed: () => setState(() => _visibleRows = _initialRows + 1),
+              child: Text(l10n.largeContentCollapse),
             ),
-            child: Text(l10n.largeContentShowMore(remaining)),
-          ),
-      ],
+          if (remainingBodyRows > 0)
+            TextButton(
+              key: const ValueKey('markdown-table-show-more'),
+              onPressed: () => setState(
+                () => _visibleRows = math.min(
+                  rows.rows.length,
+                  _visibleRows + _rowPageSize,
+                ),
+              ),
+              child: Text(l10n.largeContentShowMore(nextPageSize)),
+            ),
+        ],
+      ),
     );
   }
 
@@ -3327,28 +3458,129 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
     );
   }
 
-  Widget _buildMobileTableViewport({
+  Widget _buildMobileTableViewport(
+    BuildContext context, {
     required Widget child,
     required bool scrollable,
+    required String scrollHint,
   }) {
     if (!scrollable) return child;
-    return SingleChildScrollView(
-      key: const ValueKey('markdown-table-horizontal-scroll'),
-      scrollDirection: Axis.horizontal,
-      primary: false,
-      physics: const ClampingScrollPhysics(),
-      clipBehavior: Clip.hardEdge,
-      child: child,
+    final theme = Theme.of(context);
+    _scheduleHorizontalEndHintUpdate();
+    return Semantics(
+      container: true,
+      hint: scrollHint,
+      child: Stack(
+        children: [
+          ScrollbarTheme(
+            data: ScrollbarTheme.of(context).copyWith(
+              thumbColor: WidgetStatePropertyAll(
+                theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: theme.brightness == Brightness.dark ? 0.72 : 0.52,
+                ),
+              ),
+            ),
+            child: Scrollbar(
+              key: const ValueKey('markdown-table-horizontal-scrollbar'),
+              controller: _horizontalTableScrollController,
+              thumbVisibility: true,
+              interactive: true,
+              thickness: 5,
+              radius: const Radius.circular(3),
+              scrollbarOrientation: ScrollbarOrientation.bottom,
+              child: SingleChildScrollView(
+                key: const ValueKey('markdown-table-horizontal-scroll'),
+                controller: _horizontalTableScrollController,
+                scrollDirection: Axis.horizontal,
+                primary: false,
+                physics: const ClampingScrollPhysics(),
+                clipBehavior: Clip.hardEdge,
+                child: child,
+              ),
+            ),
+          ),
+          if (_showHorizontalEndHint)
+            PositionedDirectional(
+              key: const ValueKey('markdown-table-scroll-end-hint'),
+              top: 0,
+              bottom: 5,
+              end: 0,
+              width: 18,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: AlignmentDirectional.centerStart,
+                      end: AlignmentDirectional.centerEnd,
+                      colors: [
+                        Colors.transparent,
+                        theme.colorScheme.shadow.withValues(
+                          alpha: theme.brightness == Brightness.dark
+                              ? 0.22
+                              : 0.12,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
-  double _compactColumnWidth(double maxWidth, int columnCount) {
-    final safeMax = maxWidth.isFinite && maxWidth > 0 ? maxWidth : 360.0;
-    if (columnCount <= 1) {
-      return (safeMax - 16).clamp(220.0, 360.0).toDouble();
+  void _scheduleHorizontalEndHintUpdate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateHorizontalEndHint();
+    });
+  }
+
+  void _updateHorizontalEndHint() {
+    if (!mounted || !_horizontalTableScrollController.hasClients) return;
+    final position = _horizontalTableScrollController.position;
+    final shouldShow =
+        position.maxScrollExtent > 0 &&
+        position.pixels < position.maxScrollExtent - 1;
+    if (_showHorizontalEndHint != shouldShow) {
+      setState(() => _showHorizontalEndHint = shouldShow);
     }
-    final visibleColumns = columnCount >= 4 ? 2.45 : columnCount.toDouble();
-    return ((safeMax - 16) / visibleColumns).clamp(112.0, 178.0).toDouble();
+  }
+
+  List<double> _preferredColumnWidths() {
+    final sampleRows = rows.rows.take(_initialRows).toList(growable: false);
+    return List<double>.generate(rows.columnCount, (columnIndex) {
+      var longestTextLength = 0;
+      for (final row in sampleRows) {
+        final text = row.cells[columnIndex].text.trim();
+        longestTextLength = math.max(longestTextLength, text.runes.length);
+      }
+
+      final dataCells = sampleRows
+          .skip(1)
+          .map((row) => row.cells[columnIndex].text.trim());
+      final isNumericColumn =
+          dataCells.isNotEmpty &&
+          dataCells.every(
+            (text) => text.isEmpty || _looksLikeNumericTableValue(text),
+          );
+      final estimatedWidth = 24 + math.min(longestTextLength, 30) * 7.0;
+      final minWidth = isNumericColumn ? 84.0 : 96.0;
+      final maxWidth = isNumericColumn ? 132.0 : 220.0;
+      return estimatedWidth.clamp(minWidth, maxWidth).toDouble();
+    }, growable: false);
+  }
+
+  bool _looksLikeNumericTableValue(String value) {
+    return RegExp(
+      r'^[+-]?(?:\d+(?:[,.]\d+)*|[,.]\d+)(?:\s*[%‰]|\s*[A-Za-z]{1,4})?$',
+    ).hasMatch(value);
+  }
+
+  String _tableSemanticsLabel(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return '${l10n.markdownTableLabel}, '
+        '${l10n.markdownTableSemantics(rows.rows.length, rows.columnCount)}';
   }
 
   Future<void> _copyMarkdown(BuildContext context) async {
@@ -3586,6 +3818,7 @@ class _MarkdownTableCell extends StatelessWidget {
     required this.config,
     required this.appFontFamily,
     required this.selectable,
+    required this.reserveTrailingActionSpace,
   });
 
   final _MarkdownTableCellData data;
@@ -3594,6 +3827,7 @@ class _MarkdownTableCell extends StatelessWidget {
   final GptMarkdownConfig config;
   final String? appFontFamily;
   final bool selectable;
+  final bool reserveTrailingActionSpace;
 
   @override
   Widget build(BuildContext context) {
@@ -3616,19 +3850,27 @@ class _MarkdownTableCell extends StatelessWidget {
     );
     final textSpan = TextSpan(style: baseStyle, children: spans);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      child: Align(
-        alignment: _alignmentFor(data.alignment),
-        child: selectable
-            ? SelectableText.rich(textSpan, textAlign: data.alignment)
-            : RichText(
-                text: textSpan,
-                textAlign: data.alignment,
-                softWrap: true,
-                overflow: TextOverflow.visible,
-                textWidthBasis: TextWidthBasis.parent,
-              ),
+    return Semantics(
+      role: header ? ui.SemanticsRole.columnHeader : ui.SemanticsRole.cell,
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(
+          start: 10,
+          top: 9,
+          end: reserveTrailingActionSpace ? 44 : 10,
+          bottom: 9,
+        ),
+        child: Align(
+          alignment: _alignmentFor(data.alignment),
+          child: selectable
+              ? SelectableText.rich(textSpan, textAlign: data.alignment)
+              : RichText(
+                  text: textSpan,
+                  textAlign: data.alignment,
+                  softWrap: true,
+                  overflow: TextOverflow.visible,
+                  textWidthBasis: TextWidthBasis.parent,
+                ),
+        ),
       ),
     );
   }
@@ -3690,7 +3932,7 @@ class _MarkdownTableToolbar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      height: 38,
+      height: 44,
       padding: const EdgeInsetsDirectional.only(start: 12, end: 6),
       decoration: BoxDecoration(
         color: backgroundColor,
@@ -3724,7 +3966,7 @@ class _MarkdownTableToolbar extends StatelessWidget {
               onTap: onCopy,
               onLongPress: onCopyImage,
               size: 15,
-              minSize: 32,
+              minSize: 44,
               padding: const EdgeInsets.all(7),
               color: cs.onSurfaceVariant.withValues(alpha: 0.68),
             ),
@@ -3737,7 +3979,7 @@ class _MarkdownTableToolbar extends StatelessWidget {
               onTap: onImageAction,
               onLongPress: onExportImage,
               size: 15,
-              minSize: 32,
+              minSize: 44,
               padding: const EdgeInsets.all(7),
               color: cs.onSurfaceVariant.withValues(alpha: 0.68),
             ),
@@ -3749,7 +3991,7 @@ class _MarkdownTableToolbar extends StatelessWidget {
               semanticLabel: exportLabel,
               onTap: onExport,
               size: 15,
-              minSize: 32,
+              minSize: 44,
               padding: const EdgeInsets.all(7),
               color: cs.onSurfaceVariant.withValues(alpha: 0.68),
             ),
