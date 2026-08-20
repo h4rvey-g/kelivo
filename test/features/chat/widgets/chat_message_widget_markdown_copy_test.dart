@@ -162,117 +162,107 @@ void main() {
     });
   });
 
-  testWidgets(
-    'right click after a desktop drag preserves its selection range',
-    (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      MethodCall? clipboardCall;
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') clipboardCall = call;
-        return null;
-      });
+  testWidgets('right click follows native macOS selection behavior', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    MethodCall? clipboardCall;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') clipboardCall = call;
+      return null;
+    });
 
-      try {
-        const content = 'Alpha Beta Gamma';
-        await tester.pumpWidget(
-          _buildHarness(
-            SingleChildScrollView(
-              child: ChatMessageWidget(
-                message: ChatMessage(
-                  id: 'desktop-right-click-selection',
-                  role: 'user',
-                  content: content,
-                  conversationId: 'conversation-1',
-                ),
-                showUserAvatar: false,
+    try {
+      const content = 'Alpha **Beta** Gamma';
+      await tester.pumpWidget(
+        _buildHarness(
+          SingleChildScrollView(
+            child: ChatMessageWidget(
+              message: ChatMessage(
+                id: 'desktop-right-click-selection',
+                role: 'assistant',
+                content: content,
+                conversationId: 'conversation-1',
               ),
+              showModelIcon: false,
             ),
           ),
-        );
-        await tester.pump();
+        ),
+      );
+      await tester.pump();
 
-        final areaFinder = find.byType(SelectionArea);
-        final paragraph = tester.renderObject<RenderParagraph>(
-          find
-              .descendant(of: areaFinder, matching: find.byType(RichText))
-              .first,
-        );
-        final selectionGesture = await tester.startGesture(
-          _textOffsetToPosition(paragraph, 0),
-          kind: PointerDeviceKind.mouse,
-        );
-        addTearDown(selectionGesture.removePointer);
-        await tester.pump();
-        final selectionEnd = _textOffsetToPosition(paragraph, 8);
-        await selectionGesture.moveTo(selectionEnd);
-        await tester.pump();
-        await selectionGesture.up();
-        await tester.pumpAndSettle();
+      final areaFinder = find.byType(SelectionArea);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: areaFinder, matching: find.byType(RichText)).first,
+      );
+      final selectionGesture = await tester.startGesture(
+        _textOffsetToPosition(paragraph, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(selectionGesture.removePointer);
+      await tester.pump();
+      final selectionEnd = _textOffsetToPosition(paragraph, 8);
+      await selectionGesture.moveTo(selectionEnd);
+      await tester.pump();
+      await selectionGesture.up();
+      await tester.pumpAndSettle();
 
-        final selectableChild = find.descendant(
-          of: areaFinder,
-          matching: find.byType(RichText),
-        );
-        Actions.invoke(
-          tester.element(selectableChild.first),
-          CopySelectionTextIntent.copy,
-        );
-        await tester.pump();
-        final selectedBeforeRightClick = Map<String, dynamic>.from(
-          clipboardCall!.arguments as Map,
-        );
-        expect(selectedBeforeRightClick['text'], isNot('Beta'));
-        clipboardCall = null;
+      final selectionBeforeRightClick = List<TextSelection>.of(
+        paragraph.selections,
+      );
+      expect(selectionBeforeRightClick, isNotEmpty);
 
-        final rightClick = await tester.startGesture(
-          selectionEnd + const Offset(8, 0),
-          kind: PointerDeviceKind.mouse,
-          buttons: kSecondaryMouseButton,
-        );
-        addTearDown(rightClick.removePointer);
-        await tester.pump();
-        await rightClick.up();
-        await tester.pump();
+      final insideRightClick = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      addTearDown(insideRightClick.removePointer);
+      await insideRightClick.down(_textOffsetToPosition(paragraph, 6));
+      await insideRightClick.up();
+      await tester.pump();
 
-        Actions.invoke(
-          tester.element(selectableChild.first),
-          CopySelectionTextIntent.copy,
-        );
-        await tester.pump();
+      expect(paragraph.selections, selectionBeforeRightClick);
 
-        expect(clipboardCall?.method, 'Clipboard.setData');
-        expect(clipboardCall?.arguments, selectedBeforeRightClick);
+      final selectableChild = find.descendant(
+        of: areaFinder,
+        matching: find.byType(RichText),
+      );
+      Actions.invoke(
+        tester.element(selectableChild.first),
+        CopySelectionTextIntent.copy,
+      );
+      await tester.pump();
+      final selectedBeforeRightClick = Map<String, dynamic>.from(
+        clipboardCall!.arguments as Map,
+      );
+      expect(selectedBeforeRightClick['text'], isNot('Beta'));
+      clipboardCall = null;
 
-        final areaState = tester.state<SelectionAreaState>(areaFinder);
-        areaState.selectableRegion.clearSelection();
-        areaState.selectableRegion.hideToolbar();
-        clipboardCall = null;
-        await tester.pump();
+      final outsideRightClick = await tester.startGesture(
+        _textOffsetToPosition(paragraph, 12),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      addTearDown(outsideRightClick.removePointer);
+      await tester.pump();
+      await outsideRightClick.up();
+      await tester.pump();
 
-        final wordClick = await tester.startGesture(
-          selectionEnd + const Offset(8, 0),
-          kind: PointerDeviceKind.mouse,
-          buttons: kSecondaryMouseButton,
-        );
-        addTearDown(wordClick.removePointer);
-        await tester.pump();
-        await wordClick.up();
-        await tester.pump();
-        Actions.invoke(
-          tester.element(selectableChild.first),
-          CopySelectionTextIntent.copy,
-        );
-        await tester.pump();
+      Actions.invoke(
+        tester.element(selectableChild.first),
+        CopySelectionTextIntent.copy,
+      );
+      await tester.pump();
 
-        expect(clipboardCall?.arguments, <String, dynamic>{'text': 'Beta'});
-      } finally {
-        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
-        debugDefaultTargetPlatformOverride = null;
-      }
-    },
-  );
+      expect(clipboardCall?.method, 'Clipboard.setData');
+      expect(clipboardCall?.arguments, <String, dynamic>{'text': 'Gamma'});
+    } finally {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   testWidgets('user long press selects text on mobile', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;

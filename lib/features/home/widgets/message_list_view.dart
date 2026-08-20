@@ -1133,9 +1133,12 @@ class _MessageListViewState extends State<MessageListView> {
 
             final userScrollAwareList = Listener(
               onPointerDown: (event) {
-                if (_isDesktopPlatform) _keyboardFocusNode.requestFocus();
-                if (event.buttons != 0 &&
-                    event.buttons != kSecondaryMouseButton) {
+                final isSecondaryPointer =
+                    event.buttons & kSecondaryMouseButton != 0;
+                if (_isDesktopPlatform && !isSecondaryPointer) {
+                  _keyboardFocusNode.requestFocus();
+                }
+                if (event.buttons != 0 && !isSecondaryPointer) {
                   _pointerDragInProgress = true;
                   _latestPointerDragMetrics = null;
                 }
