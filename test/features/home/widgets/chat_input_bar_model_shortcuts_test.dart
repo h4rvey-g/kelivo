@@ -39,8 +39,14 @@ void main() {
           home: Scaffold(
             body: ChatInputBar(
               modelShortcuts: const [
-                ChatModelShortcutData(slot: 1),
-                ChatModelShortcutData(slot: 2),
+                ChatModelShortcutData(
+                  slot: 1,
+                  icon: Icon(Icons.filter_1, key: ValueKey('model-icon-1')),
+                ),
+                ChatModelShortcutData(
+                  slot: 2,
+                  icon: Icon(Icons.filter_2, key: ValueKey('model-icon-2')),
+                ),
               ],
               onSelectModel: taps.add,
               onLongPressModel: longPresses.add,
@@ -51,16 +57,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Model 1'), findsOneWidget);
-    expect(find.text('Model 2'), findsOneWidget);
+    expect(find.text('Model 1'), findsNothing);
+    expect(find.text('Model 2'), findsNothing);
+    expect(find.byKey(const ValueKey('model-icon-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('model-icon-2')), findsOneWidget);
 
-    await tester.tap(find.text('Model 1'));
+    await tester.tap(find.byKey(const ValueKey('chat-model-shortcut-1')));
     await tester.pump();
-    await tester.longPress(find.text('Model 1'));
+    await tester.longPress(find.byKey(const ValueKey('chat-model-shortcut-1')));
     await tester.pump();
-    await tester.tap(find.text('Model 2'));
+    await tester.tap(find.byKey(const ValueKey('chat-model-shortcut-2')));
     await tester.pump();
-    await tester.longPress(find.text('Model 2'));
+    await tester.longPress(find.byKey(const ValueKey('chat-model-shortcut-2')));
     await tester.pump();
 
     expect(taps, [1, 2]);
@@ -93,11 +101,26 @@ void main() {
           home: Scaffold(
             body: ChatInputBar(
               modelShortcuts: const [
-                ChatModelShortcutData(slot: 1),
-                ChatModelShortcutData(slot: 2),
-                ChatModelShortcutData(slot: 3),
-                ChatModelShortcutData(slot: 4),
-                ChatModelShortcutData(slot: 5),
+                ChatModelShortcutData(
+                  slot: 1,
+                  icon: Icon(Icons.filter_1, key: ValueKey('model-icon-1')),
+                ),
+                ChatModelShortcutData(
+                  slot: 2,
+                  icon: Icon(Icons.filter_2, key: ValueKey('model-icon-2')),
+                ),
+                ChatModelShortcutData(
+                  slot: 3,
+                  icon: Icon(Icons.filter_3, key: ValueKey('model-icon-3')),
+                ),
+                ChatModelShortcutData(
+                  slot: 4,
+                  icon: Icon(Icons.filter_4, key: ValueKey('model-icon-4')),
+                ),
+                ChatModelShortcutData(
+                  slot: 5,
+                  icon: Icon(Icons.filter_5, key: ValueKey('model-icon-5')),
+                ),
               ],
               onSelectModel: taps.add,
               onLongPressModel: longPresses.add,
@@ -109,12 +132,14 @@ void main() {
     await tester.pumpAndSettle();
 
     for (var slot = 1; slot <= 5; slot++) {
-      expect(find.text('Model $slot'), findsOneWidget);
+      expect(find.text('Model $slot'), findsNothing);
+      expect(find.byKey(ValueKey('chat-model-shortcut-$slot')), findsOneWidget);
+      expect(find.byKey(ValueKey('model-icon-$slot')), findsOneWidget);
     }
 
-    await tester.tap(find.text('Model 5'));
+    await tester.tap(find.byKey(const ValueKey('chat-model-shortcut-5')));
     await tester.pump();
-    await tester.longPress(find.text('Model 5'));
+    await tester.longPress(find.byKey(const ValueKey('chat-model-shortcut-5')));
     await tester.pump();
 
     expect(taps, [5]);
@@ -125,6 +150,7 @@ void main() {
     tester.view.physicalSize = const Size(320, 600);
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('chat-model-shortcut-5')), findsNothing);
     expect(find.text('Model 5'), findsNothing);
     await tester.tap(
       find.byKey(const ValueKey('chat-input-left-actions-overflow')),

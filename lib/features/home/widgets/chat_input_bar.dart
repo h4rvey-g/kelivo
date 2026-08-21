@@ -1936,7 +1936,6 @@ class _ChatInputBarState extends State<ChatInputBar>
   Widget _buildResponsiveLeftActions(BuildContext context) {
     const double spacing = 8;
     const double normalButtonW = 32; // 20 + padding(6*2)
-    const double modelButtonW = 76;
     const double plusButtonW = 32;
 
     final l10n = AppLocalizations.of(context)!;
@@ -1962,8 +1961,9 @@ class _ChatInputBarState extends State<ChatInputBar>
               : () => widget.onLongPressModel!(slot);
           actions.add(
             _OverflowAction(
-              width: modelButtonW,
+              width: normalButtonW,
               builder: () => _CompactModelButton(
+                key: ValueKey('chat-model-shortcut-$slot'),
                 label: label,
                 description: shortcut.description,
                 active: shortcut.active,
@@ -3409,6 +3409,7 @@ class _OverflowAction {
 
 class _CompactModelButton extends StatelessWidget {
   const _CompactModelButton({
+    super.key,
     required this.label,
     required this.active,
     this.description,
@@ -3445,7 +3446,7 @@ class _CompactModelButton extends StatelessWidget {
       selected: active,
       label: tooltip,
       child: SizedBox(
-        width: 76,
+        width: 32,
         height: 32,
         child: IosCardPress(
           onTap: onTap,
@@ -3454,34 +3455,11 @@ class _CompactModelButton extends StatelessWidget {
           baseColor: background,
           borderRadius: BorderRadius.circular(7),
           border: Border.all(color: borderColor),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child:
-                      icon ?? Icon(Lucide.Boxes, size: 15, color: foreground),
-                ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: 12,
-                      fontWeight: active
-                          ? AppFontWeights.semibold
-                          : AppFontWeights.medium,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ),
-              ],
+          child: Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: icon ?? Icon(Lucide.Boxes, size: 18, color: foreground),
             ),
           ),
         ),
