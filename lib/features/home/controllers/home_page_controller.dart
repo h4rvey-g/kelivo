@@ -825,6 +825,7 @@ class HomePageController extends ChangeNotifier {
         input.documents.isEmpty) {
       return ChatInputSubmissionResult.rejected;
     }
+    _switchDesktopSidebarToTopics();
     _warmupSerial++;
     final editState = _userMessageEditState;
     if (editState != null) {
@@ -877,7 +878,17 @@ class HomePageController extends ChangeNotifier {
   }
 
   Future<void> toggleTemporaryConversation() async {
+    _switchDesktopSidebarToTopics();
     await _viewModel.toggleTemporaryConversation();
+  }
+
+  void _switchDesktopSidebarToTopics() {
+    if (!isDesktopPlatform) return;
+    try {
+      final settings = _context.read<SettingsProvider>();
+      if (settings.desktopTopicPosition != DesktopTopicPosition.left) return;
+      DesktopSidebarTabBus.instance.switchToTopicsIfAssistantSelected();
+    } catch (_) {}
   }
 
   void cancelQueuedMessage() {
@@ -1086,6 +1097,7 @@ class HomePageController extends ChangeNotifier {
   }
 
   Future<void> createNewConversationAnimated() async {
+    _switchDesktopSidebarToTopics();
     // Cancel any in-flight conversation switch fetch.
     _switchSerial++;
     _warmupSerial++;

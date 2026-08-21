@@ -19,5 +19,9 @@ class DesktopSidebarTabBus {
   void switchToAssistants() => _controller.add(0);
   void switchToTopics() => _controller.add(1);
 
+  void switchToTopicsIfAssistantSelected() {
+    if (_currentIndex == 0) switchToTopics();
+  }
+
   void dispose() => _controller.close();
 }

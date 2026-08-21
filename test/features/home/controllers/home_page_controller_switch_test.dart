@@ -6,11 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import '../../../support/business_test_harness.dart';
+import 'package:Kelivo/core/models/chat_input_data.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
+import 'package:Kelivo/desktop/hotkeys/sidebar_tab_bus.dart';
 import 'package:Kelivo/features/home/controllers/home_page_controller.dart';
 import 'package:Kelivo/features/home/controllers/scroll_controller.dart';
 import 'package:Kelivo/features/home/widgets/chat_input_bar.dart';
@@ -558,6 +560,42 @@ void main() {
           previousSelected.intersection(controller.selectedItems),
           isEmpty,
         );
+      });
+    });
+
+    testWidgets('new conversation switches assistant tab to topics', (
+      tester,
+    ) async {
+      await runAsDesktop(() async {
+        final service = _ControlledChatService({});
+        final controller = await pumpHarness(tester, service);
+        final tabBus = DesktopSidebarTabBus.instance;
+        tabBus.setCurrentIndex(0);
+        final tabSwitch = tabBus.stream.first;
+
+        await controller.createNewConversationAnimated();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(await tabSwitch, 1);
+      });
+    });
+
+    testWidgets('sending a valid message switches assistant tab to topics', (
+      tester,
+    ) async {
+      await runAsDesktop(() async {
+        final service = _ControlledChatService({'conv-a': <ChatMessage>[]});
+        final controller = await pumpHarness(tester, service);
+        await switchAndSettle(tester, controller, service, 'conv-a');
+        final tabBus = DesktopSidebarTabBus.instance;
+        tabBus.setCurrentIndex(0);
+        final tabSwitch = tabBus.stream.first;
+
+        await controller.sendMessage(ChatInputData(text: 'hello'));
+
+        expect(await tabSwitch, 1);
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
       });
     });
 
