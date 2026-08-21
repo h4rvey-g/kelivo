@@ -16,6 +16,8 @@ void main() {
 
       expect(settings.inputTranslationEnabled, isTrue);
       expect(settings.oneTapMessageTranslationEnabled, isFalse);
+      expect(settings.translateTargetLang, isNull);
+      expect(settings.oneTapMessageTranslationTargetLang, isNull);
     });
 
     test(
@@ -25,6 +27,7 @@ void main() {
           initial: {
             'input_translation_enabled_v1': true,
             'one_tap_message_translation_enabled_v1': true,
+            'one_tap_message_translation_target_lang_v1': 'fr',
             'translate_target_lang_v1': 'ja',
           },
         );
@@ -34,9 +37,11 @@ void main() {
         expect(settings.inputTranslationEnabled, isTrue);
         expect(settings.oneTapMessageTranslationEnabled, isTrue);
         expect(settings.translateTargetLang, 'ja');
+        expect(settings.oneTapMessageTranslationTargetLang, 'fr');
 
         await settings.setInputTranslationEnabled(false);
         await settings.setOneTapMessageTranslationEnabled(false);
+        await settings.setOneTapMessageTranslationTargetLang('de');
         await settings.setTranslateTargetLang('fr');
 
         expect(
@@ -46,6 +51,12 @@ void main() {
         expect(
           harness.preferences.getBool('one_tap_message_translation_enabled_v1'),
           isFalse,
+        );
+        expect(
+          harness.preferences.getString(
+            'one_tap_message_translation_target_lang_v1',
+          ),
+          'de',
         );
         expect(harness.preferences.getString('translate_target_lang_v1'), 'fr');
       },
@@ -58,6 +69,12 @@ void main() {
       );
       expect(
         BusinessKeyRegistry.classify('one_tap_message_translation_enabled_v1'),
+        BusinessKeyDisposition.preference,
+      );
+      expect(
+        BusinessKeyRegistry.classify(
+          'one_tap_message_translation_target_lang_v1',
+        ),
         BusinessKeyDisposition.preference,
       );
     });

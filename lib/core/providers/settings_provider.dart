@@ -348,6 +348,8 @@ class SettingsProvider extends ChangeNotifier {
   static const String _translateTargetLangKey = 'translate_target_lang_v1';
   static const String _oneTapMessageTranslationEnabledKey =
       'one_tap_message_translation_enabled_v1';
+  static const String _oneTapMessageTranslationTargetLangKey =
+      'one_tap_message_translation_target_lang_v1';
   static const String _inputTranslationEnabledKey =
       'input_translation_enabled_v1';
   static const String _ocrEnabledKey = 'ocr_enabled_v1';
@@ -857,6 +859,14 @@ class SettingsProvider extends ChangeNotifier {
     }
     _oneTapMessageTranslationEnabled =
         prefs.getBool(_oneTapMessageTranslationEnabledKey) ?? false;
+    final oneTapMessageTranslationTargetLang = prefs.getString(
+      _oneTapMessageTranslationTargetLangKey,
+    );
+    if (oneTapMessageTranslationTargetLang != null &&
+        oneTapMessageTranslationTargetLang.trim().isNotEmpty) {
+      _oneTapMessageTranslationTargetLang = oneTapMessageTranslationTargetLang
+          .trim();
+    }
     _inputTranslationEnabled =
         prefs.getBool(_inputTranslationEnabledKey) ?? true;
     // load OCR model
@@ -3465,6 +3475,9 @@ Please translate the <source_text> section:
   String? get translateTargetLang => _translateTargetLang;
   bool _oneTapMessageTranslationEnabled = false;
   bool get oneTapMessageTranslationEnabled => _oneTapMessageTranslationEnabled;
+  String? _oneTapMessageTranslationTargetLang;
+  String? get oneTapMessageTranslationTargetLang =>
+      _oneTapMessageTranslationTargetLang;
   bool _inputTranslationEnabled = true;
   bool get inputTranslationEnabled => _inputTranslationEnabled;
 
@@ -3514,6 +3527,19 @@ Please translate the <source_text> section:
     _oneTapMessageTranslationEnabled = enabled;
     notifyListeners();
     await _preferences.setBool(_oneTapMessageTranslationEnabledKey, enabled);
+  }
+
+  Future<void> setOneTapMessageTranslationTargetLang(String code) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty || _oneTapMessageTranslationTargetLang == trimmed) {
+      return;
+    }
+    _oneTapMessageTranslationTargetLang = trimmed;
+    notifyListeners();
+    await _preferences.setString(
+      _oneTapMessageTranslationTargetLangKey,
+      trimmed,
+    );
   }
 
   Future<void> setInputTranslationEnabled(bool enabled) async {
@@ -5391,6 +5417,8 @@ Requirements:
     copy._translatePrompt = _translatePrompt;
     copy._translateTargetLang = _translateTargetLang;
     copy._oneTapMessageTranslationEnabled = _oneTapMessageTranslationEnabled;
+    copy._oneTapMessageTranslationTargetLang =
+        _oneTapMessageTranslationTargetLang;
     copy._inputTranslationEnabled = _inputTranslationEnabled;
     copy._ocrModelProvider = _ocrModelProvider;
     copy._ocrModelId = _ocrModelId;

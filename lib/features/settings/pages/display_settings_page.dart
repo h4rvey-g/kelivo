@@ -1979,7 +1979,11 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final sp = context.watch<SettingsProvider>();
-    final translationLanguage = defaultTranslationLanguage(
+    final oneTapMessageTranslationLanguage = defaultTranslationLanguage(
+      Localizations.localeOf(context),
+      preferredCode: sp.oneTapMessageTranslationTargetLang,
+    );
+    final inputTranslationLanguage = defaultTranslationLanguage(
       Localizations.localeOf(context),
       preferredCode: sp.translateTargetLang,
     );
@@ -2011,6 +2015,26 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
                     .setOneTapMessageTranslationEnabled(value),
               ),
               _iosDivider(context),
+              _iosNavRow(
+                context,
+                icon: Lucide.Globe,
+                label: l10n.defaultModelPageInputTranslationTargetLanguage,
+                detailText:
+                    '${oneTapMessageTranslationLanguage.flag} ${languageDisplayName(l10n, oneTapMessageTranslationLanguage.code)}',
+                onTap: () async {
+                  final selected = await showLanguageSelector(
+                    context,
+                    allowClear: false,
+                    selectedCode: oneTapMessageTranslationLanguage.code,
+                  );
+                  if (selected != null) {
+                    await sp.setOneTapMessageTranslationTargetLang(
+                      selected.code,
+                    );
+                  }
+                },
+              ),
+              _iosDivider(context),
               _iosSwitchRow(
                 context,
                 icon: Lucide.TextSelect,
@@ -2026,12 +2050,12 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
                 icon: Lucide.Globe,
                 label: l10n.defaultModelPageInputTranslationTargetLanguage,
                 detailText:
-                    '${translationLanguage.flag} ${languageDisplayName(l10n, translationLanguage.code)}',
+                    '${inputTranslationLanguage.flag} ${languageDisplayName(l10n, inputTranslationLanguage.code)}',
                 onTap: () async {
                   final selected = await showLanguageSelector(
                     context,
                     allowClear: false,
-                    selectedCode: translationLanguage.code,
+                    selectedCode: inputTranslationLanguage.code,
                   );
                   if (selected != null) {
                     await sp.setTranslateTargetLang(selected.code);

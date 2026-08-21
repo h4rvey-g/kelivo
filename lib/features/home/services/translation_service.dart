@@ -11,6 +11,8 @@ import '../../settings/widgets/language_select_sheet.dart';
 
 typedef TranslationLanguageSelector =
     Future<LanguageOption?> Function(BuildContext context);
+typedef TranslationLanguageResolver =
+    LanguageOption Function(Locale locale, {String? preferredCode});
 
 /// 翻译结果类型
 enum TranslationResultType {
@@ -54,11 +56,13 @@ class TranslationService {
     required this.chatService,
     required this._getContext,
     this._languageSelector = showLanguageSelector,
+    this._languageResolver = defaultTranslationLanguage,
   });
 
   final ChatService chatService;
   final BuildContext Function() _getContext;
   final TranslationLanguageSelector _languageSelector;
+  final TranslationLanguageResolver _languageResolver;
 
   /// 翻译消息
   ///
@@ -80,9 +84,9 @@ class TranslationService {
     final assistant = context.read<AssistantProvider>().currentAssistant;
 
     final language = settings.oneTapMessageTranslationEnabled
-        ? defaultTranslationLanguage(
+        ? _languageResolver(
             Localizations.localeOf(context),
-            preferredCode: settings.translateTargetLang,
+            preferredCode: settings.oneTapMessageTranslationTargetLang,
           )
         : await _languageSelector(context);
     if (language == null) {

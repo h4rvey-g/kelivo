@@ -23,6 +23,7 @@ void main() {
     addTearDown(assistants.dispose);
     await Future.wait([settings.loaded, assistants.loaded]);
     await settings.setTranslateTargetLang('ja');
+    await settings.setOneTapMessageTranslationTargetLang('fr');
     await settings.setOneTapMessageTranslationEnabled(true);
 
     late BuildContext serviceContext;
@@ -36,12 +37,17 @@ void main() {
     await tester.pumpAndSettle();
 
     var selectorCalls = 0;
+    String? resolvedPreferredCode;
     final service = TranslationService(
       chatService: ChatService(),
       getContext: () => serviceContext,
       languageSelector: (_) async {
         selectorCalls++;
         return supportedLanguages.first;
+      },
+      languageResolver: (locale, {preferredCode}) {
+        resolvedPreferredCode = preferredCode;
+        return defaultTranslationLanguage(locale, preferredCode: preferredCode);
       },
     );
 
@@ -54,6 +60,7 @@ void main() {
 
     expect(result.type, TranslationResultType.noModelConfigured);
     expect(selectorCalls, 0);
+    expect(resolvedPreferredCode, 'fr');
   });
 
   testWidgets('standard translation still opens the language selector', (

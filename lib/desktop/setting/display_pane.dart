@@ -102,6 +102,8 @@ class _DisplaySettingsBody extends StatelessWidget {
                 children: const [
                   _ToggleRowOneTapMessageTranslation(),
                   _RowDivider(),
+                  _OneTapMessageTranslationTargetLanguageRow(),
+                  _RowDivider(),
                   _ToggleRowInputTranslation(),
                   _RowDivider(),
                   _InputTranslationTargetLanguageRow(),
@@ -2753,6 +2755,36 @@ class _InputTranslationTargetLanguageRow extends StatelessWidget {
         minWidth: 170,
         maxLabelWidth: 190,
         onSelected: settings.setTranslateTargetLang,
+      ),
+    );
+  }
+}
+
+class _OneTapMessageTranslationTargetLanguageRow extends StatelessWidget {
+  const _OneTapMessageTranslationTargetLanguageRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsProvider>();
+    final language = defaultTranslationLanguage(
+      Localizations.localeOf(context),
+      preferredCode: settings.oneTapMessageTranslationTargetLang,
+    );
+    return _LabeledRow(
+      label: l10n.defaultModelPageInputTranslationTargetLanguage,
+      trailing: DesktopSelectDropdown<String>(
+        value: language.code,
+        options: [
+          for (final option in supportedLanguages)
+            DesktopSelectOption(
+              value: option.code,
+              label: '${option.flag} ${languageDisplayName(l10n, option.code)}',
+            ),
+        ],
+        minWidth: 170,
+        maxLabelWidth: 190,
+        onSelected: settings.setOneTapMessageTranslationTargetLang,
       ),
     );
   }

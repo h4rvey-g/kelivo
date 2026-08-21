@@ -69,20 +69,30 @@ void main() {
 
     expect(find.text('One-tap message translation'), findsOneWidget);
     expect(find.text('Triple-space translation'), findsOneWidget);
-    expect(find.text('Target language'), findsOneWidget);
-    expect(find.textContaining('English'), findsOneWidget);
+    expect(find.text('Target language'), findsNWidgets(2));
+    expect(find.textContaining('English'), findsNWidgets(2));
 
     await tester.tap(find.text('One-tap message translation'));
     await tester.pumpAndSettle();
     expect(settings.oneTapMessageTranslationEnabled, isTrue);
 
-    await tester.tap(find.text('Target language'));
+    await tester.tap(find.text('Target language').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Japanese'));
     await tester.pumpAndSettle();
 
-    expect(settings.translateTargetLang, 'ja');
+    expect(settings.oneTapMessageTranslationTargetLang, 'ja');
+    expect(settings.translateTargetLang, isNull);
     expect(find.textContaining('Japanese'), findsOneWidget);
+
+    await tester.tap(find.text('Target language').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('French'));
+    await tester.pumpAndSettle();
+
+    expect(settings.oneTapMessageTranslationTargetLang, 'ja');
+    expect(settings.translateTargetLang, 'fr');
+    expect(find.textContaining('French'), findsOneWidget);
   });
 
   testWidgets('behavior page shows long-paste threshold only when enabled', (
