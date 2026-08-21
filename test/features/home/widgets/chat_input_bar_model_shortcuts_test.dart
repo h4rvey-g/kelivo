@@ -61,6 +61,10 @@ void main() {
     expect(find.text('Model 2'), findsNothing);
     expect(find.byKey(const ValueKey('model-icon-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('model-icon-2')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-model-shortcut-group'))),
+      const Size(64, 32),
+    );
 
     await tester.tap(find.byKey(const ValueKey('chat-model-shortcut-1')));
     await tester.pump();
@@ -136,6 +140,10 @@ void main() {
       expect(find.byKey(ValueKey('chat-model-shortcut-$slot')), findsOneWidget);
       expect(find.byKey(ValueKey('model-icon-$slot')), findsOneWidget);
     }
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-model-shortcut-group'))),
+      const Size(160, 32),
+    );
 
     await tester.tap(find.byKey(const ValueKey('chat-model-shortcut-5')));
     await tester.pump();
@@ -147,7 +155,7 @@ void main() {
 
     taps.clear();
     longPresses.clear();
-    tester.view.physicalSize = const Size(320, 600);
+    tester.view.physicalSize = const Size(240, 600);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('chat-model-shortcut-5')), findsNothing);

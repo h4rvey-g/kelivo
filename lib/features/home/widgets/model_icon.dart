@@ -14,13 +14,15 @@ class CurrentModelIcon extends StatelessWidget {
     required this.providerKey,
     required this.modelId,
     this.size = 28,
+    this.contentScale = 0.5,
     this.withBackground = true,
     this.backgroundColor,
-  });
+  }) : assert(contentScale > 0 && contentScale <= 1);
 
   final String? providerKey;
   final String? modelId;
   final double size; // outer diameter
+  final double contentScale; // icon size relative to the outer diameter
   final bool withBackground; // whether to draw circular background
   final Color? backgroundColor; // override background color if provided
 
@@ -32,6 +34,8 @@ class CurrentModelIcon extends StatelessWidget {
 
     String? asset = BrandAssets.assetForName(modelId!);
     asset ??= BrandAssets.assetForName(providerKey!);
+    final contentSize = size * contentScale;
+    final contentBoxScale = contentScale > 0.64 ? contentScale : 0.64;
 
     Widget inner;
     if (asset != null) {
@@ -43,15 +47,15 @@ class CurrentModelIcon extends StatelessWidget {
             : null;
         inner = SvgPicture.asset(
           asset,
-          width: size * 0.5,
-          height: size * 0.5,
+          width: contentSize,
+          height: contentSize,
           colorFilter: tint,
         );
       } else {
         inner = Image.asset(
           asset,
-          width: size * 0.5,
-          height: size * 0.5,
+          width: contentSize,
+          height: contentSize,
           fit: BoxFit.contain,
         );
       }
@@ -61,7 +65,7 @@ class CurrentModelIcon extends StatelessWidget {
         style: TextStyle(
           color: cs.primary,
           fontWeight: AppFontWeights.emphasis,
-          fontSize: size * 0.43,
+          fontSize: contentSize * 0.86,
         ),
       );
     }
@@ -78,8 +82,8 @@ class CurrentModelIcon extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: SizedBox(
-        width: size * 0.64,
-        height: size * 0.64,
+        width: size * contentBoxScale,
+        height: size * contentBoxScale,
         child: Center(
           child: inner is SvgPicture || inner is Image
               ? inner

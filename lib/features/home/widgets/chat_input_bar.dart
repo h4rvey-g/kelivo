@@ -1947,6 +1947,7 @@ class _ChatInputBarState extends State<ChatInputBar>
     return LayoutBuilder(
       builder: (context, constraints) {
         final List<_OverflowAction> actions = [];
+        final modelActionCount = widget.modelShortcuts.length;
 
         // Model shortcuts stay first so they are prioritized on compact
         // layouts; remaining shortcuts stay available in the overflow menu.
@@ -2333,33 +2334,29 @@ class _ChatInputBarState extends State<ChatInputBar>
           );
         }
 
-        // Compute total width with spacing to see if overflow is needed
-        double full = 0;
-        for (var i = 0; i < actions.length; i++) {
-          if (i > 0) full += spacing;
-          full += actions[i].width;
+        double widthForActionCount(int count) {
+          var width = 0.0;
+          for (var i = 0; i < count; i++) {
+            if (i > 0 && i >= modelActionCount) width += spacing;
+            width += actions[i].width;
+          }
+          return width;
         }
 
+        // Model shortcuts are adjacent within one shared frame, while the
+        // remaining actions retain the standard toolbar spacing.
+        final full = widthForActionCount(actions.length);
         final maxW = constraints.maxWidth;
         int visibleCount = actions.length;
         if (full > maxW) {
-          // First pass: include as many as possible ignoring the +
-          double used = 0;
           visibleCount = 0;
-          for (var i = 0; i < actions.length; i++) {
-            final add = (visibleCount > 0 ? spacing : 0) + actions[i].width;
-            if (used + add <= maxW) {
-              used += add;
-              visibleCount++;
-            } else {
-              break;
-            }
+          while (visibleCount < actions.length &&
+              widthForActionCount(visibleCount + 1) <= maxW) {
+            visibleCount++;
           }
-          // Ensure + button fits; remove items until it does
-          while (visibleCount > 0 && used + spacing + plusButtonW > maxW) {
-            // remove last
-            used -= actions[visibleCount - 1].width;
-            if (visibleCount - 1 > 0) used -= spacing;
+          while (visibleCount > 0 &&
+              widthForActionCount(visibleCount) + spacing + plusButtonW >
+                  maxW) {
             visibleCount--;
           }
         }
@@ -2367,8 +2364,20 @@ class _ChatInputBarState extends State<ChatInputBar>
         final overflowItems = actions.sublist(visibleCount);
 
         final children = <Widget>[];
-        for (var i = 0; i < visibleCount; i++) {
-          if (i > 0) children.add(const SizedBox(width: spacing));
+        final visibleModelCount = math.min(visibleCount, modelActionCount);
+        if (visibleModelCount > 0) {
+          children.add(
+            _CompactModelButtonGroup(
+              key: const ValueKey('chat-model-shortcut-group'),
+              children: [
+                for (var i = 0; i < visibleModelCount; i++)
+                  actions[i].builder(),
+              ],
+            ),
+          );
+        }
+        for (var i = visibleModelCount; i < visibleCount; i++) {
+          if (children.isNotEmpty) children.add(const SizedBox(width: spacing));
           children.add(actions[i].builder());
         }
 
@@ -3407,6 +3416,34 @@ class _OverflowAction {
   });
 }
 
+class _CompactModelButtonGroup extends StatelessWidget {
+  const _CompactModelButtonGroup({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final borderColor = theme.colorScheme.onSurface.withValues(
+      alpha: isDark ? 0.16 : 0.1,
+    );
+    const borderRadius = BorderRadius.all(Radius.circular(7));
+
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: children),
+      ),
+    );
+  }
+}
+
 class _CompactModelButton extends StatelessWidget {
   const _CompactModelButton({
     super.key,
@@ -3436,9 +3473,6 @@ class _CompactModelButton extends StatelessWidget {
     final background = active
         ? cs.primary.withValues(alpha: isDark ? 0.18 : 0.1)
         : Colors.transparent;
-    final borderColor = active
-        ? cs.primary.withValues(alpha: isDark ? 0.36 : 0.24)
-        : cs.onSurface.withValues(alpha: isDark ? 0.16 : 0.1);
     final tooltip = description == null ? label : '$label: $description';
 
     final button = Semantics(
@@ -3453,8 +3487,7 @@ class _CompactModelButton extends StatelessWidget {
           onLongPress: onLongPress,
           haptics: false,
           baseColor: background,
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: borderColor),
+          borderRadius: BorderRadius.zero,
           child: Center(
             child: SizedBox(
               width: 20,
