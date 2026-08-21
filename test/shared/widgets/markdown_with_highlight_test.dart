@@ -1333,6 +1333,49 @@ ${rows.join('\n')}
     expect(find.textContaining('line9999'), findsNothing);
   });
 
+  testWidgets('code blocks scroll horizontally instead of wrapping', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _markdownHarness('```text\n${'x' * 4000}\n```', width: 320),
+    );
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is SingleChildScrollView &&
+            widget.scrollDirection == Axis.horizontal,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('virtualized code chunks scroll horizontally', (tester) async {
+    final code = List<String>.generate(
+      1001,
+      (index) => 'line$index ${'x' * 400}',
+    ).join('\n');
+    await tester.pumpWidget(
+      _markdownHarness('```text\n$code\n```', width: 320),
+    );
+    await tester.pump();
+
+    final virtualizedView = find.byKey(const ValueKey('virtualized-code-view'));
+    expect(virtualizedView, findsOneWidget);
+    expect(
+      find.descendant(
+        of: virtualizedView,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is SingleChildScrollView &&
+              widget.scrollDirection == Axis.horizontal,
+        ),
+      ),
+      findsWidgets,
+    );
+  });
+
   testWidgets(
     'MarkdownWithCodeHighlight keeps an unfinished streaming table row in table layout',
     (tester) async {

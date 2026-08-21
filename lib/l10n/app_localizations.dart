@@ -4678,12 +4678,6 @@ abstract class AppLocalizations {
   /// **'Render assistant messages with Markdown'**
   String get displaySettingsPageEnableAssistantMarkdownTitle;
 
-  /// No description provided for @displaySettingsPageMobileCodeBlockWrapTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Mobile Code Block Word Wrap'**
-  String get displaySettingsPageMobileCodeBlockWrapTitle;
-
   /// No description provided for @displaySettingsPageAutoCollapseCodeBlockTitle.
   ///
   /// In en, this message translates to:

@@ -915,27 +915,6 @@ void main() {
     listController.dispose();
   });
 
-  testWidgets('代码块换行时估算高度按换行折算', (tester) async {
-    final listController = ListController();
-    final codeLine = 'x' * 4000;
-
-    await _pumpEstimatorHarness(
-      tester,
-      _estimatorMessages('```json\n$codeLine\n```'),
-      listController,
-      wrapCodeBlocks: true,
-    );
-    final tail = listController.extentForIndex(39);
-
-    // Desktop (and mobile with the wrap setting on) renders the same line as
-    // dozens of rows; the horizontal-scroll case above estimates it at under
-    // 300px, so treating every renderer as scrolling under-estimates badly.
-    expect(tail.$2, isTrue);
-    expect(tail.$1, greaterThan(900));
-
-    listController.dispose();
-  });
-
   testWidgets('展开的独立思考内容计入估算高度', (tester) async {
     final listController = ListController();
     final reasoningText = List.filled(200, '这是一段很长的思考内容。').join('\n');
@@ -1343,7 +1322,6 @@ Future<void> _pumpEstimatorHarness(
   ListController listController, {
   double textScale = 1.0,
   bool collapseThinking = true,
-  bool wrapCodeBlocks = false,
   Map<String, stream_ctrl.ReasoningData> reasoning =
       const <String, stream_ctrl.ReasoningData>{},
 }) async {
@@ -1397,7 +1375,6 @@ Future<void> _pumpEstimatorHarness(
                 dividerPadding: EdgeInsets.zero,
                 isProcessingFiles: isProcessingFiles,
                 collapseThinking: collapseThinking,
-                wrapCodeBlocks: wrapCodeBlocks,
               ),
             ),
           ),

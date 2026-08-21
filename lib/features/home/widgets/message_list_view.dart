@@ -141,7 +141,6 @@ class MessageListView extends StatefulWidget {
     this.chatFontScale = 1,
     this.collapseThinking = true,
     this.collapsedCodeLines,
-    this.wrapCodeBlocks = false,
     this.showModelIcon = true,
     this.showUserAvatar = true,
     this.showTokenStats = false,
@@ -234,10 +233,6 @@ class MessageListView extends StatefulWidget {
   /// Lines a long code block collapses to, or null when it stays expanded.
   final int? collapsedCodeLines;
 
-  /// Whether code blocks wrap (desktop, or the mobile wrap setting) instead of
-  /// scrolling horizontally.
-  final bool wrapCodeBlocks;
-
   final bool showModelIcon;
   final bool showUserAvatar;
   final bool showTokenStats;
@@ -329,7 +324,6 @@ class _MessageListViewState extends State<MessageListView> {
   _EstimateSettings _estimateSettings = const _EstimateSettings(
     collapseThinking: true,
     collapsedCodeLines: null,
-    wrapCodeBlocks: false,
   );
 
   /// Font scale the currently stored extents were estimated at.
@@ -430,17 +424,14 @@ class _MessageListViewState extends State<MessageListView> {
     // decides how many characters fit on a line.
     final charWidth = fontSize * (0.5 + 0.55 * _wideCharRatio(body));
     final charsPerLine = math.max(1.0, textWidth / charWidth);
-    // Code renders in a fixed 13px monospace face, so it wraps at a different
-    // column and stacks at a different row height than the body text.
+    // Code renders in a fixed 13px monospace face and scrolls horizontally, so
+    // each source line contributes one rendered row regardless of its length.
     final codeFontSize = _estimateCodeFontSize * fontScale;
-    final codeCharsPerLine = math.max(1.0, textWidth / (codeFontSize * 0.6));
     final extent =
         _wrappedLineCount(
               body,
               charsPerLine: charsPerLine,
-              codeCharsPerLine: settings.wrapCodeBlocks
-                  ? codeCharsPerLine
-                  : null,
+              codeCharsPerLine: null,
               codeLineRatio: codeFontSize / fontSize,
               collapsedCodeLines: settings.collapsedCodeLines,
             ) *
@@ -677,7 +668,6 @@ class _MessageListViewState extends State<MessageListView> {
         oldWidget.showTokenStats != widget.showTokenStats ||
         oldWidget.collapseThinking != widget.collapseThinking ||
         oldWidget.collapsedCodeLines != widget.collapsedCodeLines ||
-        oldWidget.wrapCodeBlocks != widget.wrapCodeBlocks ||
         !identical(oldWidget.assistant, widget.assistant);
     if (metricInputsChanged) {
       controller.invalidateAllExtents();
@@ -1077,7 +1067,6 @@ class _MessageListViewState extends State<MessageListView> {
     _estimateSettings = _EstimateSettings(
       collapseThinking: widget.collapseThinking,
       collapsedCodeLines: widget.collapsedCodeLines,
-      wrapCodeBlocks: widget.wrapCodeBlocks,
     );
     _invalidateEstimatesIfScaleChanged();
     final presentation = _MessagePresentation(
@@ -1782,7 +1771,6 @@ final class _EstimateSettings {
   const _EstimateSettings({
     required this.collapseThinking,
     required this.collapsedCodeLines,
-    required this.wrapCodeBlocks,
   });
 
   /// Whether finished thinking blocks render as a collapsed card.
@@ -1791,19 +1779,14 @@ final class _EstimateSettings {
   /// Lines a long code block collapses to, or null when it stays expanded.
   final int? collapsedCodeLines;
 
-  /// Whether code blocks wrap instead of scrolling horizontally.
-  final bool wrapCodeBlocks;
-
   @override
   bool operator ==(Object other) =>
       other is _EstimateSettings &&
       other.collapseThinking == collapseThinking &&
-      other.collapsedCodeLines == collapsedCodeLines &&
-      other.wrapCodeBlocks == wrapCodeBlocks;
+      other.collapsedCodeLines == collapsedCodeLines;
 
   @override
-  int get hashCode =>
-      Object.hash(collapseThinking, collapsedCodeLines, wrapCodeBlocks);
+  int get hashCode => Object.hash(collapseThinking, collapsedCodeLines);
 }
 
 /// A memoized extent estimate together with everything it was derived from.

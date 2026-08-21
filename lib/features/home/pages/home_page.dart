@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show File, Platform;
+import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:provider/provider.dart';
@@ -1142,12 +1142,6 @@ class _HomePageState extends State<HomePage>
         collapsedCodeLines: settings.autoCollapseCodeBlock
             ? settings.autoCollapseCodeBlockLines
             : null,
-        // Mirrors the wrap decision in the code block renderer.
-        wrapCodeBlocks:
-            Platform.isMacOS ||
-            Platform.isWindows ||
-            Platform.isLinux ||
-            settings.mobileCodeBlockWrap,
         showModelIcon: settings.showModelIcon,
         showUserAvatar: settings.showUserAvatar,
         showTokenStats: settings.showTokenStats,

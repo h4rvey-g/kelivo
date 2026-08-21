@@ -238,8 +238,6 @@ class SettingsProvider extends ChangeNotifier {
       'image_compress_custom_quality_v1';
   static const String _imageCompressTransparentEnabledKey =
       'image_compress_transparent_enabled_v1';
-  static const String _displayMobileCodeBlockWrapKey =
-      'display_mobile_code_block_wrap_v1';
   static const String _displayAutoCollapseCodeBlockKey =
       'display_auto_collapse_code_block_v1';
   static const String _displayAutoCollapseCodeBlockLinesKey =
@@ -1107,8 +1105,6 @@ class SettingsProvider extends ChangeNotifier {
         (prefs.getInt(_imageCompressCustomQualityKey) ?? 85).clamp(10, 100);
     _imageCompressTransparentEnabled =
         prefs.getBool(_imageCompressTransparentEnabledKey) ?? false;
-    _mobileCodeBlockWrap =
-        prefs.getBool(_displayMobileCodeBlockWrapKey) ?? false;
     _autoCollapseCodeBlock =
         prefs.getBool(_displayAutoCollapseCodeBlockKey) ?? false;
     _autoCollapseCodeBlockLines =
@@ -4595,17 +4591,6 @@ Requirements:
         includeTransparent: _imageCompressTransparentEnabled,
       ),
     };
-  }
-
-  // Display: mobile code block word wrap
-  bool _mobileCodeBlockWrap = false;
-  bool get mobileCodeBlockWrap => _mobileCodeBlockWrap;
-  Future<void> setMobileCodeBlockWrap(bool v) async {
-    if (_mobileCodeBlockWrap == v) return;
-    _mobileCodeBlockWrap = v;
-    notifyListeners();
-    final prefs = _preferences;
-    await prefs.setBool(_displayMobileCodeBlockWrapKey, v);
   }
 
   // Display: auto-collapse code blocks

@@ -1937,18 +1937,6 @@ class RenderingSettingsPage extends StatelessWidget {
                 _iosDivider(context),
                 const _AutoCollapseCodeBlockLinesRow(),
               ],
-              if (Platform.isAndroid || Platform.isIOS) ...[
-                _iosDivider(context),
-                _iosSwitchRow(
-                  context,
-                  icon: Lucide.WrapText,
-                  label: l10n.displaySettingsPageMobileCodeBlockWrapTitle,
-                  value: sp.mobileCodeBlockWrap,
-                  onChanged: (v) => context
-                      .read<SettingsProvider>()
-                      .setMobileCodeBlockWrap(v),
-                ),
-              ],
             ],
           ),
         ],

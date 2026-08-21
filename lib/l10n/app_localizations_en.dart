@@ -2497,10 +2497,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Render assistant messages with Markdown';
 
   @override
-  String get displaySettingsPageMobileCodeBlockWrapTitle =>
-      'Mobile Code Block Word Wrap';
-
-  @override
   String get displaySettingsPageAutoCollapseCodeBlockTitle =>
       'Auto-collapse Code Blocks';
 

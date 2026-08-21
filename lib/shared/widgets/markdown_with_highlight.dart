@@ -2338,8 +2338,6 @@ class _CollapsibleCodeBlockState extends State<_CollapsibleCodeBlock> {
     final highlightEnabled = !_shouldSkipHighlightWhileStreaming();
 
     Widget buildCodeView(String visibleCode) {
-      final bool isDesktop =
-          Platform.isMacOS || Platform.isWindows || Platform.isLinux;
       if (_exceedsLineThreshold(visibleCode, 1000)) {
         return _VirtualizedCodeView(
           code: visibleCode,
@@ -2347,7 +2345,6 @@ class _CollapsibleCodeBlockState extends State<_CollapsibleCodeBlock> {
           theme: codeTheme,
           textStyle: codeTextStyle,
           enableHighlight: highlightEnabled,
-          wrap: isDesktop || settings.mobileCodeBlockWrap,
         );
       }
       final codeView = SelectableHighlightView(
@@ -2358,10 +2355,6 @@ class _CollapsibleCodeBlockState extends State<_CollapsibleCodeBlock> {
         textStyle: codeTextStyle,
         enableHighlight: highlightEnabled,
       );
-
-      if (isDesktop || settings.mobileCodeBlockWrap) {
-        return codeView;
-      }
 
       return SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -2694,7 +2687,6 @@ class _VirtualizedCodeView extends StatefulWidget {
     required this.theme,
     required this.textStyle,
     required this.enableHighlight,
-    required this.wrap,
   });
 
   final String code;
@@ -2702,7 +2694,6 @@ class _VirtualizedCodeView extends StatefulWidget {
   final Map<String, TextStyle> theme;
   final TextStyle textStyle;
   final bool enableHighlight;
-  final bool wrap;
 
   @override
   State<_VirtualizedCodeView> createState() => _VirtualizedCodeViewState();
@@ -2741,7 +2732,6 @@ class _VirtualizedCodeViewState extends State<_VirtualizedCodeView> {
             textStyle: widget.textStyle,
             enableHighlight: widget.enableHighlight,
           );
-          if (widget.wrap) return code;
           return SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             primary: false,

@@ -1085,7 +1085,6 @@
   "displaySettingsPageEnableUserMarkdownTitle": "Render user messages with Markdown",
   "displaySettingsPageEnableReasoningMarkdownTitle": "Render reasoning (thinking) with Markdown",
   "displaySettingsPageEnableAssistantMarkdownTitle": "Render assistant messages with Markdown",
-  "displaySettingsPageMobileCodeBlockWrapTitle": "Mobile Code Block Word Wrap",
   "displaySettingsPageAutoCollapseCodeBlockTitle": "Auto-collapse Code Blocks",
   "displaySettingsPageAutoCollapseCodeBlockLinesTitle": "Auto-collapse threshold",
   "displaySettingsPageAutoCollapseCodeBlockLinesUnit": "lines",
