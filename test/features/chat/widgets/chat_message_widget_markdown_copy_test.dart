@@ -109,6 +109,72 @@ void main() {
     },
   );
 
+  testWidgets('assistant table cell drag selection copies with keyboard', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    MethodCall? clipboardCall;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') clipboardCall = call;
+      return null;
+    });
+
+    try {
+      const markdown = '''
+| Name | Value |
+| --- | --- |
+| Alpha | 42 |
+''';
+      await tester.pumpWidget(
+        _buildHarness(
+          ChatMessageWidget(
+            message: ChatMessage(
+              id: 'markdown-table-cell-copy',
+              role: 'assistant',
+              content: markdown,
+              conversationId: 'conversation-1',
+            ),
+            showModelIcon: false,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final alphaCell = find.byWidgetPredicate(
+        (widget) =>
+            (widget is SelectableText &&
+                (widget.data == 'Alpha' ||
+                    widget.textSpan?.toPlainText() == 'Alpha')) ||
+            (widget is Text && widget.textSpan?.toPlainText() == 'Alpha'),
+      );
+      expect(alphaCell, findsOneWidget);
+      final cellRect = tester.getRect(alphaCell);
+      final gesture = await tester.startGesture(
+        cellRect.centerLeft + const Offset(1, 0),
+        kind: PointerDeviceKind.mouse,
+        buttons: kPrimaryMouseButton,
+      );
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(cellRect.centerRight - const Offset(1, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+
+      expect(clipboardCall?.method, 'Clipboard.setData');
+      expect((clipboardCall?.arguments as Map?)?['text'], 'Alpha');
+    } finally {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   testWidgets('user selection copies exact rendered text through Copy intent', (
     tester,
   ) async {

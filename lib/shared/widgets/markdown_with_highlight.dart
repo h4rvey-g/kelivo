@@ -4028,7 +4028,13 @@ class _MarkdownTableCell extends StatelessWidget {
         child: Align(
           alignment: _alignmentFor(data.alignment),
           child: selectable
-              ? SelectableText.rich(textSpan, textAlign: data.alignment)
+              ? Text.rich(
+                  textSpan,
+                  textAlign: data.alignment,
+                  softWrap: true,
+                  overflow: TextOverflow.visible,
+                  textWidthBasis: TextWidthBasis.parent,
+                )
               : RichText(
                   text: textSpan,
                   textAlign: data.alignment,
