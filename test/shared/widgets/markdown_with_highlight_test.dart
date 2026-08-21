@@ -589,16 +589,33 @@ Inline ***strong emphasis*** text.
     },
   );
 
-  testWidgets('MarkdownWithCodeHighlight keeps citation metadata inside code', (
+  testWidgets('MarkdownWithCodeHighlight keeps citation markers inside code', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      _markdownHarness('`[citation:1:96d0ed]`', width: 360),
-    );
-    await tester.pump();
+    for (final testCase in const [
+      (
+        marker: '[citation:1:96d0ed]',
+        visibleText: 'citation:1:96d0ed',
+        capsuleText: '1',
+      ),
+      (marker: '[cite:96d0ed]', visibleText: 'cite:96d0ed', capsuleText: '?'),
+    ]) {
+      await tester.pumpWidget(
+        _markdownHarness('`${testCase.marker}`', width: 360),
+      );
+      await tester.pump();
 
-    expect(find.textContaining('citation:1:96d0ed'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      expect(
+        find.textContaining(testCase.visibleText),
+        findsOneWidget,
+        reason: testCase.marker,
+      );
+      expect(
+        find.text(testCase.capsuleText),
+        findsNothing,
+        reason: testCase.marker,
+      );
+    }
   });
 
   testWidgets(
@@ -659,16 +676,6 @@ Inline ***strong emphasis*** text.
       expect(find.textContaining('cite:deadbe'), findsNothing);
     },
   );
-
-  testWidgets('MarkdownWithCodeHighlight keeps cite markers inside code', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_markdownHarness('`[cite:96d0ed]`', width: 360));
-    await tester.pump();
-
-    expect(find.textContaining('cite:96d0ed'), findsOneWidget);
-    expect(find.text('?'), findsNothing);
-  });
 
   testWidgets('MarkdownWithCodeHighlight applies markdown image dimensions', (
     tester,
@@ -1684,73 +1691,59 @@ ${rows.join('\n')}
   );
 
   testWidgets(
-    'MarkdownWithCodeHighlight renders light default blockquote line as gray',
+    'MarkdownWithCodeHighlight renders the default blockquote line in both themes',
     (tester) async {
-      await tester.pumpWidget(
-        _markdownHarness(
-          '> 引用内容\n> 第二行',
-          width: 320,
-          theme: buildLightThemeForScheme(ThemePalettes.defaultPalette.light),
-        ),
-      );
-      await tester.pump();
+      for (final testCase in const [
+        (mode: ThemeMode.light, alpha: 0.36),
+        (mode: ThemeMode.dark, alpha: 0.48),
+      ]) {
+        await tester.pumpWidget(
+          _markdownHarness(
+            '> 引用内容\n> 第二行',
+            width: 320,
+            theme: buildLightThemeForScheme(ThemePalettes.defaultPalette.light),
+            darkTheme: buildDarkThemeForScheme(
+              ThemePalettes.defaultPalette.dark,
+            ),
+            themeMode: testCase.mode,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      final blockquote = find.byKey(const ValueKey('markdown-blockquote'));
-      expect(blockquote, findsOneWidget);
+        final blockquote = find.byKey(const ValueKey('markdown-blockquote'));
+        expect(blockquote, findsOneWidget, reason: '${testCase.mode}');
 
-      final blockquoteWidget = tester.widget<Container>(blockquote);
-      expect(blockquoteWidget.color, isNull);
-      expect(blockquoteWidget.decoration, isNull);
+        final blockquoteWidget = tester.widget<Container>(blockquote);
+        expect(blockquoteWidget.color, isNull, reason: '${testCase.mode}');
+        expect(blockquoteWidget.decoration, isNull, reason: '${testCase.mode}');
 
-      final line = find.descendant(
-        of: blockquote,
-        matching: find.byKey(const ValueKey('markdown-blockquote-line')),
-      );
-      expect(line, findsOneWidget);
-      expect(tester.getSize(line).width, 3);
+        final line = find.descendant(
+          of: blockquote,
+          matching: find.byKey(const ValueKey('markdown-blockquote-line')),
+        );
+        expect(line, findsOneWidget, reason: '${testCase.mode}');
+        expect(tester.getSize(line).width, 3, reason: '${testCase.mode}');
 
-      final lineDecoration =
-          tester.widget<DecoratedBox>(line).decoration as BoxDecoration;
-      final cs = Theme.of(tester.element(blockquote)).colorScheme;
-      expect(lineDecoration.color, cs.onSurfaceVariant.withValues(alpha: 0.36));
-      expect(
-        lineDecoration.color,
-        isNot(cs.outlineVariant.withValues(alpha: 0.82)),
-      );
-      expect(lineDecoration.borderRadius, BorderRadius.circular(2));
-      expect(lineDecoration.border, isNull);
-    },
-  );
-
-  testWidgets(
-    'MarkdownWithCodeHighlight keeps dark default blockquote line gray',
-    (tester) async {
-      await tester.pumpWidget(
-        _markdownHarness(
-          '> 引用内容\n> 第二行',
-          width: 320,
-          theme: buildLightThemeForScheme(ThemePalettes.defaultPalette.light),
-          darkTheme: buildDarkThemeForScheme(ThemePalettes.defaultPalette.dark),
-          themeMode: ThemeMode.dark,
-        ),
-      );
-      await tester.pump();
-
-      final blockquote = find.byKey(const ValueKey('markdown-blockquote'));
-      expect(blockquote, findsOneWidget);
-
-      final line = find.descendant(
-        of: blockquote,
-        matching: find.byKey(const ValueKey('markdown-blockquote-line')),
-      );
-      expect(line, findsOneWidget);
-
-      final lineDecoration =
-          tester.widget<DecoratedBox>(line).decoration as BoxDecoration;
-      final cs = Theme.of(tester.element(blockquote)).colorScheme;
-      expect(lineDecoration.color, cs.onSurfaceVariant.withValues(alpha: 0.48));
-      expect(lineDecoration.borderRadius, BorderRadius.circular(2));
-      expect(lineDecoration.border, isNull);
+        final lineDecoration =
+            tester.widget<DecoratedBox>(line).decoration as BoxDecoration;
+        final cs = Theme.of(tester.element(blockquote)).colorScheme;
+        expect(
+          lineDecoration.color,
+          cs.onSurfaceVariant.withValues(alpha: testCase.alpha),
+          reason: '${testCase.mode}',
+        );
+        expect(
+          lineDecoration.color,
+          isNot(cs.outlineVariant.withValues(alpha: 0.82)),
+          reason: '${testCase.mode}',
+        );
+        expect(
+          lineDecoration.borderRadius,
+          BorderRadius.circular(2),
+          reason: '${testCase.mode}',
+        );
+        expect(lineDecoration.border, isNull, reason: '${testCase.mode}');
+      }
     },
   );
 
@@ -2678,19 +2671,6 @@ A-->B
     },
   );
 
-  testWidgets(r'MarkdownWithCodeHighlight renders paren math with set braces', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _markdownHarness(r'集合\(A = {x \in \mathbb{R} : x^2 < 4}\)等价于开区间。'),
-    );
-    await tester.pump();
-
-    expect(_findMathWidget(), findsOneWidget);
-    expect(find.textContaining(r'\(A ='), findsNothing);
-    expect(find.textContaining('等价于开区间'), findsOneWidget);
-  });
-
   testWidgets(
     r'MarkdownWithCodeHighlight renders dollar math with escaped set braces',
     (tester) async {
@@ -2976,39 +2956,26 @@ $$
   );
 
   testWidgets(
-    'MarkdownWithCodeHighlight does not stall on many unmatched inline dollar math openers',
+    'MarkdownWithCodeHighlight does not stall on unmatched inline math openers',
     (tester) async {
-      final text = List<String>.filled(
-        2200,
-        r' prose $unfinished_math_expression',
-      ).join();
-      final stopwatch = Stopwatch()..start();
+      for (final testCase in const [
+        (name: 'dollar', fragment: r' prose $unfinished_math_expression'),
+        (name: 'paren', fragment: r' prose \(unfinished_math_expression'),
+      ]) {
+        final text = List<String>.filled(2200, testCase.fragment).join();
+        final stopwatch = Stopwatch()..start();
 
-      await tester.pumpWidget(_markdownHarness(text));
-      await tester.pump();
+        await tester.pumpWidget(_markdownHarness(text));
+        await tester.pump();
 
-      stopwatch.stop();
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
-      expect(_findMathWidget(), findsNothing);
-    },
-    timeout: const Timeout(Duration(seconds: 10)),
-  );
-
-  testWidgets(
-    r'MarkdownWithCodeHighlight does not stall on many unmatched inline paren math openers',
-    (tester) async {
-      final text = List<String>.filled(
-        2200,
-        r' prose \(unfinished_math_expression',
-      ).join();
-      final stopwatch = Stopwatch()..start();
-
-      await tester.pumpWidget(_markdownHarness(text));
-      await tester.pump();
-
-      stopwatch.stop();
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
-      expect(_findMathWidget(), findsNothing);
+        stopwatch.stop();
+        expect(
+          stopwatch.elapsed,
+          lessThan(const Duration(seconds: 3)),
+          reason: testCase.name,
+        );
+        expect(_findMathWidget(), findsNothing, reason: testCase.name);
+      }
     },
     timeout: const Timeout(Duration(seconds: 10)),
   );
@@ -4078,43 +4045,46 @@ press5
     }
   });
 
-  testWidgets('MarkdownWithCodeHighlight keeps p tag spacing compact', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _markdownHarness('''
+  testWidgets(
+    'MarkdownWithCodeHighlight keeps HTML paragraph spacing compact',
+    (tester) async {
+      for (final testCase in const [
+        (
+          name: 'between HTML paragraphs',
+          markdown: '''
 <p>这是一个 HTML 段落。</p>
 
 <p>同一个 HTML 段落里的第一行<br>这里应该换到第二行。</p>
-'''),
-    );
-    await tester.pump();
-
-    final richTexts = tester.widgetList<RichText>(find.byType(RichText));
-    final plainText = richTexts.map((w) => w.text.toPlainText()).join('\n');
-
-    expect(plainText, contains('这是一个 HTML 段落。\n\n同一个 HTML 段落里的第一行'));
-    expect(plainText, isNot(contains('这是一个 HTML 段落。\n\n\n同一个 HTML 段落里的第一行')));
-  });
-
-  testWidgets('MarkdownWithCodeHighlight keeps p to markdown spacing compact', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _markdownHarness('''
+''',
+          expected: '这是一个 HTML 段落。\n\n同一个 HTML 段落里的第一行',
+          excessive: '这是一个 HTML 段落。\n\n\n同一个 HTML 段落里的第一行',
+        ),
+        (
+          name: 'between HTML and Markdown',
+          markdown: '''
 <p>同一个 HTML 段落里的第一行<br>这里应该换到第二行。</p>
 
 这里是普通 Markdown 链接：[Kelivo GitHub](https://github.com/kelivo/Kelivo)
-'''),
-    );
-    await tester.pump();
+''',
+          expected: '这里应该换到第二行。\n\n这里是普通 Markdown 链接',
+          excessive: '这里应该换到第二行。\n\n\n这里是普通 Markdown 链接',
+        ),
+      ]) {
+        await tester.pumpWidget(_markdownHarness(testCase.markdown));
+        await tester.pump();
 
-    final richTexts = tester.widgetList<RichText>(find.byType(RichText));
-    final plainText = richTexts.map((w) => w.text.toPlainText()).join('\n');
+        final richTexts = tester.widgetList<RichText>(find.byType(RichText));
+        final plainText = richTexts.map((w) => w.text.toPlainText()).join('\n');
 
-    expect(plainText, contains('这里应该换到第二行。\n\n这里是普通 Markdown 链接'));
-    expect(plainText, isNot(contains('这里应该换到第二行。\n\n\n这里是普通 Markdown 链接')));
-  });
+        expect(plainText, contains(testCase.expected), reason: testCase.name);
+        expect(
+          plainText,
+          isNot(contains(testCase.excessive)),
+          reason: testCase.name,
+        );
+      }
+    },
+  );
 
   testWidgets('MarkdownWithCodeHighlight animates details collapse', (
     tester,
@@ -4167,39 +4137,34 @@ press5
       return (decoration as BoxDecoration).color?.a;
     }
 
-    testWidgets('details block fill is translucent in dark mode', (
+    testWidgets('details block fill is translucent in both themes', (
       tester,
     ) async {
-      await tester.pumpWidget(
-        _markdownHarness(
-          '<details><summary>更多信息</summary>隐藏内容</details>',
-          darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.indigo,
-              brightness: Brightness.dark,
+      for (final mode in ThemeMode.values.where(
+        (mode) => mode != ThemeMode.system,
+      )) {
+        await tester.pumpWidget(
+          _markdownHarness(
+            '<details><summary>更多信息</summary>隐藏内容</details>',
+            darkTheme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: Colors.indigo,
+                brightness: Brightness.dark,
+              ),
             ),
+            themeMode: mode,
           ),
-          themeMode: ThemeMode.dark,
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      final block = find.byKey(const ValueKey('details-surface'));
-      expect(block, findsOneWidget);
-      expect(fillAlpha(tester, block), closeTo(kBlockFillAlphaDetails, 0.01));
-    });
-
-    testWidgets('details block fill is translucent in light mode', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _markdownHarness('<details><summary>更多信息</summary>隐藏内容</details>'),
-      );
-      await tester.pump();
-
-      final block = find.byKey(const ValueKey('details-surface'));
-      expect(block, findsOneWidget);
-      expect(fillAlpha(tester, block), closeTo(kBlockFillAlphaDetails, 0.01));
+        final block = find.byKey(const ValueKey('details-surface'));
+        expect(block, findsOneWidget, reason: '$mode');
+        expect(
+          fillAlpha(tester, block),
+          closeTo(kBlockFillAlphaDetails, 0.01),
+          reason: '$mode',
+        );
+      }
     });
 
     testWidgets('table block fill is translucent', (tester) async {

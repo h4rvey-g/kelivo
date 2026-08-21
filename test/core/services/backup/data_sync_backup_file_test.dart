@@ -2001,196 +2001,99 @@ void main() {
       },
     );
 
-    test('validates all merged settings before writing any live key', () async {
-      final existingAssistants = jsonEncode([
-        {'id': 'local', 'name': 'Local'},
-      ]);
-      await BusinessRestoreService(
-        businessRepository,
-      ).overwrite({'assistants_v1': existingAssistants});
-      final before = await BusinessRestoreService(
-        businessRepository,
-      ).exportSettings();
+    test('rejects invalid structured settings before any live write', () async {
+      final cases =
+          <
+            ({
+              String name,
+              RestoreMode mode,
+              Map<String, Object?> initial,
+              Map<String, Object?> incoming,
+            })
+          >[
+            (
+              name: 'merge with an existing structured value',
+              mode: RestoreMode.merge,
+              initial: {
+                'assistants_v1': jsonEncode([
+                  {'id': 'local', 'name': 'Local'},
+                ]),
+              },
+              incoming: const {
+                'new_setting_before_failure': 'must-not-be-written',
+                'assistants_v1': '{invalid nested json',
+              },
+            ),
+            (
+              name: 'overwrite with malformed nested JSON',
+              mode: RestoreMode.overwrite,
+              initial: const {'preserved_setting': 'old'},
+              incoming: const {
+                'preserved_setting': 'new',
+                'assistants_v1': '{invalid nested json',
+              },
+            ),
+            (
+              name: 'first merge with malformed nested JSON',
+              mode: RestoreMode.merge,
+              initial: const {},
+              incoming: const {
+                'new_setting_before_failure': 'must-not-be-written',
+                'assistants_v1': '{invalid nested json',
+              },
+            ),
+            (
+              name: 'non-object structured list entry',
+              mode: RestoreMode.overwrite,
+              initial: const {'preserved_setting': 'old'},
+              incoming: {
+                'preserved_setting': 'new',
+                'assistants_v1': jsonEncode([42]),
+              },
+            ),
+            (
+              name: 'non-object provider configuration',
+              mode: RestoreMode.overwrite,
+              initial: const {},
+              incoming: {
+                'provider_configs_v1': jsonEncode({'provider': 42}),
+              },
+            ),
+          ];
 
-      final settingsFile = File('${root.path}/invalid_merged_settings.json');
-      await settingsFile.writeAsString(
-        jsonEncode({
-          'new_setting_before_failure': 'must-not-be-written',
-          'assistants_v1': '{invalid nested json',
-        }),
-      );
-      final zipFile = File('${root.path}/invalid_merged_settings.zip');
-      final encoder = ZipFileEncoder();
-      encoder.create(zipFile.path);
-      encoder.addFileSync(settingsFile, 'settings.json');
-      encoder.closeSync();
+      for (var index = 0; index < cases.length; index++) {
+        final testCase = cases[index];
+        final restoreService = BusinessRestoreService(businessRepository);
+        await restoreService.overwrite(testCase.initial);
+        final before = await restoreService.exportSettings();
 
-      final sync = DataSync(
-        businessRepository: businessRepository,
-        chatService: ChatService(),
-      );
-
-      await expectLater(
-        sync.restoreFromLocalFile(
-          zipFile,
-          const WebDavConfig(includeChats: false, includeFiles: false),
-          mode: RestoreMode.merge,
-        ),
-        throwsA(isA<FormatException>()),
-      );
-      expect(
-        await BusinessRestoreService(businessRepository).exportSettings(),
-        before,
-      );
-    });
-
-    test(
-      'rejects malformed structured settings before overwrite writes',
-      () async {
-        await BusinessRestoreService(
-          businessRepository,
-        ).overwrite({'preserved_setting': 'old'});
-        final before = await BusinessRestoreService(
-          businessRepository,
-        ).exportSettings();
-        final settingsFile = File(
-          '${root.path}/invalid_overwrite_settings.json',
-        );
-        await settingsFile.writeAsString(
-          jsonEncode({
-            'preserved_setting': 'new',
-            'assistants_v1': '{invalid nested json',
-          }),
-        );
-        final zipFile = File('${root.path}/invalid_overwrite_settings.zip');
+        final prefix = 'invalid_structured_settings_$index';
+        final settingsFile = File('${root.path}/$prefix.json');
+        await settingsFile.writeAsString(jsonEncode(testCase.incoming));
+        final zipFile = File('${root.path}/$prefix.zip');
         final encoder = ZipFileEncoder();
         encoder.create(zipFile.path);
         encoder.addFileSync(settingsFile, 'settings.json');
         encoder.closeSync();
 
-        final sync = DataSync(
-          businessRepository: businessRepository,
-          chatService: ChatService(),
-        );
-
         await expectLater(
-          sync.restoreFromLocalFile(
+          DataSync(
+            businessRepository: businessRepository,
+            chatService: ChatService(),
+          ).restoreFromLocalFile(
             zipFile,
             const WebDavConfig(includeChats: false, includeFiles: false),
+            mode: testCase.mode,
           ),
           throwsA(isA<FormatException>()),
+          reason: testCase.name,
         );
         expect(
-          await BusinessRestoreService(businessRepository).exportSettings(),
+          await restoreService.exportSettings(),
           before,
+          reason: testCase.name,
         );
-      },
-    );
-
-    test('rejects malformed first-time merged structured settings', () async {
-      final before = await BusinessRestoreService(
-        businessRepository,
-      ).exportSettings();
-      final settingsFile = File(
-        '${root.path}/invalid_new_merged_settings.json',
-      );
-      await settingsFile.writeAsString(
-        jsonEncode({
-          'new_setting_before_failure': 'must-not-be-written',
-          'assistants_v1': '{invalid nested json',
-        }),
-      );
-      final zipFile = File('${root.path}/invalid_new_merged_settings.zip');
-      final encoder = ZipFileEncoder();
-      encoder.create(zipFile.path);
-      encoder.addFileSync(settingsFile, 'settings.json');
-      encoder.closeSync();
-
-      final sync = DataSync(
-        businessRepository: businessRepository,
-        chatService: ChatService(),
-      );
-
-      await expectLater(
-        sync.restoreFromLocalFile(
-          zipFile,
-          const WebDavConfig(includeChats: false, includeFiles: false),
-          mode: RestoreMode.merge,
-        ),
-        throwsA(isA<FormatException>()),
-      );
-      expect(
-        await BusinessRestoreService(businessRepository).exportSettings(),
-        before,
-      );
-    });
-
-    test('rejects non-object entries in structured setting lists', () async {
-      await BusinessRestoreService(
-        businessRepository,
-      ).overwrite({'preserved_setting': 'old'});
-      final before = await BusinessRestoreService(
-        businessRepository,
-      ).exportSettings();
-      final settingsFile = File('${root.path}/invalid_assistant_entries.json');
-      await settingsFile.writeAsString(
-        jsonEncode({
-          'preserved_setting': 'new',
-          'assistants_v1': jsonEncode([42]),
-        }),
-      );
-      final zipFile = File('${root.path}/invalid_assistant_entries.zip');
-      final encoder = ZipFileEncoder();
-      encoder.create(zipFile.path);
-      encoder.addFileSync(settingsFile, 'settings.json');
-      encoder.closeSync();
-
-      await expectLater(
-        DataSync(
-          businessRepository: businessRepository,
-          chatService: ChatService(),
-        ).restoreFromLocalFile(
-          zipFile,
-          const WebDavConfig(includeChats: false, includeFiles: false),
-        ),
-        throwsA(isA<FormatException>()),
-      );
-      expect(
-        await BusinessRestoreService(businessRepository).exportSettings(),
-        before,
-      );
-    });
-
-    test('rejects non-object provider configuration values', () async {
-      final before = await BusinessRestoreService(
-        businessRepository,
-      ).exportSettings();
-      final settingsFile = File('${root.path}/invalid_provider_configs.json');
-      await settingsFile.writeAsString(
-        jsonEncode({
-          'provider_configs_v1': jsonEncode({'provider': 42}),
-        }),
-      );
-      final zipFile = File('${root.path}/invalid_provider_configs.zip');
-      final encoder = ZipFileEncoder();
-      encoder.create(zipFile.path);
-      encoder.addFileSync(settingsFile, 'settings.json');
-      encoder.closeSync();
-
-      await expectLater(
-        DataSync(
-          businessRepository: businessRepository,
-          chatService: ChatService(),
-        ).restoreFromLocalFile(
-          zipFile,
-          const WebDavConfig(includeChats: false, includeFiles: false),
-        ),
-        throwsA(isA<FormatException>()),
-      );
-      expect(
-        await BusinessRestoreService(businessRepository).exportSettings(),
-        before,
-      );
+      }
     });
 
     test(
@@ -2390,121 +2293,77 @@ void main() {
       },
     );
 
-    test('rejects malformed chat payload before clearing live chats', () async {
-      await BusinessRestoreService(
-        businessRepository,
-      ).overwrite({'preserved_setting': 'old'});
-      final before = await BusinessRestoreService(
-        businessRepository,
-      ).exportSettings();
-      final settingsFile = File('${root.path}/malformed_chat_settings.json');
-      await settingsFile.writeAsString(
-        jsonEncode({'preserved_setting': 'new'}),
-      );
-      final chatsFile = File('${root.path}/malformed_chats.json');
-      await chatsFile.writeAsString('{}');
-
-      final zipFile = File('${root.path}/malformed_chats_restore.zip');
-      final encoder = ZipFileEncoder();
-      encoder.create(zipFile.path);
-      encoder.addFileSync(settingsFile, 'settings.json');
-      encoder.addFileSync(chatsFile, 'chats.json');
-      encoder.closeSync();
-
-      final chatService = _RecordingClearChatService();
-      final sync = DataSync(
-        businessRepository: businessRepository,
-        chatService: chatService,
-      );
-
-      await expectLater(
-        sync.restoreFromLocalFile(
-          zipFile,
-          const WebDavConfig(includeChats: true, includeFiles: false),
-        ),
-        throwsA(isA<FormatException>()),
-      );
-      expect(chatService.cleared, isFalse);
-      expect(
-        await BusinessRestoreService(businessRepository).exportSettings(),
-        before,
-      );
-    });
-
-    test('rejects an unsupported future chat backup version', () async {
-      final chatsFile = File('${root.path}/future_chats.json');
-      await chatsFile.writeAsString(
-        jsonEncode({
-          'version': 2,
-          'conversations': <Map<String, dynamic>>[],
-          'messages': <Map<String, dynamic>>[],
-        }),
-      );
-      final zipFile = File('${root.path}/future_chats.zip');
-      final encoder = ZipFileEncoder();
-      encoder.create(zipFile.path);
-      encoder.addFileSync(validSettingsFile, 'settings.json');
-      encoder.addFileSync(chatsFile, 'chats.json');
-      encoder.closeSync();
-      final chatService = _RecordingClearChatService();
-
-      await expectLater(
-        DataSync(
-          businessRepository: businessRepository,
-          chatService: chatService,
-        ).restoreFromLocalFile(
-          zipFile,
-          const WebDavConfig(includeChats: true, includeFiles: false),
-        ),
-        throwsA(isA<FormatException>()),
-      );
-      expect(chatService.cleared, isFalse);
-    });
-
-    test('rejects a non-string Gemini thought signature', () async {
-      final chatsFile = File('${root.path}/invalid_signature_chats.json');
-      await chatsFile.writeAsString(
-        jsonEncode({
-          'version': 1,
-          'conversations': [
-            Conversation(
-              id: 'conversation',
-              title: 'Conversation',
-              messageIds: const ['assistant-message'],
-            ).toJson(),
-          ],
-          'messages': [
-            ChatMessage(
-              id: 'assistant-message',
-              role: 'assistant',
-              content: 'answer',
-              conversationId: 'conversation',
-            ).toJson(),
-          ],
-          'geminiThoughtSigs': {
-            'assistant-message': {'bad': true},
+    test('rejects malformed legacy chats before changing live data', () async {
+      final cases = <({String name, Map<String, Object?> chats})>[
+        (name: 'missing conversations and messages', chats: const {}),
+        (
+          name: 'unsupported future version',
+          chats: const {
+            'version': 2,
+            'conversations': <Map<String, dynamic>>[],
+            'messages': <Map<String, dynamic>>[],
           },
-        }),
-      );
-      final zipFile = File('${root.path}/invalid_signature_chats.zip');
-      final encoder = ZipFileEncoder();
-      encoder.create(zipFile.path);
-      encoder.addFileSync(validSettingsFile, 'settings.json');
-      encoder.addFileSync(chatsFile, 'chats.json');
-      encoder.closeSync();
-      final chatService = _RecordingClearChatService();
-
-      await expectLater(
-        DataSync(
-          businessRepository: businessRepository,
-          chatService: chatService,
-        ).restoreFromLocalFile(
-          zipFile,
-          const WebDavConfig(includeChats: true, includeFiles: false),
         ),
-        throwsA(isA<FormatException>()),
-      );
-      expect(chatService.cleared, isFalse);
+        (
+          name: 'non-string Gemini thought signature',
+          chats: {
+            'version': 1,
+            'conversations': [
+              Conversation(
+                id: 'conversation',
+                title: 'Conversation',
+                messageIds: const ['assistant-message'],
+              ).toJson(),
+            ],
+            'messages': [
+              ChatMessage(
+                id: 'assistant-message',
+                role: 'assistant',
+                content: 'answer',
+                conversationId: 'conversation',
+              ).toJson(),
+            ],
+            'geminiThoughtSigs': {
+              'assistant-message': {'bad': true},
+            },
+          },
+        ),
+      ];
+      final restoreService = BusinessRestoreService(businessRepository);
+      await restoreService.overwrite({'preserved_setting': 'old'});
+      final before = await restoreService.exportSettings();
+
+      for (var index = 0; index < cases.length; index++) {
+        final testCase = cases[index];
+        final prefix = 'malformed_legacy_chats_$index';
+        final chatsFile = File('${root.path}/$prefix.json');
+        await chatsFile.writeAsString(jsonEncode(testCase.chats));
+        final zipFile = File('${root.path}/$prefix.zip');
+        final encoder = ZipFileEncoder();
+        encoder.create(zipFile.path);
+        encoder.addFileSync(validSettingsFile, 'settings.json');
+        encoder.addFileSync(chatsFile, 'chats.json');
+        encoder.closeSync();
+        final chatService = _RecordingClearChatService();
+
+        await expectLater(
+          DataSync(
+            businessRepository: businessRepository,
+            chatService: chatService,
+          ).restoreFromLocalFile(
+            zipFile,
+            const WebDavConfig(includeChats: true, includeFiles: false),
+          ),
+          throwsA(isA<FormatException>()),
+          reason: testCase.name,
+        );
+        expect(chatService.cleared, isFalse, reason: testCase.name);
+        expect(
+          await restoreService.exportSettings(),
+          before,
+          reason: testCase.name,
+        );
+      }
     });
 
     test(
