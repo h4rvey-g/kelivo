@@ -3,6 +3,7 @@ import 'dart:ffi' show Abi;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
@@ -114,9 +115,10 @@ typedef UpdateInstallProgressCallback =
     void Function(UpdateInstallProgress progress);
 
 abstract interface class UpdateInstallationService {
-  Future<void> downloadAndOpen(
+  Future<void> downloadAndInstall(
     UpdateArtifact artifact, {
     required UpdateTarget target,
+    required String expectedVersion,
     UpdateInstallProgressCallback? onProgress,
   });
 
@@ -126,6 +128,90 @@ abstract interface class UpdateInstallationService {
 typedef UpdateInstallerOpener = Future<bool> Function(String path);
 typedef UpdateInstallPermissionRequester = Future<bool> Function();
 typedef UpdateExecutablePreparer = Future<void> Function(String path);
+
+UpdateInstallationService createDefaultUpdateInstallationService() {
+  if (Platform.isMacOS) return MacOSSparkleUpdateInstaller();
+  return InternalUpdateInstaller();
+}
+
+final class MacOSSparkleUpdateInstaller implements UpdateInstallationService {
+  MacOSSparkleUpdateInstaller({MethodChannel? channel})
+    : _channel = channel ?? const MethodChannel(_channelName) {
+    _channel.setMethodCallHandler(_handleNativeCall);
+  }
+
+  static const String _channelName = 'com.psyche.kelivo/sparkle_update';
+
+  final MethodChannel _channel;
+  UpdateInstallProgressCallback? _onProgress;
+  bool _disposed = false;
+
+  @override
+  Future<void> downloadAndInstall(
+    UpdateArtifact artifact, {
+    required UpdateTarget target,
+    required String expectedVersion,
+    UpdateInstallProgressCallback? onProgress,
+  }) async {
+    if (target != UpdateTarget.macos ||
+        !isInstallableUpdateArtifact(artifact, target)) {
+      throw const UpdateInstallerException(
+        'The selected release asset is not a macOS update.',
+      );
+    }
+    if (!_isTrustedReleaseArtifact(artifact)) {
+      throw const UpdateInstallerException(
+        'The selected update is not hosted by the Kelivo release repository.',
+      );
+    }
+    if (_disposed) {
+      throw const UpdateInstallerException(
+        'The macOS update service is unavailable.',
+      );
+    }
+
+    _onProgress = onProgress;
+    try {
+      await _channel.invokeMethod<void>('installAvailableUpdate', {
+        'expectedVersion': expectedVersion,
+      });
+    } on PlatformException catch (error) {
+      throw UpdateInstallerException(
+        error.message ?? 'The macOS update could not be installed.',
+      );
+    } finally {
+      _onProgress = null;
+    }
+  }
+
+  Future<void> _handleNativeCall(MethodCall call) async {
+    if (call.method != 'progress') return;
+    final arguments = call.arguments;
+    if (arguments is! Map) return;
+
+    final phase = switch (arguments['phase']) {
+      'downloading' => UpdateInstallPhase.downloading,
+      'preparing' => UpdateInstallPhase.requestingPermission,
+      'installing' => UpdateInstallPhase.openingInstaller,
+      _ => null,
+    };
+    if (phase == null) return;
+    _onProgress?.call(
+      UpdateInstallProgress(
+        phase: phase,
+        receivedBytes: (arguments['receivedBytes'] as num?)?.toInt() ?? 0,
+        totalBytes: (arguments['totalBytes'] as num?)?.toInt(),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _onProgress = null;
+    _channel.setMethodCallHandler(null);
+  }
+}
 
 final class InternalUpdateInstaller implements UpdateInstallationService {
   InternalUpdateInstaller({
@@ -150,9 +236,10 @@ final class InternalUpdateInstaller implements UpdateInstallationService {
   final UpdateExecutablePreparer _prepareExecutable;
 
   @override
-  Future<void> downloadAndOpen(
+  Future<void> downloadAndInstall(
     UpdateArtifact artifact, {
     required UpdateTarget target,
+    required String expectedVersion,
     UpdateInstallProgressCallback? onProgress,
   }) async {
     if (!isInstallableUpdateArtifact(artifact, target)) {

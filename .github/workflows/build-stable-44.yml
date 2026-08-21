@@ -2,6 +2,7 @@ name: Flutter Multi-Platform Build Stable 3.44
 
 env:
   FLUTTER_VERSION: '3.44.6'  # 当前 stable 3.44.6 / Dart 3.12.x
+  SPARKLE_VERSION: '2.9.6'
 
 on:
   push:
@@ -319,11 +320,23 @@ jobs:
           VERSION='${{ needs.prepare.outputs.artifact_version }}'
           echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: 🏗️ 构建 macOS
-        run: flutter build macos --release
+        run: |
+          set -euo pipefail
+          release_version='${{ needs.prepare.outputs.release_version }}'
+          IFS='.' read -r major minor patch <<< "$release_version"
+          if (( major > 999 || minor > 999 || patch > 999 )); then
+            echo "macOS version components must be below 1000: $release_version" >&2
+            exit 1
+          fi
+          sparkle_build_number=$((major * 1000000 + minor * 1000 + patch))
+          flutter build macos \
+            --release \
+            --build-name "$release_version" \
+            --build-number "$sparkle_build_number"
 
       - name: 📦 创建 DMG
         run: |
-          # Use built-in tooling and keep the drag-to-Applications workflow.
+          set -euo pipefail
           dmg_staging="$(mktemp -d)"
           trap 'rm -rf "$dmg_staging"' EXIT
           cp -R "build/macos/Build/Products/Release/kelivo.app" "$dmg_staging/kelivo.app"
@@ -334,11 +347,45 @@ jobs:
             -ov \
             -format UDZO \
             "Kelivo_macos_${VERSION}.dmg"
+
+      - name: ✍️ 生成 Sparkle appcast
+        if: ${{ needs.prepare.outputs.publish_release == 'true' }}
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
+            echo "SPARKLE_PRIVATE_KEY repository secret is required" >&2
+            exit 1
+          fi
+
+          tools_dir="$(mktemp -d)"
+          updates_dir="$(mktemp -d)"
+          trap 'rm -rf "$tools_dir" "$updates_dir"' EXIT
+          curl --fail --location --silent --show-error \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            --output "$tools_dir/Sparkle.tar.xz"
+          tar -xJf "$tools_dir/Sparkle.tar.xz" -C "$tools_dir"
+          cp Kelivo_macos_*.dmg "$updates_dir/"
+
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | \
+            "$tools_dir/bin/generate_appcast" \
+              --ed-key-file - \
+              --download-url-prefix \
+                "https://github.com/h4rvey-g/kelivo/releases/download/${{ needs.prepare.outputs.release_tag }}/" \
+              --maximum-versions 1 \
+              --maximum-deltas 0 \
+              -o "$GITHUB_WORKSPACE/appcast.xml" \
+              "$updates_dir"
+          test -s appcast.xml
+
       - name: 📤 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: macOS-DMG
-          path: Kelivo_macos_*.dmg
+          path: |
+            Kelivo_macos_*.dmg
+            appcast.xml
 
   # Windows 构建
   windows:
@@ -779,7 +826,7 @@ jobs:
         needs.prepare.outputs.publish_release == 'true' &&
         (needs.android.result == 'success' || needs.android.result == 'skipped') &&
         (needs.ios.result == 'success' || needs.ios.result == 'skipped') &&
-        (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
+        needs.macos.result == 'success' &&
         (needs.windows.result == 'success' || needs.windows.result == 'skipped') &&
         (needs.linux.result == 'success' || needs.linux.result == 'skipped') &&
         (needs.android.result == 'success' ||
@@ -806,6 +853,7 @@ jobs:
           set -euo pipefail
           find release-artifacts -maxdepth 1 -type f -name 'Kelivo_*' -print
           test -n "$(find release-artifacts -maxdepth 1 -type f -name 'Kelivo_*' -print -quit)"
+          test -s release-artifacts/appcast.xml
 
       - name: 创建 GitHub Release
         uses: softprops/action-gh-release@v2
@@ -815,4 +863,6 @@ jobs:
           prerelease: ${{ needs.prepare.outputs.prerelease }}
           generate_release_notes: true
           fail_on_unmatched_files: true
-          files: release-artifacts/Kelivo_*
+          files: |
+            release-artifacts/Kelivo_*
+            release-artifacts/appcast.xml

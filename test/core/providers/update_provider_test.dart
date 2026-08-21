@@ -123,7 +123,7 @@ void main() {
       });
     });
 
-    test('selects a prerelease when it is the newest non-draft release', () {
+    test('ignores draft and prerelease versions for the stable feed', () {
       final info = UpdateInfo.fromGitHubReleases([
         {'tag_name': 'v3.0.0-draft', 'draft': true},
         {
@@ -136,10 +136,10 @@ void main() {
         {'tag_name': 'v1.9.0', 'draft': false, 'prerelease': false},
       ]);
 
-      expect(info.version, '2.0.0');
+      expect(info.version, '1.9.0');
       expect(
         info.downloads['universal'],
-        'https://github.com/h4rvey-g/kelivo/releases/tag/v2.0.0-beta.1',
+        'https://github.com/h4rvey-g/kelivo/releases/latest',
       );
     });
 
@@ -204,6 +204,7 @@ void main() {
       expect(result, UpdateInstallResult.opened);
       expect(service.receivedArtifact, same(artifact));
       expect(service.receivedTarget, UpdateTarget.windows);
+      expect(service.receivedExpectedVersion, '1.2.3');
       expect(
         observed.whereType<UpdateInstallProgress>().map((p) => p.phase),
         containsAllInOrder([
@@ -270,15 +271,18 @@ final class _FakeUpdateInstallationService
   final _FakeInstallAction action;
   UpdateArtifact? receivedArtifact;
   UpdateTarget? receivedTarget;
+  String? receivedExpectedVersion;
 
   @override
-  Future<void> downloadAndOpen(
+  Future<void> downloadAndInstall(
     UpdateArtifact artifact, {
     required UpdateTarget target,
+    required String expectedVersion,
     UpdateInstallProgressCallback? onProgress,
   }) {
     receivedArtifact = artifact;
     receivedTarget = target;
+    receivedExpectedVersion = expectedVersion;
     return action(artifact, target, onProgress);
   }
 

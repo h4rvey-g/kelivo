@@ -32,5 +32,13 @@
 	<string>Kelivo 使用麦克风录制您主动提交的语音并转换为文字；我们不会收集这些信息。 / Kelivo uses the microphone to record audio you choose to submit for transcription; Kelivo does not collect this information.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Kelivo 使用系统语音识别将您主动录制的语音转换为文字。您的数据由系统处理；我们不会收集这些信息。 / Kelivo uses system speech recognition to turn audio you choose to record into text. Your data is processed by the system; Kelivo does not collect this information.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/h4rvey-g/kelivo/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>pm6mspwWHFWKxRGAAnfWKegCAQX35BNNCUN+VdfvBfY=</string>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

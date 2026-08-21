@@ -1,11 +1,70 @@
 import 'dart:io';
 
 import 'package:Kelivo/core/services/update/update_installer.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('MacOSSparkleUpdateInstaller', () {
+    const channel = MethodChannel('kelivo.test/sparkle_update');
+
+    tearDown(() async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    test('starts Sparkle with the expected release version', () async {
+      MethodCall? receivedCall;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            receivedCall = call;
+            return null;
+          });
+      final installer = MacOSSparkleUpdateInstaller(channel: channel);
+      addTearDown(installer.dispose);
+
+      await installer.downloadAndInstall(
+        _artifact(name: 'Kelivo_macos_1.2.3.dmg'),
+        target: UpdateTarget.macos,
+        expectedVersion: '1.2.3',
+      );
+
+      expect(receivedCall?.method, 'installAvailableUpdate');
+      expect(receivedCall?.arguments, {'expectedVersion': '1.2.3'});
+    });
+
+    test('surfaces native Sparkle failures without platform noise', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(
+              code: 'update_failed',
+              message: 'signature rejected',
+            );
+          });
+      final installer = MacOSSparkleUpdateInstaller(channel: channel);
+      addTearDown(installer.dispose);
+
+      await expectLater(
+        installer.downloadAndInstall(
+          _artifact(name: 'Kelivo_macos_1.2.3.dmg'),
+          target: UpdateTarget.macos,
+          expectedVersion: '1.2.3',
+        ),
+        throwsA(
+          isA<UpdateInstallerException>().having(
+            (error) => error.message,
+            'message',
+            'signature rejected',
+          ),
+        ),
+      );
+    });
+  });
+
   group('InternalUpdateInstaller', () {
     late Directory cacheRoot;
 
@@ -49,12 +108,13 @@ void main() {
       addTearDown(installer.dispose);
       final progress = <UpdateInstallProgress>[];
 
-      await installer.downloadAndOpen(
+      await installer.downloadAndInstall(
         _artifact(
           name: 'Kelivo_windows_1.2.3_setup.exe',
           sizeBytes: payload.length,
         ),
         target: UpdateTarget.windows,
+        expectedVersion: '1.2.3',
         onProgress: progress.add,
       );
 
@@ -95,9 +155,10 @@ void main() {
       addTearDown(installer.dispose);
 
       await expectLater(
-        installer.downloadAndOpen(
+        installer.downloadAndInstall(
           _artifact(name: 'Kelivo_macos_1.2.3.dmg'),
           target: UpdateTarget.macos,
+          expectedVersion: '1.2.3',
         ),
         throwsA(isA<UpdateInstallerException>()),
       );
@@ -136,9 +197,10 @@ void main() {
         );
 
         await expectLater(
-          installer.downloadAndOpen(
+          installer.downloadAndInstall(
             artifact,
             target: UpdateTarget.androidArm64,
+            expectedVersion: '1.2.3',
           ),
           throwsA(isA<UpdateInstallPermissionDeniedException>()),
         );
@@ -151,9 +213,10 @@ void main() {
         );
 
         permissionGranted = true;
-        await installer.downloadAndOpen(
+        await installer.downloadAndInstall(
           artifact,
           target: UpdateTarget.androidArm64,
+          expectedVersion: '1.2.3',
         );
 
         expect(
@@ -180,17 +243,18 @@ void main() {
       addTearDown(installer.dispose);
 
       await expectLater(
-        installer.downloadAndOpen(
+        installer.downloadAndInstall(
           UpdateArtifact(
             name: 'Kelivo_windows_1.2.3_setup.exe',
             uri: Uri.parse('https://example.test/update.exe'),
           ),
           target: UpdateTarget.windows,
+          expectedVersion: '1.2.3',
         ),
         throwsA(isA<UpdateInstallerException>()),
       );
       await expectLater(
-        installer.downloadAndOpen(
+        installer.downloadAndInstall(
           UpdateArtifact(
             name: 'Kelivo_windows_1.2.3_setup.exe',
             uri: Uri.parse(
@@ -199,6 +263,7 @@ void main() {
             ),
           ),
           target: UpdateTarget.windows,
+          expectedVersion: '1.2.3',
         ),
         throwsA(isA<UpdateInstallerException>()),
       );

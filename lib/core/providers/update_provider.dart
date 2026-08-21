@@ -207,7 +207,11 @@ class UpdateInfo {
 
   factory UpdateInfo.fromGitHubReleases(List<dynamic> releases) {
     for (final release in releases) {
-      if (release is! Map || release['draft'] == true) continue;
+      if (release is! Map ||
+          release['draft'] == true ||
+          release['prerelease'] == true) {
+        continue;
+      }
       return UpdateInfo.fromGitHubRelease(
         release.map((key, value) => MapEntry(key.toString(), value)),
       );
@@ -258,7 +262,8 @@ class UpdateProvider extends ChangeNotifier {
     UpdateInstallationService? installationService,
     @visibleForTesting UpdateInfo? initialAvailable,
     @visibleForTesting UpdateTarget Function()? targetResolver,
-  }) : _installationService = installationService ?? InternalUpdateInstaller(),
+  }) : _installationService =
+           installationService ?? createDefaultUpdateInstallationService(),
        _ownsInstallationService = installationService == null,
        _available = initialAvailable,
        _targetResolver = targetResolver ?? detectUpdateTarget;
@@ -295,9 +300,10 @@ class UpdateProvider extends ChangeNotifier {
     notifyListeners();
     var result = UpdateInstallResult.failed;
     try {
-      await _installationService.downloadAndOpen(
+      await _installationService.downloadAndInstall(
         artifact,
         target: target,
+        expectedVersion: info!.version,
         onProgress: _setInstallProgress,
       );
       result = UpdateInstallResult.opened;

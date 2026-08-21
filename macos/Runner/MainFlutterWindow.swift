@@ -181,6 +181,10 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    (NSApp.delegate as? AppDelegate)?.registerSparkleUpdateChannel(
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+
     let coordinateView = flutterViewController.view.subviews.first(
       where: { $0.isFlipped }
     ) ?? flutterViewController.view
