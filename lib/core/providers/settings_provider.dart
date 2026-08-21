@@ -19,6 +19,7 @@ import '../services/logging/flutter_logger.dart';
 import '../services/learning_mode_store.dart';
 import '../models/api_keys.dart';
 import '../models/backup.dart';
+import '../models/compress_context_options.dart';
 import '../models/provider_group.dart';
 import '../services/haptics.dart';
 import '../../utils/app_directories.dart';
@@ -33,6 +34,7 @@ import '../services/memory/memory_prompts.dart';
 import '../services/memory/memory_trace.dart';
 import '../../theme/palettes.dart';
 import '../../theme/custom_theme.dart';
+import '../../theme/chat_bubble_style.dart';
 
 // Desktop: topic list position
 enum DesktopTopicPosition { left, right }
@@ -100,6 +102,10 @@ class SettingsProvider extends ChangeNotifier {
       'suggestion_insert_on_tap_only_v1';
   static const String _compressModelKey = 'compress_model_v1';
   static const String _compressPromptKey = 'compress_prompt_v1';
+  static const String _compressLimitModeKey = 'compress_limit_mode_v1';
+  static const String _compressKeepUserMessagesKey =
+      'compress_keep_user_messages_v1';
+  static const String _compressMaxCharsKey = 'compress_max_chars_v1';
   static const String _themePaletteKey = 'theme_palette_v1';
   static const String _useDynamicColorKey = 'use_dynamic_color_v1';
   static const String _customThemesKey = 'custom_themes_v1';
@@ -127,6 +133,8 @@ class SettingsProvider extends ChangeNotifier {
   static const String _memoryPromptLangKey = 'memory_prompt_lang_v1';
   static const String _memoryTraceEnabledKey = 'memory_trace_enabled_v1';
   static const String _legacyMemoryModeKey = 'memory_legacy_mode_v1';
+  static const String _legacyMemoryPromptZhKey = 'memory_legacy_prompt_zh_v1';
+  static const String _legacyMemoryPromptEnKey = 'memory_legacy_prompt_en_v1';
   static const String _memoryRulesPromptZhKey = 'memory_rules_prompt_zh_v1';
   static const String _memoryRulesPromptEnKey = 'memory_rules_prompt_en_v1';
   static const String _memoryGatePromptZhKey = 'memory_gate_prompt_zh_v1';
@@ -145,6 +153,18 @@ class SettingsProvider extends ChangeNotifier {
       'memory_profile_distill_prompt_zh_v1';
   static const String _memoryProfileDistillPromptEnKey =
       'memory_profile_distill_prompt_en_v1';
+  static const String _memoryMigratePromptZhKey = 'memory_migrate_prompt_zh_v1';
+  static const String _memoryMigratePromptEnKey = 'memory_migrate_prompt_en_v1';
+  static const String _memoryMigrationBatchSizeKey =
+      'memory_migration_batch_size_v1';
+  static const int defaultMemoryMigrationBatchSize = 12;
+  static const int minMemoryMigrationBatchSize = 1;
+  static const int maxMemoryMigrationBatchSize = 24;
+  static const String _memoryInjectionMaxItemsKey =
+      'memory_injection_max_items_v1';
+  static const int defaultMemoryInjectionMaxItems = 10;
+  static const int minMemoryInjectionMaxItems = 1;
+  static const int maxMemoryInjectionMaxItems = 100;
   static const String _displayShowUserAvatarKey = 'display_show_user_avatar_v1';
   static const String _displayShowModelIconKey = 'display_show_model_icon_v1';
   static const String _displayShowModelNameTimestampKey =
@@ -170,6 +190,8 @@ class SettingsProvider extends ChangeNotifier {
       'display_regenerate_delete_trailing_messages_v1';
   static const String _displayShowRegenerateConfirmDialogKey =
       'display_show_regenerate_confirm_dialog_v1';
+  static const String _chatForkKeepMessageVersionsKey =
+      'chat_fork_keep_message_versions_v1';
   static const String _displayShowMessageNavKey = 'display_show_message_nav_v1';
   static const String _displayDesktopMessageNavButtonsModeKey =
       'display_desktop_message_nav_buttons_mode_v1';
@@ -208,6 +230,10 @@ class SettingsProvider extends ChangeNotifier {
       'display_new_chat_after_delete_v1';
   static const String _displayEnterToSendOnMobileKey =
       'display_enter_to_send_on_mobile_v1';
+  static const String _displayLongPasteAsFileKey =
+      'display_long_paste_as_file_v1';
+  static const String _displayLongPasteAsFileThresholdKey =
+      'display_long_paste_as_file_threshold_v1';
   static const String _desktopSendShortcutKey = 'desktop_send_shortcut_v1';
   static const String _displayChatFontScaleKey = 'display_chat_font_scale_v1';
   static const String _displayAutoScrollEnabledKey =
@@ -252,6 +278,8 @@ class SettingsProvider extends ChangeNotifier {
       'display_use_pure_background_v1';
   static const String _displayChatMessageBackgroundStyleKey =
       'display_chat_message_background_style_v1';
+  static const String _chatBubbleStyleOverridesKey =
+      'chat_bubble_style_overrides_v1';
   static const String _mobileAssistantEditTabOrderKey =
       'mobile_assistant_edit_tab_order_v1';
   static const String _mobileAssistantEditTabHiddenKey =
@@ -288,9 +316,11 @@ class SettingsProvider extends ChangeNotifier {
   // Fonts
   static const String _displayAppFontFamilyKey = 'display_app_font_family_v1';
   static const String _displayCodeFontFamilyKey = 'display_code_font_family_v1';
-  static const String _displayAppFontIsGoogleKey =
+  // Legacy keys from the removed Google Fonts picker; only read once to
+  // migrate old selections back to the system default, then deleted.
+  static const String _legacyAppFontIsGoogleKey =
       'display_app_font_is_google_v1';
-  static const String _displayCodeFontIsGoogleKey =
+  static const String _legacyCodeFontIsGoogleKey =
       'display_code_font_is_google_v1';
   static const String _displayAppFontLocalPathKey =
       'display_app_font_local_path_v1';
@@ -432,7 +462,7 @@ class SettingsProvider extends ChangeNotifier {
   bool _dynamicColorSupported = false; // runtime capability, not persisted
   bool get dynamicColorSupported => _dynamicColorSupported;
 
-  // Custom user themes (RikkaHub-style: name + primary/secondary/tertiary)
+  // Custom user themes: name + primary/secondary/tertiary
   List<CustomTheme> _customThemes = const <CustomTheme>[];
   List<CustomTheme> get customThemes =>
       List<CustomTheme>.unmodifiable(_customThemes);
@@ -813,11 +843,9 @@ class SettingsProvider extends ChangeNotifier {
         _ocrModelId = parts.sublist(1).join('::');
       }
     }
-    // load OCR prompt
+    // load OCR prompt (null = default; empty string is an explicit clear)
     final ocrp = prefs.getString(_ocrPromptKey);
-    _ocrPrompt = (ocrp == null || ocrp.trim().isEmpty)
-        ? defaultOcrPrompt
-        : ocrp;
+    _ocrPrompt = ocrp ?? defaultOcrPrompt;
     // load OCR enabled (only effective when model is configured)
     _ocrEnabled = prefs.getBool(_ocrEnabledKey) ?? false;
     if (_ocrModelProvider == null || _ocrModelId == null) {
@@ -867,6 +895,15 @@ class SettingsProvider extends ChangeNotifier {
     _compressPrompt = (compressp == null || compressp.trim().isEmpty)
         ? defaultCompressPrompt
         : compressp;
+    final compressModeName = prefs.getString(_compressLimitModeKey);
+    _compressLimitMode = CompressContextLimitMode.values.firstWhere(
+      (mode) => mode.name == compressModeName,
+      orElse: () => CompressContextLimitMode.start,
+    );
+    _compressKeepUserMessages = prefs.getInt(_compressKeepUserMessagesKey);
+    _compressMaxChars =
+        prefs.getInt(_compressMaxCharsKey) ??
+        CompressContextOptions.defaultMaxChars;
     // learning mode
     _learningModeEnabled = prefs.getBool(_learningModeEnabledKey) ?? false;
     final lmp = prefs.getString(_learningModePromptKey);
@@ -906,6 +943,14 @@ class SettingsProvider extends ChangeNotifier {
     _memoryTraceEnabled = prefs.getBool(_memoryTraceEnabledKey) ?? true;
     MemoryTraceRecorder.instance.setEnabled(_memoryTraceEnabled);
     _legacyMemoryMode = prefs.getBool(_legacyMemoryModeKey) ?? false;
+    _legacyMemoryPromptZh = _nonEmptyOr(
+      prefs.getString(_legacyMemoryPromptZhKey),
+      MemoryPrompts.legacyRulesZh,
+    );
+    _legacyMemoryPromptEn = _nonEmptyOr(
+      prefs.getString(_legacyMemoryPromptEnKey),
+      MemoryPrompts.legacyRulesEn,
+    );
     _memoryRulesPromptZh = _nonEmptyOr(
       prefs.getString(_memoryRulesPromptZhKey),
       MemoryPrompts.rulesZh,
@@ -954,6 +999,22 @@ class SettingsProvider extends ChangeNotifier {
       prefs.getString(_memoryProfileDistillPromptEnKey),
       MemoryPrompts.profileDistillEn,
     );
+    _memoryMigratePromptZh = _nonEmptyOr(
+      prefs.getString(_memoryMigratePromptZhKey),
+      MemoryPrompts.migrateZh,
+    );
+    _memoryMigratePromptEn = _nonEmptyOr(
+      prefs.getString(_memoryMigratePromptEnKey),
+      MemoryPrompts.migrateEn,
+    );
+    _memoryMigrationBatchSize =
+        (prefs.getInt(_memoryMigrationBatchSizeKey) ??
+                defaultMemoryMigrationBatchSize)
+            .clamp(minMemoryMigrationBatchSize, maxMemoryMigrationBatchSize);
+    _memoryInjectionMaxItems =
+        (prefs.getInt(_memoryInjectionMaxItemsKey) ??
+                defaultMemoryInjectionMaxItems)
+            .clamp(minMemoryInjectionMaxItems, maxMemoryInjectionMaxItems);
 
     // display settings
     _showUserAvatar = prefs.getBool(_displayShowUserAvatarKey) ?? true;
@@ -985,6 +1046,8 @@ class SettingsProvider extends ChangeNotifier {
         prefs.getBool(_displayRegenerateDeleteTrailingMessagesKey) ?? false;
     _showRegenerateConfirmDialog =
         prefs.getBool(_displayShowRegenerateConfirmDialogKey) ?? true;
+    _forkKeepMessageVersions =
+        prefs.getBool(_chatForkKeepMessageVersionsKey) ?? false;
     _showMessageNavButtons = prefs.getBool(_displayShowMessageNavKey) ?? true;
     _mobileMessageNavButtonsMode = _parseMobileMessageNavButtonsMode(
       prefs.getString(_displayMobileMessageNavButtonsModeKey),
@@ -1049,6 +1112,11 @@ class SettingsProvider extends ChangeNotifier {
     } else {
       _enterToSendOnMobile = enterToSendPref;
     }
+    _longPasteAsFile = prefs.getBool(_displayLongPasteAsFileKey) ?? true;
+    _longPasteAsFileThreshold =
+        (prefs.getInt(_displayLongPasteAsFileThresholdKey) ??
+                defaultLongPasteAsFileThreshold)
+            .clamp(minLongPasteAsFileThreshold, maxLongPasteAsFileThreshold);
     // Desktop send shortcut: Enter (default) or Ctrl/Cmd+Enter
     final sendShortcutStr = prefs.getString(_desktopSendShortcutKey);
     switch (sendShortcutStr) {
@@ -1167,6 +1235,23 @@ class SettingsProvider extends ChangeNotifier {
         break;
       default:
         _chatMessageBackgroundStyle = ChatMessageBackgroundStyle.defaultStyle;
+    }
+    final bubbleOverridesRaw = prefs.getString(_chatBubbleStyleOverridesKey);
+    if (bubbleOverridesRaw != null && bubbleOverridesRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(bubbleOverridesRaw);
+        if (decoded is Map<String, dynamic>) {
+          _chatBubbleStyleOverrides = ChatBubbleStyleOverrides.fromJson(
+            decoded,
+          );
+        } else if (decoded is Map) {
+          _chatBubbleStyleOverrides = ChatBubbleStyleOverrides.fromJson(
+            Map<String, dynamic>.from(decoded),
+          );
+        }
+      } catch (_) {
+        _chatBubbleStyleOverrides = const ChatBubbleStyleOverrides();
+      }
     }
     _mobileAssistantEditTabOrder = List.unmodifiable(
       prefs.getStringList(_mobileAssistantEditTabOrderKey) ?? const <String>[],
@@ -1592,12 +1677,8 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   // ===== User Font Settings =====
-  String? _appFontFamily; // system or Google font family to use globally
-  String?
-  _codeFontFamily; // system or Google font family to use for code blocks
-  // Whether the above family names refer to Google Fonts (as opposed to system fonts)
-  bool _appFontIsGoogle = false;
-  bool _codeFontIsGoogle = false;
+  String? _appFontFamily; // system font family to use globally
+  String? _codeFontFamily; // system font family to use for code blocks
   // Local font file selections (mobile): persisted for reload
   String? _appFontLocalPath;
   String? _codeFontLocalPath;
@@ -1607,8 +1688,6 @@ class SettingsProvider extends ChangeNotifier {
 
   String? get appFontFamily => _effectiveAppFontAlias ?? _appFontFamily;
   String? get codeFontFamily => _effectiveCodeFontAlias ?? _codeFontFamily;
-  bool get appFontIsGoogle => _appFontIsGoogle;
-  bool get codeFontIsGoogle => _codeFontIsGoogle;
   String? get appFontLocalAlias => _appFontLocalAlias;
   String? get codeFontLocalAlias => _codeFontLocalAlias;
 
@@ -1619,7 +1698,6 @@ class SettingsProvider extends ChangeNotifier {
       (_codeFontLocalAlias?.isNotEmpty == true) ? _codeFontLocalAlias : null;
 
   Future<void> setAppFontSystemFamily(String? family) async {
-    _appFontIsGoogle = false;
     _appFontFamily = (family == null || family.trim().isEmpty)
         ? null
         : family.trim();
@@ -1629,13 +1707,11 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = _preferences;
     await prefs.setString(_displayAppFontFamilyKey, _appFontFamily ?? '');
-    await prefs.setBool(_displayAppFontIsGoogleKey, _appFontIsGoogle);
     await prefs.remove(_displayAppFontLocalAliasKey);
     await prefs.remove(_displayAppFontLocalPathKey);
   }
 
   Future<void> setCodeFontSystemFamily(String? family) async {
-    _codeFontIsGoogle = false;
     _codeFontFamily = (family == null || family.trim().isEmpty)
         ? null
         : family.trim();
@@ -1644,33 +1720,6 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = _preferences;
     await prefs.setString(_displayCodeFontFamilyKey, _codeFontFamily ?? '');
-    await prefs.setBool(_displayCodeFontIsGoogleKey, _codeFontIsGoogle);
-    await prefs.remove(_displayCodeFontLocalAliasKey);
-    await prefs.remove(_displayCodeFontLocalPathKey);
-  }
-
-  Future<void> setAppFontFromGoogle(String family) async {
-    _appFontIsGoogle = true;
-    _appFontFamily = family.trim();
-    _appFontLocalAlias = null;
-    _appFontLocalPath = null;
-    notifyListeners();
-    final prefs = _preferences;
-    await prefs.setString(_displayAppFontFamilyKey, _appFontFamily!);
-    await prefs.setBool(_displayAppFontIsGoogleKey, true);
-    await prefs.remove(_displayAppFontLocalAliasKey);
-    await prefs.remove(_displayAppFontLocalPathKey);
-  }
-
-  Future<void> setCodeFontFromGoogle(String family) async {
-    _codeFontIsGoogle = true;
-    _codeFontFamily = family.trim();
-    _codeFontLocalAlias = null;
-    _codeFontLocalPath = null;
-    notifyListeners();
-    final prefs = _preferences;
-    await prefs.setString(_displayCodeFontFamilyKey, _codeFontFamily!);
-    await prefs.setBool(_displayCodeFontIsGoogleKey, true);
     await prefs.remove(_displayCodeFontLocalAliasKey);
     await prefs.remove(_displayCodeFontLocalPathKey);
   }
@@ -1690,14 +1739,12 @@ class SettingsProvider extends ChangeNotifier {
       await _deleteManagedFontFileIfUnused(localPath);
       return;
     }
-    _appFontIsGoogle = false;
     _appFontFamily = fam;
     _appFontLocalAlias = fam;
     _appFontLocalPath = localPath;
     notifyListeners();
     final prefs = _preferences;
     await prefs.setString(_displayAppFontFamilyKey, _appFontFamily!);
-    await prefs.setBool(_displayAppFontIsGoogleKey, false);
     await prefs.setString(_displayAppFontLocalAliasKey, _appFontLocalAlias!);
     await prefs.setString(_displayAppFontLocalPathKey, _appFontLocalPath!);
     await _deleteManagedFontFileIfUnused(previousPath);
@@ -1718,14 +1765,12 @@ class SettingsProvider extends ChangeNotifier {
       await _deleteManagedFontFileIfUnused(localPath);
       return;
     }
-    _codeFontIsGoogle = false;
     _codeFontFamily = fam;
     _codeFontLocalAlias = fam;
     _codeFontLocalPath = localPath;
     notifyListeners();
     final prefs = _preferences;
     await prefs.setString(_displayCodeFontFamilyKey, _codeFontFamily!);
-    await prefs.setBool(_displayCodeFontIsGoogleKey, false);
     await prefs.setString(_displayCodeFontLocalAliasKey, _codeFontLocalAlias!);
     await prefs.setString(_displayCodeFontLocalPathKey, _codeFontLocalPath!);
     await _deleteManagedFontFileIfUnused(previousPath);
@@ -1734,13 +1779,11 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> clearAppFont() async {
     final previousPath = _appFontLocalPath;
     _appFontFamily = null;
-    _appFontIsGoogle = false;
     _appFontLocalAlias = null;
     _appFontLocalPath = null;
     notifyListeners();
     final prefs = _preferences;
     await prefs.remove(_displayAppFontFamilyKey);
-    await prefs.remove(_displayAppFontIsGoogleKey);
     await prefs.remove(_displayAppFontLocalAliasKey);
     await prefs.remove(_displayAppFontLocalPathKey);
     await _deleteManagedFontFileIfUnused(previousPath);
@@ -1749,13 +1792,11 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> clearCodeFont() async {
     final previousPath = _codeFontLocalPath;
     _codeFontFamily = null;
-    _codeFontIsGoogle = false;
     _codeFontLocalAlias = null;
     _codeFontLocalPath = null;
     notifyListeners();
     final prefs = _preferences;
     await prefs.remove(_displayCodeFontFamilyKey);
-    await prefs.remove(_displayCodeFontIsGoogleKey);
     await prefs.remove(_displayCodeFontLocalAliasKey);
     await prefs.remove(_displayCodeFontLocalPathKey);
     await _deleteManagedFontFileIfUnused(previousPath);
@@ -1766,8 +1807,6 @@ class SettingsProvider extends ChangeNotifier {
     // Load persisted values
     _appFontFamily = _nonEmpty(prefs.getString(_displayAppFontFamilyKey));
     _codeFontFamily = _nonEmpty(prefs.getString(_displayCodeFontFamilyKey));
-    _appFontIsGoogle = prefs.getBool(_displayAppFontIsGoogleKey) ?? false;
-    _codeFontIsGoogle = prefs.getBool(_displayCodeFontIsGoogleKey) ?? false;
     _appFontLocalPath = _nonEmpty(prefs.getString(_displayAppFontLocalPathKey));
     _codeFontLocalPath = _nonEmpty(
       prefs.getString(_displayCodeFontLocalPathKey),
@@ -1780,6 +1819,21 @@ class SettingsProvider extends ChangeNotifier {
     );
 
     var changed = false;
+
+    // Migration: families picked from the removed Google Fonts picker are not
+    // installed on the device, so drop them back to the system default.
+    final legacyAppFontIsGoogle =
+        prefs.getBool(_legacyAppFontIsGoogleKey) ?? false;
+    final legacyCodeFontIsGoogle =
+        prefs.getBool(_legacyCodeFontIsGoogleKey) ?? false;
+    if (legacyAppFontIsGoogle) {
+      _appFontFamily = null;
+      changed = true;
+    }
+    if (legacyCodeFontIsGoogle) {
+      _codeFontFamily = null;
+      changed = true;
+    }
 
     // Re-register local fonts if paths are available.
     if (_appFontLocalPath != null && _appFontLocalPath!.isNotEmpty) {
@@ -1800,7 +1854,6 @@ class SettingsProvider extends ChangeNotifier {
         _appFontLocalAlias = null;
         _appFontLocalPath = null;
         _appFontFamily = null;
-        _appFontIsGoogle = false;
         changed = true;
       }
     }
@@ -1822,13 +1875,18 @@ class SettingsProvider extends ChangeNotifier {
         _codeFontLocalAlias = null;
         _codeFontLocalPath = null;
         _codeFontFamily = null;
-        _codeFontIsGoogle = false;
         changed = true;
       }
     }
 
     if (changed) {
       await _persistFontSettings(prefs);
+    }
+    if (prefs.containsKey(_legacyAppFontIsGoogleKey)) {
+      await prefs.remove(_legacyAppFontIsGoogleKey);
+    }
+    if (prefs.containsKey(_legacyCodeFontIsGoogleKey)) {
+      await prefs.remove(_legacyCodeFontIsGoogleKey);
     }
   }
 
@@ -1840,7 +1898,6 @@ class SettingsProvider extends ChangeNotifier {
     } else {
       await prefs.setString(_displayAppFontFamilyKey, _appFontFamily!);
     }
-    await prefs.setBool(_displayAppFontIsGoogleKey, _appFontIsGoogle);
     if (_appFontLocalAlias == null || _appFontLocalAlias!.isEmpty) {
       await prefs.remove(_displayAppFontLocalAliasKey);
     } else {
@@ -1857,7 +1914,6 @@ class SettingsProvider extends ChangeNotifier {
     } else {
       await prefs.setString(_displayCodeFontFamilyKey, _codeFontFamily!);
     }
-    await prefs.setBool(_displayCodeFontIsGoogleKey, _codeFontIsGoogle);
     if (_codeFontLocalAlias == null || _codeFontLocalAlias!.isEmpty) {
       await prefs.remove(_displayCodeFontLocalAliasKey);
     } else {
@@ -2072,8 +2128,8 @@ class SettingsProvider extends ChangeNotifier {
     final services = List<SearchServiceOptions>.from(_searchServices);
     final common = _searchCommonOptions;
     for (final s in services) {
-      if (s is BingLocalOptions) {
-        _searchConnection[s.id] = null; // no label for local Bing
+      if (s is BingLocalOptions || s is KelivoOptions) {
+        _searchConnection[s.id] = null;
         continue;
       }
       // Run in background; don't await all
@@ -2632,6 +2688,20 @@ class SettingsProvider extends ChangeNotifier {
       ChatMessageBackgroundStyle.defaultStyle => 'default',
     };
     await prefs.setString(_displayChatMessageBackgroundStyleKey, v);
+  }
+
+  ChatBubbleStyleOverrides _chatBubbleStyleOverrides =
+      const ChatBubbleStyleOverrides();
+  ChatBubbleStyleOverrides get chatBubbleStyleOverrides =>
+      _chatBubbleStyleOverrides;
+  Future<void> setChatBubbleStyleOverrides(ChatBubbleStyleOverrides v) async {
+    if (_chatBubbleStyleOverrides == v) return;
+    _chatBubbleStyleOverrides = v;
+    notifyListeners();
+    await _preferences.setString(
+      _chatBubbleStyleOverridesKey,
+      jsonEncode(v.toJson()),
+    );
   }
 
   List<String> _mobileAssistantEditTabOrder = const <String>[];
@@ -3359,7 +3429,7 @@ Do not interpret or translate—only transcribe and describe what is visually pr
   }
 
   Future<void> setOcrPrompt(String prompt) async {
-    _ocrPrompt = prompt.trim().isEmpty ? defaultOcrPrompt : prompt;
+    _ocrPrompt = prompt.trim();
     notifyListeners();
     final prefs = _preferences;
     await prefs.setString(_ocrPromptKey, _ocrPrompt);
@@ -3538,6 +3608,15 @@ Requirements:
   String _compressPrompt = defaultCompressPrompt;
   String get compressPrompt => _compressPrompt;
 
+  CompressContextLimitMode _compressLimitMode = CompressContextLimitMode.start;
+  CompressContextLimitMode get compressLimitMode => _compressLimitMode;
+
+  int? _compressKeepUserMessages;
+  int? get compressKeepUserMessages => _compressKeepUserMessages;
+
+  int _compressMaxChars = CompressContextOptions.defaultMaxChars;
+  int get compressMaxChars => _compressMaxChars;
+
   Future<void> setCompressModel(String providerKey, String modelId) async {
     _compressModelProvider = providerKey;
     _compressModelId = modelId;
@@ -3563,6 +3642,31 @@ Requirements:
 
   Future<void> resetCompressPrompt() async =>
       setCompressPrompt(defaultCompressPrompt);
+
+  Future<void> setCompressLimitMode(CompressContextLimitMode mode) async {
+    _compressLimitMode = mode;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setString(_compressLimitModeKey, mode.name);
+  }
+
+  Future<void> setCompressKeepUserMessages(int? count) async {
+    _compressKeepUserMessages = count;
+    notifyListeners();
+    final prefs = _preferences;
+    if (count == null) {
+      await prefs.remove(_compressKeepUserMessagesKey);
+    } else {
+      await prefs.setInt(_compressKeepUserMessagesKey, count);
+    }
+  }
+
+  Future<void> setCompressMaxChars(int maxChars) async {
+    _compressMaxChars = maxChars;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setInt(_compressMaxCharsKey, maxChars);
+  }
 
   // Learning Mode
   bool _learningModeEnabled = false;
@@ -3713,6 +3817,12 @@ Requirements:
   bool _legacyMemoryMode = false;
   bool get legacyMemoryMode => _legacyMemoryMode;
 
+  String _legacyMemoryPromptZh = MemoryPrompts.legacyRulesZh;
+  String get legacyMemoryPromptZh => _legacyMemoryPromptZh;
+
+  String _legacyMemoryPromptEn = MemoryPrompts.legacyRulesEn;
+  String get legacyMemoryPromptEn => _legacyMemoryPromptEn;
+
   /// The locale the interface is actually rendered in.
   ///
   /// [appLocale] parses the stored tag, and the `system` tag has no locale to
@@ -3747,6 +3857,10 @@ Requirements:
   String _memorySmartAddBatchPromptEn = MemoryPrompts.smartAddBatchEn;
   String _memoryProfileDistillPromptZh = MemoryPrompts.profileDistillZh;
   String _memoryProfileDistillPromptEn = MemoryPrompts.profileDistillEn;
+  String _memoryMigratePromptZh = MemoryPrompts.migrateZh;
+  String _memoryMigratePromptEn = MemoryPrompts.migrateEn;
+  int _memoryMigrationBatchSize = defaultMemoryMigrationBatchSize;
+  int _memoryInjectionMaxItems = defaultMemoryInjectionMaxItems;
 
   String get memoryRulesPromptZh => _memoryRulesPromptZh;
   String get memoryRulesPromptEn => _memoryRulesPromptEn;
@@ -3760,6 +3874,19 @@ Requirements:
   String get memorySmartAddBatchPromptEn => _memorySmartAddBatchPromptEn;
   String get memoryProfileDistillPromptZh => _memoryProfileDistillPromptZh;
   String get memoryProfileDistillPromptEn => _memoryProfileDistillPromptEn;
+  String get memoryMigratePromptZh => _memoryMigratePromptZh;
+  String get memoryMigratePromptEn => _memoryMigratePromptEn;
+  int get memoryMigrationBatchSize => _memoryMigrationBatchSize;
+  int get memoryInjectionMaxItems {
+    final value = _memoryInjectionMaxItems;
+    if (value < minMemoryInjectionMaxItems) {
+      return minMemoryInjectionMaxItems;
+    }
+    if (value > maxMemoryInjectionMaxItems) {
+      return maxMemoryInjectionMaxItems;
+    }
+    return value;
+  }
 
   Future<void> setMemoryModel(String providerKey, String modelId) async {
     _memoryModelProvider = providerKey;
@@ -3800,6 +3927,34 @@ Requirements:
     notifyListeners();
     await _preferences.setBool(_legacyMemoryModeKey, enabled);
   }
+
+  Future<void> setLegacyMemoryPromptZh(String prompt) async {
+    _legacyMemoryPromptZh = prompt.trim().isEmpty
+        ? MemoryPrompts.legacyRulesZh
+        : prompt;
+    notifyListeners();
+    await _preferences.setString(
+      _legacyMemoryPromptZhKey,
+      _legacyMemoryPromptZh,
+    );
+  }
+
+  Future<void> resetLegacyMemoryPromptZh() async =>
+      setLegacyMemoryPromptZh(MemoryPrompts.legacyRulesZh);
+
+  Future<void> setLegacyMemoryPromptEn(String prompt) async {
+    _legacyMemoryPromptEn = prompt.trim().isEmpty
+        ? MemoryPrompts.legacyRulesEn
+        : prompt;
+    notifyListeners();
+    await _preferences.setString(
+      _legacyMemoryPromptEnKey,
+      _legacyMemoryPromptEn,
+    );
+  }
+
+  Future<void> resetLegacyMemoryPromptEn() async =>
+      setLegacyMemoryPromptEn(MemoryPrompts.legacyRulesEn);
 
   Future<void> setMemoryPromptLang(String lang) async {
     final normalized = (lang == 'zh' || lang == 'en') ? lang : 'auto';
@@ -3926,6 +4081,50 @@ Requirements:
     );
   }
 
+  Future<void> setMemoryMigratePromptZh(String prompt) async {
+    _memoryMigratePromptZh = prompt.trim().isEmpty
+        ? MemoryPrompts.migrateZh
+        : prompt;
+    notifyListeners();
+    await _preferences.setString(
+      _memoryMigratePromptZhKey,
+      _memoryMigratePromptZh,
+    );
+  }
+
+  Future<void> setMemoryMigratePromptEn(String prompt) async {
+    _memoryMigratePromptEn = prompt.trim().isEmpty
+        ? MemoryPrompts.migrateEn
+        : prompt;
+    notifyListeners();
+    await _preferences.setString(
+      _memoryMigratePromptEnKey,
+      _memoryMigratePromptEn,
+    );
+  }
+
+  Future<void> setMemoryMigrationBatchSize(int size) async {
+    final next = size.clamp(
+      minMemoryMigrationBatchSize,
+      maxMemoryMigrationBatchSize,
+    );
+    if (_memoryMigrationBatchSize == next) return;
+    _memoryMigrationBatchSize = next;
+    notifyListeners();
+    await _preferences.setInt(_memoryMigrationBatchSizeKey, next);
+  }
+
+  Future<void> setMemoryInjectionMaxItems(int size) async {
+    final next = size.clamp(
+      minMemoryInjectionMaxItems,
+      maxMemoryInjectionMaxItems,
+    );
+    if (_memoryInjectionMaxItems == next) return;
+    _memoryInjectionMaxItems = next;
+    notifyListeners();
+    await _preferences.setInt(_memoryInjectionMaxItemsKey, next);
+  }
+
   Future<void> resetMemoryRulesPromptZh() async =>
       setMemoryRulesPromptZh(MemoryPrompts.rulesZh);
   Future<void> resetMemoryRulesPromptEn() async =>
@@ -3950,6 +4149,10 @@ Requirements:
       setMemoryProfileDistillPromptZh(MemoryPrompts.profileDistillZh);
   Future<void> resetMemoryProfileDistillPromptEn() async =>
       setMemoryProfileDistillPromptEn(MemoryPrompts.profileDistillEn);
+  Future<void> resetMemoryMigratePromptZh() async =>
+      setMemoryMigratePromptZh(MemoryPrompts.migrateZh);
+  Future<void> resetMemoryMigratePromptEn() async =>
+      setMemoryMigratePromptEn(MemoryPrompts.migrateEn);
 
   int? titleGenerationThinkingBudgetFor(int? assistantBudget) {
     return _backgroundThinkingBudgetFor(
@@ -4153,6 +4356,15 @@ Requirements:
     await prefs.setBool(_displayShowRegenerateConfirmDialogKey, v);
   }
 
+  bool _forkKeepMessageVersions = false;
+  bool get forkKeepMessageVersions => _forkKeepMessageVersions;
+  Future<void> setForkKeepMessageVersions(bool v) async {
+    if (_forkKeepMessageVersions == v) return;
+    _forkKeepMessageVersions = v;
+    notifyListeners();
+    await _preferences.setBool(_chatForkKeepMessageVersionsKey, v);
+  }
+
   // Display: show message navigation button
   bool _showMessageNavButtons = true;
   bool get showMessageNavButtons => _showMessageNavButtons;
@@ -4239,6 +4451,47 @@ Requirements:
     notifyListeners();
     final prefs = _preferences;
     await prefs.setBool(_displayEnterToSendOnMobileKey, v);
+  }
+
+  static const int defaultLongPasteAsFileThreshold = 5000;
+  static const int minLongPasteAsFileThreshold = 1;
+  static const int maxLongPasteAsFileThreshold = 999999;
+
+  static int resolveLongPasteAsFileThreshold(
+    String raw, {
+    required int fallback,
+  }) {
+    final parsed = int.tryParse(raw.trim());
+    if (parsed == null) return fallback;
+    return parsed.clamp(
+      minLongPasteAsFileThreshold,
+      maxLongPasteAsFileThreshold,
+    );
+  }
+
+  // Display: convert long pasted text into a file attachment
+  bool _longPasteAsFile = true;
+  bool get longPasteAsFile => _longPasteAsFile;
+  Future<void> setLongPasteAsFile(bool v) async {
+    if (_longPasteAsFile == v) return;
+    _longPasteAsFile = v;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setBool(_displayLongPasteAsFileKey, v);
+  }
+
+  int _longPasteAsFileThreshold = defaultLongPasteAsFileThreshold;
+  int get longPasteAsFileThreshold => _longPasteAsFileThreshold;
+  Future<void> setLongPasteAsFileThreshold(int v) async {
+    final next = v.clamp(
+      minLongPasteAsFileThreshold,
+      maxLongPasteAsFileThreshold,
+    );
+    if (_longPasteAsFileThreshold == next) return;
+    _longPasteAsFileThreshold = next;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setInt(_displayLongPasteAsFileThresholdKey, next);
   }
 
   // Desktop: send shortcut (Enter or Ctrl/Cmd+Enter)
@@ -4865,6 +5118,15 @@ Requirements:
   }
 
   // Search service settings
+  Future<bool> unlockKelivoSearch() async {
+    if (_searchServices.any((s) => s is KelivoOptions)) return false;
+    await setSearchServices([
+      ..._searchServices,
+      KelivoOptions(id: KelivoOptions.builtInId),
+    ]);
+    return true;
+  }
+
   Future<void> setSearchServices(List<SearchServiceOptions> services) async {
     _searchServices = List.from(services);
     if (_searchServiceSelected >= _searchServices.length) {
@@ -4976,6 +5238,9 @@ Requirements:
     copy._compressModelProvider = _compressModelProvider;
     copy._compressModelId = _compressModelId;
     copy._compressPrompt = _compressPrompt;
+    copy._compressLimitMode = _compressLimitMode;
+    copy._compressKeepUserMessages = _compressKeepUserMessages;
+    copy._compressMaxChars = _compressMaxChars;
     copy._translateModelProvider = _translateModelProvider;
     copy._translateModelId = _translateModelId;
     copy._translatePrompt = _translatePrompt;
@@ -5001,6 +5266,8 @@ Requirements:
     copy._memoryPromptLang = _memoryPromptLang;
     copy._memoryTraceEnabled = _memoryTraceEnabled;
     copy._legacyMemoryMode = _legacyMemoryMode;
+    copy._legacyMemoryPromptZh = _legacyMemoryPromptZh;
+    copy._legacyMemoryPromptEn = _legacyMemoryPromptEn;
     copy._memoryRulesPromptZh = _memoryRulesPromptZh;
     copy._memoryRulesPromptEn = _memoryRulesPromptEn;
     copy._memoryGatePromptZh = _memoryGatePromptZh;
@@ -5013,6 +5280,10 @@ Requirements:
     copy._memorySmartAddBatchPromptEn = _memorySmartAddBatchPromptEn;
     copy._memoryProfileDistillPromptZh = _memoryProfileDistillPromptZh;
     copy._memoryProfileDistillPromptEn = _memoryProfileDistillPromptEn;
+    copy._memoryMigratePromptZh = _memoryMigratePromptZh;
+    copy._memoryMigratePromptEn = _memoryMigratePromptEn;
+    copy._memoryMigrationBatchSize = _memoryMigrationBatchSize;
+    copy._memoryInjectionMaxItems = _memoryInjectionMaxItems;
     copy._showUserAvatar = _showUserAvatar;
     copy._showModelIcon = _showModelIcon;
     copy._showModelNameTimestamp = _showModelNameTimestamp;
@@ -5028,6 +5299,7 @@ Requirements:
     copy._showToolResultSummary = _showToolResultSummary;
     copy._regenerateDeleteTrailingMessages = _regenerateDeleteTrailingMessages;
     copy._showRegenerateConfirmDialog = _showRegenerateConfirmDialog;
+    copy._forkKeepMessageVersions = _forkKeepMessageVersions;
     copy._showMessageNavButtons = _showMessageNavButtons;
     copy._mobileMessageNavButtonsMode = _mobileMessageNavButtonsMode;
     copy._useNewAssistantAvatarUx = _useNewAssistantAvatarUx;
@@ -5055,6 +5327,8 @@ Requirements:
     copy._newChatOnLaunch = _newChatOnLaunch;
     copy._newChatOnAssistantSwitch = _newChatOnAssistantSwitch;
     copy._newChatAfterDelete = _newChatAfterDelete;
+    copy._longPasteAsFile = _longPasteAsFile;
+    copy._longPasteAsFileThreshold = _longPasteAsFileThreshold;
     copy._iosBackgroundGenerationEnabled = _iosBackgroundGenerationEnabled;
     copy._iosBackgroundTaskRefreshEnabled = _iosBackgroundTaskRefreshEnabled;
     copy._iosLiveActivityEnabled = _iosLiveActivityEnabled;
@@ -5078,6 +5352,7 @@ Requirements:
     copy._desktopMinimizeToTrayOnClose = _desktopMinimizeToTrayOnClose;
     copy._usePureBackground = _usePureBackground;
     copy._chatMessageBackgroundStyle = _chatMessageBackgroundStyle;
+    copy._chatBubbleStyleOverrides = _chatBubbleStyleOverrides;
     copy._mobileAssistantEditTabOrder = _mobileAssistantEditTabOrder;
     copy._hiddenMobileAssistantEditTabs = _hiddenMobileAssistantEditTabs;
     copy._mobileAssistantDetailOutlineEnabled =

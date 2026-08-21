@@ -41,6 +41,12 @@ abstract class MarkdownComponent {
     final GptMarkdownConfig config,
     bool includeGlobalComponents,
   ) {
+    if (includeGlobalComponents) {
+      final preprocess = config.preprocessBlocks;
+      if (preprocess != null) {
+        text = preprocess(text);
+      }
+    }
     var components =
         includeGlobalComponents
             ? config.components ?? MarkdownComponent.globalComponents
@@ -684,6 +690,7 @@ class LatexMathMultiLine extends BlockMd {
                   sizeUnderTextStyle: MathSize.large,
                   color:
                       config.style?.color ??
+                      DefaultTextStyle.of(context).style.color ??
                       Theme.of(context).colorScheme.onSurface,
                   fontSize:
                       config.style?.fontSize ??
@@ -759,6 +766,7 @@ class LatexMath extends InlineMd {
                   sizeUnderTextStyle: MathSize.large,
                   color:
                       config.style?.color ??
+                      DefaultTextStyle.of(context).style.color ??
                       Theme.of(context).colorScheme.onSurface,
                   fontSize:
                       config.style?.fontSize ??
