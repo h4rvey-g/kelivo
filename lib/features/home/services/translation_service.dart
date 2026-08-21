@@ -9,6 +9,9 @@ import '../../../core/services/api/stream/stream_chunk.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../settings/widgets/language_select_sheet.dart';
 
+typedef TranslationLanguageSelector =
+    Future<LanguageOption?> Function(BuildContext context);
+
 /// 翻译结果类型
 enum TranslationResultType {
   /// 翻译成功
@@ -42,20 +45,25 @@ class TranslationResult {
 /// 消息翻译服务
 ///
 /// 功能：
-/// - 显示语言选择器
+/// - 按设置直接使用目标语言，或显示语言选择器
 /// - 调用翻译 API
 /// - 流式更新翻译结果
 /// - 保存翻译到数据库
 class TranslationService {
-  TranslationService({required this.chatService, required this._getContext});
+  TranslationService({
+    required this.chatService,
+    required this._getContext,
+    this._languageSelector = showLanguageSelector,
+  });
 
   final ChatService chatService;
   final BuildContext Function() _getContext;
+  final TranslationLanguageSelector _languageSelector;
 
   /// 翻译消息
   ///
   /// [message] 要翻译的消息
-  /// [onTranslationStarted] 翻译开始回调（用户选择语言后、开始请求前调用）
+  /// [onTranslationStarted] 翻译开始回调（确定目标语言后、开始请求前调用）
   /// [onTranslationUpdate] 翻译更新回调（用于实时更新 UI）
   /// [onTranslationCleared] 翻译清除回调
   ///
@@ -71,8 +79,12 @@ class TranslationService {
     final settings = context.read<SettingsProvider>();
     final assistant = context.read<AssistantProvider>().currentAssistant;
 
-    // 显示语言选择器
-    final language = await showLanguageSelector(context);
+    final language = settings.oneTapMessageTranslationEnabled
+        ? defaultTranslationLanguage(
+            Localizations.localeOf(context),
+            preferredCode: settings.translateTargetLang,
+          )
+        : await _languageSelector(context);
     if (language == null) {
       return TranslationResult(type: TranslationResultType.cancelled);
     }

@@ -5914,6 +5914,12 @@ abstract class AppLocalizations {
   /// **'Used for translating message content; prefer fast & accurate models'**
   String get defaultModelPageTranslateModelSubtitle;
 
+  /// No description provided for @defaultModelPageOneTapMessageTranslationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'One-tap message translation'**
+  String get defaultModelPageOneTapMessageTranslationTitle;
+
   /// No description provided for @defaultModelPageInputTranslationTitle.
   ///
   /// In en, this message translates to:

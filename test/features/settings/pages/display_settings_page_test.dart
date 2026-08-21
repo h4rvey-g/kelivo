@@ -67,9 +67,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('One-tap message translation'), findsOneWidget);
     expect(find.text('Triple-space translation'), findsOneWidget);
     expect(find.text('Target language'), findsOneWidget);
     expect(find.textContaining('English'), findsOneWidget);
+
+    await tester.tap(find.text('One-tap message translation'));
+    await tester.pumpAndSettle();
+    expect(settings.oneTapMessageTranslationEnabled, isTrue);
 
     await tester.tap(find.text('Target language'));
     await tester.pumpAndSettle();

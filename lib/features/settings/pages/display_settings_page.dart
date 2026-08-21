@@ -2004,6 +2004,16 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
               _iosSwitchRow(
                 context,
                 icon: Lucide.Languages,
+                label: l10n.defaultModelPageOneTapMessageTranslationTitle,
+                value: sp.oneTapMessageTranslationEnabled,
+                onChanged: (value) => context
+                    .read<SettingsProvider>()
+                    .setOneTapMessageTranslationEnabled(value),
+              ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
+                icon: Lucide.TextSelect,
                 label: l10n.defaultModelPageInputTranslationTitle,
                 value: sp.inputTranslationEnabled,
                 onChanged: (value) => context

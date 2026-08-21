@@ -100,6 +100,8 @@ class _DisplaySettingsBody extends StatelessWidget {
               _SettingsCard(
                 title: l10n.displaySettingsPageBehaviorStartupTitle,
                 children: const [
+                  _ToggleRowOneTapMessageTranslation(),
+                  _RowDivider(),
                   _ToggleRowInputTranslation(),
                   _RowDivider(),
                   _InputTranslationTargetLanguageRow(),
@@ -2707,6 +2709,21 @@ class _ToggleRowInputTranslation extends StatelessWidget {
       label: l10n.defaultModelPageInputTranslationTitle,
       value: settings.inputTranslationEnabled,
       onChanged: settings.setInputTranslationEnabled,
+    );
+  }
+}
+
+class _ToggleRowOneTapMessageTranslation extends StatelessWidget {
+  const _ToggleRowOneTapMessageTranslation();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.defaultModelPageOneTapMessageTranslationTitle,
+      value: settings.oneTapMessageTranslationEnabled,
+      onChanged: settings.setOneTapMessageTranslationEnabled,
     );
   }
 }

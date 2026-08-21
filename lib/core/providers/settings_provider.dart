@@ -334,6 +334,8 @@ class SettingsProvider extends ChangeNotifier {
   static const String _translateModelKey = 'translate_model_v1';
   static const String _translatePromptKey = 'translate_prompt_v1';
   static const String _translateTargetLangKey = 'translate_target_lang_v1';
+  static const String _oneTapMessageTranslationEnabledKey =
+      'one_tap_message_translation_enabled_v1';
   static const String _inputTranslationEnabledKey =
       'input_translation_enabled_v1';
   static const String _ocrEnabledKey = 'ocr_enabled_v1';
@@ -832,6 +834,8 @@ class SettingsProvider extends ChangeNotifier {
     if (targetLang != null && targetLang.trim().isNotEmpty) {
       _translateTargetLang = targetLang.trim();
     }
+    _oneTapMessageTranslationEnabled =
+        prefs.getBool(_oneTapMessageTranslationEnabledKey) ?? false;
     _inputTranslationEnabled =
         prefs.getBool(_inputTranslationEnabledKey) ?? true;
     // load OCR model
@@ -3330,6 +3334,8 @@ Please translate the <source_text> section:
   String get translatePrompt => _translatePrompt;
   String? _translateTargetLang;
   String? get translateTargetLang => _translateTargetLang;
+  bool _oneTapMessageTranslationEnabled = false;
+  bool get oneTapMessageTranslationEnabled => _oneTapMessageTranslationEnabled;
   bool _inputTranslationEnabled = true;
   bool get inputTranslationEnabled => _inputTranslationEnabled;
 
@@ -3372,6 +3378,13 @@ Please translate the <source_text> section:
     notifyListeners();
     final prefs = _preferences;
     await prefs.remove(_translateTargetLangKey);
+  }
+
+  Future<void> setOneTapMessageTranslationEnabled(bool enabled) async {
+    if (_oneTapMessageTranslationEnabled == enabled) return;
+    _oneTapMessageTranslationEnabled = enabled;
+    notifyListeners();
+    await _preferences.setBool(_oneTapMessageTranslationEnabledKey, enabled);
   }
 
   Future<void> setInputTranslationEnabled(bool enabled) async {
@@ -5245,6 +5258,7 @@ Requirements:
     copy._translateModelId = _translateModelId;
     copy._translatePrompt = _translatePrompt;
     copy._translateTargetLang = _translateTargetLang;
+    copy._oneTapMessageTranslationEnabled = _oneTapMessageTranslationEnabled;
     copy._inputTranslationEnabled = _inputTranslationEnabled;
     copy._ocrModelProvider = _ocrModelProvider;
     copy._ocrModelId = _ocrModelId;

@@ -3183,6 +3183,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Used for translating message content; prefer fast & accurate models';
 
   @override
+  String get defaultModelPageOneTapMessageTranslationTitle =>
+      'One-tap message translation';
+
+  @override
   String get defaultModelPageInputTranslationTitle =>
       'Triple-space translation';
 

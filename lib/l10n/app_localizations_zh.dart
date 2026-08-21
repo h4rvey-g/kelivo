@@ -3076,6 +3076,9 @@ class AppLocalizationsZh extends AppLocalizations {
       '用于翻译消息内容的模型，推荐使用快速且准确的模型';
 
   @override
+  String get defaultModelPageOneTapMessageTranslationTitle => '消息一键翻译';
+
+  @override
   String get defaultModelPageInputTranslationTitle => '三空格快捷翻译';
 
   @override
@@ -10782,6 +10785,9 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
       '用于翻译消息内容的模型，推荐使用快速且准确的模型';
 
   @override
+  String get defaultModelPageOneTapMessageTranslationTitle => '消息一键翻译';
+
+  @override
   String get defaultModelPageInputTranslationTitle => '三空格快捷翻译';
 
   @override
@@ -18411,6 +18417,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   @override
   String get defaultModelPageTranslateModelSubtitle =>
       '用於翻譯訊息內容的模型，推薦使用快速且準確的模型';
+
+  @override
+  String get defaultModelPageOneTapMessageTranslationTitle => '訊息一鍵翻譯';
 
   @override
   String get defaultModelPageInputTranslationTitle => '三空格快捷翻譯';
