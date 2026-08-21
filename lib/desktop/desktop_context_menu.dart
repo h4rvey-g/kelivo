@@ -12,6 +12,7 @@ class DesktopContextMenuItem {
   final String? svgAsset;
   final String label;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool danger;
 
   const DesktopContextMenuItem({
@@ -19,6 +20,7 @@ class DesktopContextMenuItem {
     this.svgAsset,
     required this.label,
     this.onTap,
+    this.onLongPress,
     this.danger = false,
   });
 }
@@ -36,19 +38,26 @@ Future<void> showDesktopContextMenuAt(
 
   const double minMenuWidth = 160;
   const double maxMenuWidth = 360;
-  final double menuWidth = _estimateMenuWidth(
+  final screen = overlayBox.size;
+  final padding = MediaQuery.of(context).padding;
+  final estimatedMenuWidth = _estimateMenuWidth(
     context,
     items,
     minMenuWidth,
     maxMenuWidth,
   );
-  final screen = overlayBox.size;
+  final availableMenuWidth = screen.width - padding.left - padding.right - 16;
+  final menuWidth = availableMenuWidth > 0
+      ? estimatedMenuWidth.clamp(0.0, availableMenuWidth)
+      : 0.0;
   final double menuMaxHeight = screen.height * 0.5; // scroll if exceeds
-  final double estMenuHeight = (items.length * 44.0).clamp(44.0, menuMaxHeight);
+  final estimatedMenuHeight = items.length * 44.0;
+  final double estMenuHeight = menuMaxHeight >= 44
+      ? estimatedMenuHeight.clamp(44.0, menuMaxHeight)
+      : menuMaxHeight;
   const double gap = 8; // offset from cursor
   final cs = Theme.of(context).colorScheme;
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  final padding = MediaQuery.of(context).padding;
   final minX = padding.left + 8;
   final maxX = screen.width - padding.right - menuWidth - 8;
   final minY = padding.top + 8;
@@ -123,6 +132,12 @@ Future<void> showDesktopContextMenuAt(
                                           Navigator.of(ctx).pop();
                                           it.onTap?.call();
                                         },
+                                        onLongPress: it.onLongPress == null
+                                            ? null
+                                            : () {
+                                                Navigator.of(ctx).pop();
+                                                it.onLongPress?.call();
+                                              },
                                       ),
                                   ],
                                 ),
@@ -237,12 +252,14 @@ class _GlassMenuItem extends StatefulWidget {
     this.svgAsset,
     required this.label,
     this.onTap,
+    this.onLongPress,
     this.danger = false,
   });
   final IconData? icon;
   final String? svgAsset;
   final String label;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool danger;
 
   @override
@@ -277,6 +294,7 @@ class _GlassMenuItemState extends State<_GlassMenuItem> {
           } catch (_) {}
           widget.onTap?.call();
         },
+        onLongPress: widget.onLongPress,
         child: Container(
           height: 44,
           padding: const EdgeInsets.symmetric(horizontal: 12),

@@ -56,6 +56,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPageDefaultModel => 'Default Model';
 
   @override
+  String get settingsPageModelShortcutCount => 'Model Shortcut Slots';
+
+  @override
+  String settingsPageModelShortcutCountOption(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count slots',
+      one: '1 slot',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsPageProviders => 'Providers';
 
   @override
@@ -2889,6 +2903,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatInputBarSelectModelTooltip => 'Select Model';
+
+  @override
+  String chatInputBarModelSlot(int slot) {
+    return 'Model $slot';
+  }
 
   @override
   String get chatInputBarOnlineSearchTooltip => 'Online Search';

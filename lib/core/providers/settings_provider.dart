@@ -90,6 +90,18 @@ class SettingsProvider extends ChangeNotifier {
   static const String _providerConfigsKey = 'provider_configs_v1';
   static const String _pinnedModelsKey = 'pinned_models_v1';
   static const String _selectedModelKey = 'selected_model_v1';
+  static const String _quickModelSlotCountKey =
+      'chat_model_quick_slot_count_v1';
+  static const List<String> _quickModelSlotKeys = [
+    'chat_model_quick_slot_1_v1',
+    'chat_model_quick_slot_2_v1',
+    'chat_model_quick_slot_3_v1',
+    'chat_model_quick_slot_4_v1',
+    'chat_model_quick_slot_5_v1',
+  ];
+  static const int minQuickModelSlotCount = 1;
+  static const int maxQuickModelSlotCount = 5;
+  static const int defaultQuickModelSlotCount = 2;
   static const String _titleModelKey = 'title_model_v1';
   static const String _titlePromptKey = 'title_prompt_v1';
   static const String _ocrModelKey = 'ocr_model_v1';
@@ -802,6 +814,15 @@ class SettingsProvider extends ChangeNotifier {
         _currentModelProvider = parts[0];
         _currentModelId = parts.sublist(1).join('::');
       }
+    }
+    _quickModelSlotCount =
+        (prefs.getInt(_quickModelSlotCountKey) ?? defaultQuickModelSlotCount)
+            .clamp(minQuickModelSlotCount, maxQuickModelSlotCount);
+    for (var slot = 1; slot <= maxQuickModelSlotCount; slot++) {
+      _restoreQuickModelSlot(
+        slot,
+        prefs.getString(_quickModelPreferenceKey(slot)),
+      );
     }
     // load title model
     final titleSel = prefs.getString(_titleModelKey);
@@ -3076,6 +3097,11 @@ class SettingsProvider extends ChangeNotifier {
       await prefs.remove(_memoryModelKey);
       changed = true;
     }
+    changed =
+        await _clearQuickModelSlotsWhere(
+          (provider, _) => provider == providerKey,
+        ) ||
+        changed;
     if (changed) notifyListeners();
   }
 
@@ -3139,6 +3165,11 @@ class SettingsProvider extends ChangeNotifier {
       await prefs.remove(_memoryModelKey);
       changed = true;
     }
+    changed =
+        await _clearQuickModelSlotsWhere(
+          (provider, model) => provider == providerKey && model == modelId,
+        ) ||
+        changed;
     // Also remove from pinned if applicable
     final pinKey = '$providerKey::$modelId';
     if (_pinnedModels.contains(pinKey)) {
@@ -3202,6 +3233,7 @@ class SettingsProvider extends ChangeNotifier {
       _memoryModelId = null;
       await prefs.remove(_memoryModelKey);
     }
+    await _clearQuickModelSlotsWhere((provider, _) => provider == key);
 
     // Remove pinned models for this provider
     final beforePinned = _pinnedModels.length;
@@ -3258,6 +3290,103 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = _preferences;
     await prefs.remove(_selectedModelKey);
+  }
+
+  // Persistent shortcuts used by the chat input bar.
+  final List<String?> _quickModelProviders = List<String?>.filled(
+    maxQuickModelSlotCount,
+    null,
+  );
+  final List<String?> _quickModelIds = List<String?>.filled(
+    maxQuickModelSlotCount,
+    null,
+  );
+  int _quickModelSlotCount = defaultQuickModelSlotCount;
+
+  int get quickModelSlotCount => _quickModelSlotCount;
+
+  String? quickModelProvider(int slot) =>
+      _quickModelProviders[_quickModelSlotIndex(slot)];
+
+  String? quickModelId(int slot) => _quickModelIds[_quickModelSlotIndex(slot)];
+
+  String? quickModelKey(int slot) {
+    final provider = quickModelProvider(slot);
+    final model = quickModelId(slot);
+    return provider != null && model != null ? '$provider::$model' : null;
+  }
+
+  Future<void> setQuickModel(
+    int slot,
+    String providerKey,
+    String modelId,
+  ) async {
+    _setQuickModelSlotFields(slot, providerKey, modelId);
+    notifyListeners();
+    await _preferences.setString(
+      _quickModelPreferenceKey(slot),
+      '$providerKey::$modelId',
+    );
+  }
+
+  Future<void> setQuickModelSlotCount(int count) async {
+    final value = count.clamp(minQuickModelSlotCount, maxQuickModelSlotCount);
+    if (_quickModelSlotCount == value) return;
+    _quickModelSlotCount = value;
+    notifyListeners();
+    await _preferences.setInt(_quickModelSlotCountKey, value);
+  }
+
+  void _restoreQuickModelSlot(int slot, String? encoded) {
+    if (encoded == null || !encoded.contains('::')) return;
+    final parts = encoded.split('::');
+    if (parts.length < 2) return;
+    final provider = parts.first;
+    final model = parts.sublist(1).join('::');
+    if (provider.isEmpty || model.isEmpty) return;
+    _setQuickModelSlotFields(slot, provider, model);
+  }
+
+  void _setQuickModelSlotFields(
+    int slot,
+    String? providerKey,
+    String? modelId,
+  ) {
+    final index = _quickModelSlotIndex(slot);
+    _quickModelProviders[index] = providerKey;
+    _quickModelIds[index] = modelId;
+  }
+
+  int _quickModelSlotIndex(int slot) {
+    if (slot < minQuickModelSlotCount || slot > maxQuickModelSlotCount) {
+      throw RangeError.range(
+        slot,
+        minQuickModelSlotCount,
+        maxQuickModelSlotCount,
+        'slot',
+      );
+    }
+    return slot - 1;
+  }
+
+  String _quickModelPreferenceKey(int slot) =>
+      _quickModelSlotKeys[_quickModelSlotIndex(slot)];
+
+  Future<bool> _clearQuickModelSlotsWhere(
+    bool Function(String providerKey, String modelId) matches,
+  ) async {
+    var changed = false;
+    for (var slot = 1; slot <= maxQuickModelSlotCount; slot++) {
+      final provider = quickModelProvider(slot);
+      final model = quickModelId(slot);
+      if (provider == null || model == null || !matches(provider, model)) {
+        continue;
+      }
+      _setQuickModelSlotFields(slot, null, null);
+      await _preferences.remove(_quickModelPreferenceKey(slot));
+      changed = true;
+    }
+    return changed;
   }
 
   // Title model and prompt
@@ -5238,6 +5367,9 @@ Requirements:
     copy._pinnedModels.addAll(_pinnedModels);
     copy._currentModelProvider = _currentModelProvider;
     copy._currentModelId = _currentModelId;
+    copy._quickModelSlotCount = _quickModelSlotCount;
+    copy._quickModelProviders.setAll(0, _quickModelProviders);
+    copy._quickModelIds.setAll(0, _quickModelIds);
     copy._titleModelProvider = _titleModelProvider;
     copy._titleModelId = _titleModelId;
     copy._titlePrompt = _titlePrompt;

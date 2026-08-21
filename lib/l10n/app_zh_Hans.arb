@@ -14,6 +14,15 @@
   "settingsPageAssistantSubtitle": "默认助手与对话风格",
   "settingsPageModelsServicesSection": "模型与服务",
   "settingsPageDefaultModel": "默认模型",
+  "settingsPageModelShortcutCount": "模型快捷槽位数量",
+  "settingsPageModelShortcutCountOption": "{count} 个槽位",
+  "@settingsPageModelShortcutCountOption": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "settingsPageProviders": "供应商",
   "settingsPageSearch": "搜索服务",
   "settingsPageTts": "语音服务",
@@ -1045,6 +1054,14 @@
   "sideDrawerRename": "重命名",
   "chatInputBarHint": "输入消息与AI聊天",
   "chatInputBarSelectModelTooltip": "选择模型",
+  "chatInputBarModelSlot": "模型 {slot}",
+  "@chatInputBarModelSlot": {
+    "placeholders": {
+      "slot": {
+        "type": "int"
+      }
+    }
+  },
   "chatInputBarOnlineSearchTooltip": "联网搜索",
   "chatInputBarReasoningStrengthTooltip": "思维链强度",
   "chatInputBarMcpServersTooltip": "MCP服务器",

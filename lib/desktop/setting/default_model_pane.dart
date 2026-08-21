@@ -8,6 +8,7 @@ import '../../shared/widgets/ios_switch.dart';
 import '../../features/model/widgets/model_select_sheet.dart';
 import '../../features/model/utils/ocr_model_capability.dart';
 import '../../utils/brand_assets.dart';
+import '../widgets/desktop_select_dropdown.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
@@ -83,6 +84,9 @@ class DesktopDefaultModelPane extends StatelessWidget {
                       }
                     },
                   ),
+
+                  const SizedBox(height: 16),
+                  const _QuickModelSlotCountCard(),
 
                   const SizedBox(height: 16),
                   _ModelCard(
@@ -1041,6 +1045,68 @@ class _ModelCardState extends State<_ModelCard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _QuickModelSlotCountCard extends StatelessWidget {
+  const _QuickModelSlotCountCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsProvider>();
+    final options = [
+      for (
+        var count = SettingsProvider.minQuickModelSlotCount;
+        count <= SettingsProvider.maxQuickModelSlotCount;
+        count++
+      )
+        DesktopSelectOption<int>(
+          value: count,
+          label: l10n.settingsPageModelShortcutCountOption(count),
+        ),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.appColors.surfaceCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: isDark ? 0.08 : 0.06),
+          width: 0.6,
+        ),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Icon(lucide.Lucide.ListOrdered, size: 18, color: cs.onSurface),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.settingsPageModelShortcutCount,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: AppFontWeights.semibold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          DesktopSelectDropdown<int>(
+            key: const ValueKey('quick-model-slot-count-dropdown'),
+            value: settings.quickModelSlotCount,
+            options: options,
+            minWidth: 120,
+            maxLabelWidth: 120,
+            onSelected: (value) =>
+                context.read<SettingsProvider>().setQuickModelSlotCount(value),
+          ),
+        ],
       ),
     );
   }

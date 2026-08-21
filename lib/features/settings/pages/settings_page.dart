@@ -93,6 +93,48 @@ class SettingsPage extends StatelessWidget {
       }
     }
 
+    Future<void> pickQuickModelSlotCount() async {
+      final settingsProvider = context.read<SettingsProvider>();
+      final selected = await showModalBottomSheet<int>(
+        context: context,
+        backgroundColor: cs.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (ctx) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (
+                    var count = SettingsProvider.minQuickModelSlotCount;
+                    count <= SettingsProvider.maxQuickModelSlotCount;
+                    count++
+                  ) ...[
+                    if (count > SettingsProvider.minQuickModelSlotCount)
+                      _sheetDivider(ctx),
+                    _sheetOption(
+                      ctx,
+                      icon: count == settingsProvider.quickModelSlotCount
+                          ? Lucide.Check
+                          : Lucide.Hash,
+                      label: l10n.settingsPageModelShortcutCountOption(count),
+                      onTap: () => Navigator.of(ctx).pop(count),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      if (selected != null) {
+        await settingsProvider.setQuickModelSlotCount(selected);
+      }
+    }
+
     // iOS-style section header (neutral color, not theme color)
     Widget header(String text, {bool first = false}) => Padding(
       padding: EdgeInsets.fromLTRB(12, first ? 2 : 12, 12, 6),
@@ -203,6 +245,16 @@ class SettingsPage extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const DefaultModelPage()),
                   );
                 },
+              ),
+              _iosDivider(context),
+              _iosNavRow(
+                context,
+                icon: Lucide.ListOrdered,
+                label: l10n.settingsPageModelShortcutCount,
+                detailText: l10n.settingsPageModelShortcutCountOption(
+                  settings.quickModelSlotCount,
+                ),
+                onTap: pickQuickModelSlotCount,
               ),
               _iosDivider(context),
               _iosNavRow(

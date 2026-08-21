@@ -54,6 +54,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPageDefaultModel => '默认模型';
 
   @override
+  String get settingsPageModelShortcutCount => '模型快捷槽位数量';
+
+  @override
+  String settingsPageModelShortcutCountOption(int count) {
+    return '$count 个槽位';
+  }
+
+  @override
   String get settingsPageProviders => '供应商';
 
   @override
@@ -2789,6 +2797,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chatInputBarSelectModelTooltip => '选择模型';
+
+  @override
+  String chatInputBarModelSlot(int slot) {
+    return '模型 $slot';
+  }
 
   @override
   String get chatInputBarOnlineSearchTooltip => '联网搜索';
@@ -7763,6 +7776,14 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get settingsPageDefaultModel => '默认模型';
 
   @override
+  String get settingsPageModelShortcutCount => '模型快捷槽位数量';
+
+  @override
+  String settingsPageModelShortcutCountOption(int count) {
+    return '$count 个槽位';
+  }
+
+  @override
   String get settingsPageProviders => '供应商';
 
   @override
@@ -10498,6 +10519,11 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get chatInputBarSelectModelTooltip => '选择模型';
+
+  @override
+  String chatInputBarModelSlot(int slot) {
+    return '模型 $slot';
+  }
 
   @override
   String get chatInputBarOnlineSearchTooltip => '联网搜索';
@@ -15398,6 +15424,14 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get settingsPageDefaultModel => '預設模型';
 
   @override
+  String get settingsPageModelShortcutCount => '模型快捷槽位數量';
+
+  @override
+  String settingsPageModelShortcutCountOption(int count) {
+    return '$count 個槽位';
+  }
+
+  @override
   String get settingsPageProviders => '供應商';
 
   @override
@@ -18132,6 +18166,11 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get chatInputBarSelectModelTooltip => '選擇模型';
+
+  @override
+  String chatInputBarModelSlot(int slot) {
+    return '模型 $slot';
+  }
 
   @override
   String get chatInputBarOnlineSearchTooltip => '聯網搜尋';

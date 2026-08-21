@@ -42,7 +42,7 @@ class ChatInputSection extends StatelessWidget {
     required this.isReasoningEnabled,
     this.onMore,
     this.onSelectModel,
-    this.onLongPressSelectModel,
+    this.onLongPressModel,
     this.onOpenMcp,
     this.onLongPressMcp,
     this.onOpenSearch,
@@ -83,8 +83,8 @@ class ChatInputSection extends StatelessWidget {
 
   // Callbacks
   final VoidCallback? onMore;
-  final VoidCallback? onSelectModel;
-  final VoidCallback? onLongPressSelectModel;
+  final ValueChanged<int>? onSelectModel;
+  final ValueChanged<int>? onLongPressModel;
   final VoidCallback? onOpenMcp;
   final VoidCallback? onLongPressMcp;
   final VoidCallback? onOpenSearch;
@@ -122,6 +122,37 @@ class ChatInputSection extends StatelessWidget {
     final modelIds = getActiveModelIds(settings, assistant: a);
     final pk = modelIds.providerKey;
     final mid = modelIds.modelId;
+    final modelShortcuts = List<ChatModelShortcutData>.generate(
+      settings.quickModelSlotCount,
+      (index) {
+        final slot = index + 1;
+        final storedProvider = settings.quickModelProvider(slot);
+        final storedModelId = settings.quickModelId(slot);
+        final useActiveModelFallback =
+            slot == 1 && (storedProvider == null || storedModelId == null);
+        final provider = useActiveModelFallback ? pk : storedProvider;
+        final modelId = useActiveModelFallback ? mid : storedModelId;
+        return ChatModelShortcutData(
+          slot: slot,
+          icon: provider != null && modelId != null
+              ? CurrentModelIcon(
+                  providerKey: provider,
+                  modelId: modelId,
+                  size: 16,
+                  withBackground: false,
+                  backgroundColor: Colors.transparent,
+                )
+              : null,
+          description: modelId,
+          active:
+              provider != null &&
+              modelId != null &&
+              provider == pk &&
+              modelId == mid,
+        );
+      },
+      growable: false,
+    );
 
     // Enforce model capabilities: disable MCP selection if model doesn't support tools
     _enforceModelCapabilities(context, settings, ap, a, pk, mid);
@@ -133,21 +164,13 @@ class ChatInputSection extends StatelessWidget {
     return ChatInputBar(
       key: inputBarKey,
       onMore: onMore,
+      modelShortcuts: modelShortcuts,
       onSelectModel: onSelectModel,
-      onLongPressSelectModel: onLongPressSelectModel,
+      onLongPressModel: onLongPressModel,
       conversationId: conversationId,
       onOpenMcp: onOpenMcp,
       onLongPressMcp: onLongPressMcp,
       onStop: onStop,
-      modelIcon: (pk != null && mid != null)
-          ? CurrentModelIcon(
-              providerKey: pk,
-              modelId: mid,
-              size: 40,
-              withBackground: true,
-              backgroundColor: Colors.transparent,
-            )
-          : null,
       focusNode: inputFocus,
       controller: inputController,
       mediaController: mediaController,

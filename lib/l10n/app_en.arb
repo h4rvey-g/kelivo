@@ -14,6 +14,15 @@
   "settingsPageAssistantSubtitle": "Default assistant and style",
   "settingsPageModelsServicesSection": "Models & Services",
   "settingsPageDefaultModel": "Default Model",
+  "settingsPageModelShortcutCount": "Model Shortcut Slots",
+  "settingsPageModelShortcutCountOption": "{count, plural, =1{1 slot} other{{count} slots}}",
+  "@settingsPageModelShortcutCountOption": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "settingsPageProviders": "Providers",
   "settingsPageHotkeys": "Hotkeys",
   "settingsPageSearch": "Search",
@@ -1306,6 +1315,14 @@
   "sideDrawerRename": "Rename",
   "chatInputBarHint": "Type a message for AI",
   "chatInputBarSelectModelTooltip": "Select Model",
+  "chatInputBarModelSlot": "Model {slot}",
+  "@chatInputBarModelSlot": {
+    "placeholders": {
+      "slot": {
+        "type": "int"
+      }
+    }
+  },
   "chatInputBarOnlineSearchTooltip": "Online Search",
   "chatInputBarReasoningStrengthTooltip": "Reasoning Strength",
   "chatInputBarMcpServersTooltip": "MCP Servers",

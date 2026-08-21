@@ -40,7 +40,6 @@ import '../../chat/widgets/reasoning_budget_sheet.dart';
 import '../../search/widgets/search_settings_sheet.dart';
 import '../../model/widgets/model_select_sheet.dart';
 import '../../mcp/pages/mcp_page.dart';
-import '../../provider/pages/providers_page.dart';
 import '../../assistant/widgets/mcp_assistant_sheet.dart';
 import '../../quick_phrase/pages/quick_phrases_page.dart';
 import '../../quick_phrase/widgets/quick_phrase_menu.dart';
@@ -1478,11 +1477,11 @@ class _HomePageState extends State<HomePage>
           ? AppLocalizations.of(context)!.messageEditPageSaveAndSend
           : null,
       onMore: _toggleTools,
-      onSelectModel: () => showModelSelectSheet(context),
-      onLongPressSelectModel: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const ProvidersPage()));
+      onSelectModel: (slot) {
+        unawaited(_activateQuickModel(slot));
+      },
+      onLongPressModel: (slot) {
+        unawaited(_configureQuickModel(slot));
       },
       onOpenMcp: () {
         final a = context.read<AssistantProvider>().currentAssistant;
@@ -1553,6 +1552,91 @@ class _HomePageState extends State<HomePage>
       onClearContext: _controller.clearContext,
       onCompressContext: _handleDesktopCompressContext,
       backgroundImageActive: _assistantBackgroundActive(context),
+    );
+  }
+
+  ModelSelection? _activeModelSelection() {
+    final settings = context.read<SettingsProvider>();
+    final assistant = context.read<AssistantProvider>().currentAssistant;
+    final provider =
+        assistant?.chatModelProvider ?? settings.currentModelProvider;
+    final model = assistant?.chatModelId ?? settings.currentModelId;
+    return provider != null && model != null
+        ? ModelSelection(provider, model)
+        : null;
+  }
+
+  ModelSelection? _quickModelSelection(int slot) {
+    final settings = context.read<SettingsProvider>();
+    final provider = settings.quickModelProvider(slot);
+    final model = settings.quickModelId(slot);
+    return provider != null && model != null
+        ? ModelSelection(provider, model)
+        : null;
+  }
+
+  bool _isConfiguredModel(ModelSelection selection) {
+    final config = context
+        .read<SettingsProvider>()
+        .providerConfigs[selection.providerKey];
+    return config != null &&
+        config.enabled &&
+        config.models.contains(selection.modelId);
+  }
+
+  Future<void> _activateQuickModel(int slot) async {
+    var selection = _quickModelSelection(slot);
+    selection ??= slot == 1 ? _activeModelSelection() : null;
+    if (selection == null || !_isConfiguredModel(selection)) {
+      await _configureQuickModel(slot);
+      return;
+    }
+
+    final settings = context.read<SettingsProvider>();
+    if (settings.quickModelKey(slot) == null) {
+      await settings.setQuickModel(
+        slot,
+        selection.providerKey,
+        selection.modelId,
+      );
+      if (!mounted) return;
+    }
+    await _applyModelSelection(selection);
+  }
+
+  Future<void> _configureQuickModel(int slot) async {
+    final initial = _quickModelSelection(slot) ?? _activeModelSelection();
+    final selection = await showModelSelector(
+      context,
+      initialProviderKey: initial?.providerKey,
+      initialModelId: initial?.modelId,
+    );
+    if (!mounted || selection == null) return;
+
+    await context.read<SettingsProvider>().setQuickModel(
+      slot,
+      selection.providerKey,
+      selection.modelId,
+    );
+    if (!mounted) return;
+    await _applyModelSelection(selection);
+  }
+
+  Future<void> _applyModelSelection(ModelSelection selection) async {
+    final assistantProvider = context.read<AssistantProvider>();
+    final assistant = assistantProvider.currentAssistant;
+    if (assistant != null) {
+      await assistantProvider.updateAssistant(
+        assistant.copyWith(
+          chatModelProvider: selection.providerKey,
+          chatModelId: selection.modelId,
+        ),
+      );
+      return;
+    }
+    await context.read<SettingsProvider>().setCurrentModel(
+      selection.providerKey,
+      selection.modelId,
     );
   }
 

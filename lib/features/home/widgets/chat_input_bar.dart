@@ -93,13 +93,29 @@ class _ImageProcessingTask {
   final bool deleteSourceAfterProcessing;
 }
 
+@immutable
+class ChatModelShortcutData {
+  const ChatModelShortcutData({
+    required this.slot,
+    this.icon,
+    this.description,
+    this.active = false,
+  });
+
+  final int slot;
+  final Widget? icon;
+  final String? description;
+  final bool active;
+}
+
 class ChatInputBar extends StatefulWidget {
   const ChatInputBar({
     super.key,
     this.onSend,
     this.onStop,
+    this.modelShortcuts = const [],
     this.onSelectModel,
-    this.onLongPressSelectModel,
+    this.onLongPressModel,
     this.onOpenMcp,
     this.onLongPressMcp,
     this.onOpenSearch,
@@ -107,7 +123,6 @@ class ChatInputBar extends StatefulWidget {
     this.onConfigureReasoning,
     this.moreOpen = false,
     this.focusNode,
-    this.modelIcon,
     this.controller,
     this.mediaController,
     this.asrProvider,
@@ -150,8 +165,9 @@ class ChatInputBar extends StatefulWidget {
 
   final Future<ChatInputSubmissionResult> Function(ChatInputData)? onSend;
   final VoidCallback? onStop;
-  final VoidCallback? onSelectModel;
-  final VoidCallback? onLongPressSelectModel;
+  final List<ChatModelShortcutData> modelShortcuts;
+  final ValueChanged<int>? onSelectModel;
+  final ValueChanged<int>? onLongPressModel;
   final VoidCallback? onOpenMcp;
   final VoidCallback? onLongPressMcp;
   final VoidCallback? onOpenSearch;
@@ -159,7 +175,6 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onConfigureReasoning;
   final bool moreOpen;
   final FocusNode? focusNode;
-  final Widget? modelIcon;
   final TextEditingController? controller;
   final ChatInputBarController? mediaController;
   final AsrProvider? asrProvider;
@@ -1921,7 +1936,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   Widget _buildResponsiveLeftActions(BuildContext context) {
     const double spacing = 8;
     const double normalButtonW = 32; // 20 + padding(6*2)
-    const double modelButtonW = 30; // 28 + padding(1*2)
+    const double modelButtonW = 76;
     const double plusButtonW = 32;
 
     final l10n = AppLocalizations.of(context)!;
@@ -1934,25 +1949,37 @@ class _ChatInputBarState extends State<ChatInputBar>
       builder: (context, constraints) {
         final List<_OverflowAction> actions = [];
 
-        // Model select (always present; can be hidden if overflow)
-        actions.add(
-          _OverflowAction(
-            width: (widget.modelIcon != null) ? modelButtonW : normalButtonW,
-            builder: () => _CompactIconButton(
-              tooltip: l10n.chatInputBarSelectModelTooltip,
-              icon: Lucide.Boxes,
-              modelIcon: true,
-              onTap: lockTap(widget.onSelectModel),
-              onLongPress: lockTap(widget.onLongPressSelectModel),
-              child: widget.modelIcon,
+        // Model shortcuts stay first so they are prioritized on compact
+        // layouts; remaining shortcuts stay available in the overflow menu.
+        for (final shortcut in widget.modelShortcuts) {
+          final slot = shortcut.slot;
+          final label = l10n.chatInputBarModelSlot(slot);
+          final select = widget.onSelectModel == null
+              ? null
+              : () => widget.onSelectModel!(slot);
+          final configure = widget.onLongPressModel == null
+              ? null
+              : () => widget.onLongPressModel!(slot);
+          actions.add(
+            _OverflowAction(
+              width: modelButtonW,
+              builder: () => _CompactModelButton(
+                label: label,
+                description: shortcut.description,
+                active: shortcut.active,
+                onTap: lockTap(select),
+                onLongPress: lockTap(configure),
+                icon: shortcut.icon,
+              ),
+              menu: DesktopContextMenuItem(
+                icon: Lucide.Boxes,
+                label: label,
+                onTap: lockTap(select),
+                onLongPress: lockTap(configure),
+              ),
             ),
-            menu: DesktopContextMenuItem(
-              icon: Lucide.Boxes,
-              label: l10n.chatInputBarSelectModelTooltip,
-              onTap: lockTap(widget.onSelectModel),
-            ),
-          ),
-        );
+          );
+        }
 
         // Search button (stateful icon depending on provider config)
         final settings = context.watch<SettingsProvider>();
@@ -2354,6 +2381,7 @@ class _ChatInputBarState extends State<ChatInputBar>
             Container(
               key: _leftOverflowAnchorKey,
               child: _CompactIconButton(
+                key: const ValueKey('chat-input-left-actions-overflow'),
                 tooltip: l10n.chatInputBarMoreTooltip,
                 icon: Lucide.Plus,
                 onTap: () {
@@ -3379,17 +3407,109 @@ class _OverflowAction {
   });
 }
 
+class _CompactModelButton extends StatelessWidget {
+  const _CompactModelButton({
+    required this.label,
+    required this.active,
+    this.description,
+    this.icon,
+    this.onTap,
+    this.onLongPress,
+  });
+
+  final String label;
+  final String? description;
+  final Widget? icon;
+  final bool active;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final foreground = active
+        ? cs.primary
+        : cs.onSurface.withValues(alpha: isDark ? 0.76 : 0.62);
+    final background = active
+        ? cs.primary.withValues(alpha: isDark ? 0.18 : 0.1)
+        : Colors.transparent;
+    final borderColor = active
+        ? cs.primary.withValues(alpha: isDark ? 0.36 : 0.24)
+        : cs.onSurface.withValues(alpha: isDark ? 0.16 : 0.1);
+    final tooltip = description == null ? label : '$label: $description';
+
+    final button = Semantics(
+      button: true,
+      selected: active,
+      label: tooltip,
+      child: SizedBox(
+        width: 76,
+        height: 32,
+        child: IosCardPress(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          haptics: false,
+          baseColor: background,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: borderColor),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child:
+                      icon ?? Icon(Lucide.Boxes, size: 15, color: foreground),
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 12,
+                      fontWeight: active
+                          ? AppFontWeights.semibold
+                          : AppFontWeights.medium,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final isDesktop =
+        Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+    return isDesktop
+        ? Tooltip(
+            message: tooltip,
+            waitDuration: const Duration(milliseconds: 350),
+            child: button,
+          )
+        : button;
+  }
+}
+
 // New compact button for the integrated input bar
 class _CompactIconButton extends StatelessWidget {
   const _CompactIconButton({
+    super.key,
     required this.icon,
     this.onTap,
     this.onLongPress,
     this.tooltip,
     this.active = false,
-    this.child,
     this.childBuilder,
-    this.modelIcon = false,
   });
 
   final IconData icon;
@@ -3397,9 +3517,7 @@ class _CompactIconButton extends StatelessWidget {
   final VoidCallback? onLongPress;
   final String? tooltip;
   final bool active;
-  final Widget? child;
   final Widget Function(Color color)? childBuilder;
-  final bool modelIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -3411,38 +3529,24 @@ class _CompactIconButton extends StatelessWidget {
     final bool isDesktop =
         Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
-    // Keep overall button size constant. For model icon with child, enlarge child slightly
-    // and reduce padding so (2*padding + childSize) stays unchanged.
-    final bool isModelChild = modelIcon && child != null;
-    final double iconSize = 20.0; // default glyph size
-    final double childSize = isModelChild
-        ? 28.0
-        : iconSize; // enlarge circle a bit more
-    final double padding = isModelChild
-        ? 1.0
-        : 6.0; // keep total ~30px (2*1 + 28)
+    const double iconSize = 20;
+    const double padding = 6;
 
     final button = IosIconButton(
-      size: isModelChild ? childSize : 20,
-      padding: EdgeInsets.all(padding),
+      size: iconSize,
+      padding: const EdgeInsets.all(padding),
       onTap: onTap,
       // Disable long press on desktop platforms
       onLongPress: isDesktop ? null : onLongPress,
       color: fgColor,
       builder: childBuilder != null
           ? (c) => SizedBox(
-              width: childSize,
-              height: childSize,
+              width: iconSize,
+              height: iconSize,
               child: childBuilder!(c),
             )
-          : (child != null
-                ? (_) => SizedBox(
-                    width: childSize,
-                    height: childSize,
-                    child: child,
-                  )
-                : null),
-      icon: child == null && childBuilder == null ? icon : null,
+          : null,
+      icon: childBuilder == null ? icon : null,
     );
 
     if (tooltip == null) {

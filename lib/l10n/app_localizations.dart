@@ -190,6 +190,18 @@ abstract class AppLocalizations {
   /// **'Default Model'**
   String get settingsPageDefaultModel;
 
+  /// No description provided for @settingsPageModelShortcutCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Model Shortcut Slots'**
+  String get settingsPageModelShortcutCount;
+
+  /// No description provided for @settingsPageModelShortcutCountOption.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 slot} other{{count} slots}}'**
+  String settingsPageModelShortcutCountOption(int count);
+
   /// No description provided for @settingsPageProviders.
   ///
   /// In en, this message translates to:
@@ -5367,6 +5379,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Select Model'**
   String get chatInputBarSelectModelTooltip;
+
+  /// No description provided for @chatInputBarModelSlot.
+  ///
+  /// In en, this message translates to:
+  /// **'Model {slot}'**
+  String chatInputBarModelSlot(int slot);
 
   /// No description provided for @chatInputBarOnlineSearchTooltip.
   ///
