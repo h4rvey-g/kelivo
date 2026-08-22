@@ -265,6 +265,8 @@ class _MessageListViewState extends State<MessageListView> {
   final FocusNode _keyboardFocusNode = FocusNode(
     debugLabel: 'timeline-keyboard-scroll-region',
   );
+  Duration? _lastPrimaryPointerDownTime;
+  Offset? _lastPrimaryPointerDownPosition;
 
   String _slotId(ChatMessage message) => message.groupId ?? message.id;
 
@@ -1009,6 +1011,19 @@ class _MessageListViewState extends State<MessageListView> {
       defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.linux;
 
+  bool _continuesPrimaryClickSequence(PointerDownEvent event) {
+    final previousTime = _lastPrimaryPointerDownTime;
+    final previousPosition = _lastPrimaryPointerDownPosition;
+    final continuesSequence =
+        previousTime != null &&
+        previousPosition != null &&
+        event.timeStamp - previousTime <= kDoubleTapTimeout &&
+        (event.position - previousPosition).distance <= kDoubleTapSlop;
+    _lastPrimaryPointerDownTime = event.timeStamp;
+    _lastPrimaryPointerDownPosition = event.position;
+    return continuesSequence;
+  }
+
   ScrollViewKeyboardDismissBehavior get _keyboardDismissBehavior {
     if (_isDesktopPlatform) {
       return ScrollViewKeyboardDismissBehavior.manual;
@@ -1125,7 +1140,14 @@ class _MessageListViewState extends State<MessageListView> {
                 final isSecondaryPointer =
                     event.buttons & kSecondaryMouseButton != 0;
                 if (_isDesktopPlatform && !isSecondaryPointer) {
-                  _keyboardFocusNode.requestFocus();
+                  // SelectableRegion requests focus only on the first click.
+                  // Keep that focus for later clicks in the same sequence.
+                  final continuesClickSequence = _continuesPrimaryClickSequence(
+                    event,
+                  );
+                  if (!continuesClickSequence || !_keyboardFocusNode.hasFocus) {
+                    _keyboardFocusNode.requestFocus();
+                  }
                 }
                 if (event.buttons != 0 && !isSecondaryPointer) {
                   _pointerDragInProgress = true;

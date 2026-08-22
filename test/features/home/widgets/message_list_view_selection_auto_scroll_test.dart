@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -290,6 +291,150 @@ void main() {
       expect(timelineFocusNode.hasPrimaryFocus, isTrue);
       await primaryClick.up();
     } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('multi-click selections copy from the message timeline', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final scrollController = scroll_ctrl.ChatAutoFollowScrollController();
+    final listController = ListController();
+    final isProcessingFiles = ValueNotifier<bool>(false);
+    final settings = SettingsProvider(createBusinessTestPreferences());
+    final assistant = AssistantProvider(
+      preferences: createBusinessTestPreferences(),
+    );
+    final tts = TtsProvider(preferences: createBusinessTestPreferences());
+    final user = UserProvider(preferences: createBusinessTestPreferences());
+    final askUser = AskUserInteractionService();
+    final toolApproval = ToolApprovalService();
+    MethodCall? clipboardCall;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') clipboardCall = call;
+      return null;
+    });
+
+    addTearDown(scrollController.dispose);
+    addTearDown(listController.dispose);
+    addTearDown(isProcessingFiles.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(assistant.dispose);
+    addTearDown(tts.dispose);
+    addTearDown(user.dispose);
+    addTearDown(askUser.dispose);
+    addTearDown(toolApproval.dispose);
+
+    try {
+      await settings.setEnableAssistantMarkdown(true);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: settings),
+            ChangeNotifierProvider.value(value: assistant),
+            ChangeNotifierProvider.value(value: tts),
+            ChangeNotifierProvider.value(value: user),
+            ChangeNotifierProvider.value(value: askUser),
+            ChangeNotifierProvider.value(value: toolApproval),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Scaffold(
+              body: MessageListView(
+                scrollController: scrollController,
+                listController: listController,
+                messages: [
+                  ChatMessage(
+                    id: 'double-click-selection-message',
+                    role: 'assistant',
+                    content: 'Alpha Beta Gamma',
+                    conversationId: 'conversation-1',
+                  ),
+                ],
+                byGroup: const {},
+                versionSelections: const {},
+                reasoning: const {},
+                reasoningSegments: const {},
+                contentSplits: const {},
+                toolParts: const {},
+                translations: const {},
+                selecting: false,
+                selectedItems: const {},
+                dividerPadding: EdgeInsets.zero,
+                isProcessingFiles: isProcessingFiles,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final areaFinder = find.byType(SelectionArea);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(of: areaFinder, matching: find.byType(RichText)).first,
+      );
+      final betaPosition = _textOffsetToPosition(paragraph, 8);
+      final gesture = await tester.startGesture(
+        betaPosition,
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      await gesture.down(betaPosition);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(paragraph.selections, const <TextSelection>[
+        TextSelection(baseOffset: 6, extentOffset: 10),
+      ]);
+      final timelineFocusNode = tester
+          .widget<Focus>(
+            find.byKey(const ValueKey('timeline-keyboard-scroll-region')),
+          )
+          .focusNode!;
+      expect(timelineFocusNode.hasFocus, isTrue);
+      expect(timelineFocusNode.hasPrimaryFocus, isFalse);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+
+      expect(clipboardCall?.method, 'Clipboard.setData');
+      expect(clipboardCall?.arguments, <String, dynamic>{'text': 'Beta'});
+
+      clipboardCall = null;
+      await tester.pump(kDoubleTapTimeout);
+      for (var click = 0; click < 3; click++) {
+        await gesture.down(betaPosition);
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+
+      expect(paragraph.selections, const <TextSelection>[
+        TextSelection(baseOffset: 0, extentOffset: 16),
+      ]);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+
+      expect(clipboardCall?.method, 'Clipboard.setData');
+      expect(clipboardCall?.arguments, <String, dynamic>{
+        'text': 'Alpha Beta Gamma',
+      });
+    } finally {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
       debugDefaultTargetPlatformOverride = null;
     }
   });
