@@ -2220,6 +2220,72 @@ class ChatDatabaseRepository {
     return row.read(maxVersion) ?? -1;
   }
 
+  Future<({String providerId, String modelId})?>
+  getLatestSelectedAssistantModel(String conversationId) async {
+    final row = await _db
+        .customSelect(
+          '''
+          WITH group_rows AS (
+            SELECT
+              COALESCE(m.group_id, m.id) AS group_id,
+              MIN(m.message_order) AS anchor_order,
+              MAX(m.version) AS latest_version
+            FROM message_rows m
+            WHERE m.conversation_id = ?
+            GROUP BY COALESCE(m.group_id, m.id)
+          ),
+          selections AS (
+            SELECT j.key AS group_id, CAST(j.value AS INTEGER) AS version
+            FROM conversation_rows c, json_each(c.version_selections_json) j
+            WHERE c.id = ?
+          ),
+          ranked AS (
+            SELECT
+              m.role,
+              m.provider_id,
+              m.model_id,
+              g.anchor_order,
+              ROW_NUMBER() OVER (
+                PARTITION BY g.group_id
+                ORDER BY
+                  CASE
+                    WHEN m.version = COALESCE(s.version, g.latest_version)
+                    THEN 0 ELSE 1
+                  END,
+                  m.version DESC,
+                  m.message_order DESC,
+                  m.id DESC
+              ) AS version_rank
+            FROM group_rows g
+            JOIN message_rows m
+              ON m.conversation_id = ?
+             AND COALESCE(m.group_id, m.id) = g.group_id
+            LEFT JOIN selections s ON s.group_id = g.group_id
+          )
+          SELECT provider_id, model_id
+          FROM ranked
+          WHERE version_rank = 1
+            AND role = 'assistant'
+            AND NULLIF(TRIM(provider_id), '') IS NOT NULL
+            AND NULLIF(TRIM(model_id), '') IS NOT NULL
+          ORDER BY anchor_order DESC
+          LIMIT 1;
+          ''',
+          variables: [
+            Variable<String>(conversationId),
+            Variable<String>(conversationId),
+            Variable<String>(conversationId),
+          ],
+          readsFrom: {_db.conversationRows, _db.messageRows},
+        )
+        .getSingleOrNull();
+    if (row == null) return null;
+    return (
+      providerId: row.read<String>('provider_id'),
+      modelId: row.read<String>('model_id'),
+    );
+  }
+
   Future<List<ChatMessage>> getSelectedMessageProjections(
     String conversationId, {
     int summaryCharacters = 200,

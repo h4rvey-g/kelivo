@@ -723,6 +723,7 @@ class HomePageController extends ChangeNotifier {
           // the skeleton instead of a blank list.
           notifyListeners();
           await Future.wait([restoreAssistant, loadWindow]);
+          await _viewModel.restoreConversationModel(recent.id);
           _streamController.clearGeminiThoughtSigs();
           _restoreMessageUiState();
           _scrollCtrl.positionAtBottomOnNextLayout();

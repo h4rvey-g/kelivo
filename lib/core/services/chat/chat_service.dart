@@ -538,6 +538,33 @@ class ChatService extends ChangeNotifier {
     ]);
   }
 
+  Future<({String providerId, String modelId})?>
+  loadLatestSelectedAssistantModel(String conversationId) async {
+    if (!_initialized) return null;
+    if (_temporaryConversationIds.contains(conversationId) ||
+        _draftConversations.containsKey(conversationId)) {
+      final messageCount = _messagesCache[conversationId]?.length ?? 0;
+      if (messageCount == 0) return null;
+      final page = _loadTemporaryTimelinePage(
+        conversationId,
+        fromStart: true,
+        limit: messageCount,
+      );
+      for (final slot in page?.slots.reversed ?? const <LoadedTimelineSlot>[]) {
+        final message = slot.message;
+        final providerId = message.providerId?.trim() ?? '';
+        final modelId = message.modelId?.trim() ?? '';
+        if (message.role == 'assistant' &&
+            providerId.isNotEmpty &&
+            modelId.isNotEmpty) {
+          return (providerId: providerId, modelId: modelId);
+        }
+      }
+      return null;
+    }
+    return _repo.getLatestSelectedAssistantModel(conversationId);
+  }
+
   Future<LoadedTimelinePage?> loadTimelinePage(
     String conversationId, {
     String? beforeRevisionId,

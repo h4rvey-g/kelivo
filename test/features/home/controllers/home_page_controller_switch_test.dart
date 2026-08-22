@@ -29,6 +29,7 @@ class _ControlledChatService extends ChatService {
   _ControlledChatService(this._messagesByConversation);
 
   final Map<String, List<ChatMessage>> _messagesByConversation;
+  final Map<String, String> assistantIdsByConversation = <String, String>{};
   final Map<String, Conversation> _draftConversations =
       <String, Conversation>{};
   final List<_PageRequest> pageRequests = <_PageRequest>[];
@@ -103,6 +104,7 @@ class _ControlledChatService extends ChatService {
       id: id,
       title: 'Conversation $id',
       messageIds: messages.map((message) => message.id).toList(),
+      assistantId: assistantIdsByConversation[id],
     );
   }
 
@@ -128,6 +130,21 @@ class _ControlledChatService extends ChatService {
   @override
   Map<String, int> getVersionSelections(String conversationId) =>
       const <String, int>{};
+
+  @override
+  Future<({String providerId, String modelId})?>
+  loadLatestSelectedAssistantModel(String conversationId) async {
+    for (final message in messagesOf(conversationId).reversed) {
+      final providerId = message.providerId?.trim() ?? '';
+      final modelId = message.modelId?.trim() ?? '';
+      if (message.role == 'assistant' &&
+          providerId.isNotEmpty &&
+          modelId.isNotEmpty) {
+        return (providerId: providerId, modelId: modelId);
+      }
+    }
+    return null;
+  }
 
   @override
   void setCurrentConversation(String? id) {
@@ -170,12 +187,19 @@ class _ControlledChatService extends ChatService {
   ) async => const <String, int>{};
 }
 
-ChatMessage _message(String conversationId, int index) {
+ChatMessage _message(
+  String conversationId,
+  int index, {
+  String? providerId,
+  String? modelId,
+}) {
   return ChatMessage(
     id: '$conversationId-message-$index',
     role: index.isEven ? 'user' : 'assistant',
     content: '$conversationId message $index',
     conversationId: conversationId,
+    providerId: providerId,
+    modelId: modelId,
   );
 }
 
@@ -279,6 +303,67 @@ void main() {
   }
 
   group('HomePageController conversation switch pipeline', () {
+    testWidgets('restores the model last used by each conversation', (
+      tester,
+    ) async {
+      await runAsDesktop(() async {
+        const providerId = 'provider-a';
+        final service = _ControlledChatService({
+          'conv-a': [
+            _message('conv-a', 0),
+            _message('conv-a', 1, providerId: providerId, modelId: 'model-1'),
+            _message('conv-a', 2),
+          ],
+          'conv-b': [
+            _message('conv-b', 0),
+            _message('conv-b', 1, providerId: providerId, modelId: 'model-2'),
+          ],
+        });
+        final controller = await pumpHarness(tester, service);
+        final settings = Provider.of<SettingsProvider>(
+          tester.element(find.byType(_ControllerHarness)),
+          listen: false,
+        );
+        await settings.loaded;
+        await settings.setProviderConfig(
+          providerId,
+          ProviderConfig(
+            id: providerId,
+            enabled: true,
+            name: 'Provider A',
+            apiKey: '',
+            baseUrl: '',
+            models: const ['model-1', 'model-2'],
+          ),
+        );
+        final assistantProvider = Provider.of<AssistantProvider>(
+          tester.element(find.byType(_ControllerHarness)),
+          listen: false,
+        );
+        await assistantProvider.loaded;
+        final assistantId = await assistantProvider.addAssistant(
+          name: 'Assistant A',
+        );
+        service.assistantIdsByConversation.addAll({
+          'conv-a': assistantId,
+          'conv-b': assistantId,
+        });
+
+        await switchAndSettle(tester, controller, service, 'conv-a');
+        await tester.pumpAndSettle();
+        expect(assistantProvider.currentAssistantId, assistantId);
+        expect(assistantProvider.currentAssistant?.chatModelId, 'model-1');
+
+        await switchAndSettle(tester, controller, service, 'conv-b');
+        await tester.pumpAndSettle();
+        expect(assistantProvider.currentAssistant?.chatModelId, 'model-2');
+
+        await switchAndSettle(tester, controller, service, 'conv-a');
+        await tester.pumpAndSettle();
+        expect(assistantProvider.currentAssistant?.chatModelId, 'model-1');
+      });
+    });
+
     testWidgets('same-id tap short-circuits before flush and fetch', (
       tester,
     ) async {

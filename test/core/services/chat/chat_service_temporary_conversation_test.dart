@@ -638,6 +638,8 @@ void main() {
           conversationId: conversation.id,
           role: 'assistant',
           content: 'version zero',
+          providerId: 'provider-a',
+          modelId: 'model-0',
           groupId: 'answer-slot',
           version: 0,
           selectVersion: true,
@@ -646,6 +648,8 @@ void main() {
           conversationId: conversation.id,
           role: 'assistant',
           content: 'version two',
+          providerId: 'provider-a',
+          modelId: 'model-2',
           groupId: 'answer-slot',
           version: 2,
           selectVersion: true,
@@ -656,6 +660,16 @@ void main() {
         expect(page!.slots, hasLength(1));
         expect(page.slots.single.identity.versionCount, 2);
         expect(page.slots.single.message, selected);
+        expect(
+          await service.loadLatestSelectedAssistantModel(conversation.id),
+          (providerId: 'provider-a', modelId: 'model-2'),
+        );
+
+        await service.setSelectedVersion(conversation.id, 'answer-slot', 0);
+        expect(
+          await service.loadLatestSelectedAssistantModel(conversation.id),
+          (providerId: 'provider-a', modelId: 'model-0'),
+        );
       },
     );
 
