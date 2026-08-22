@@ -788,6 +788,7 @@ class ChatMessageWidget extends StatefulWidget {
   final VoidCallback? onTranslate;
   final VoidCallback? onSpeak;
   final VoidCallback? onMore;
+  final ValueChanged<String>? onQuoteText;
   final VoidCallback? onEdit; // user: edit
   final VoidCallback? onDelete; // user: delete
   // Optional version switcher (branch) UI controls
@@ -839,6 +840,7 @@ class ChatMessageWidget extends StatefulWidget {
     this.onTranslate,
     this.onSpeak,
     this.onMore,
+    this.onQuoteText,
     this.onEdit,
     this.onDelete,
     this.versionIndex,
@@ -1816,6 +1818,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
       child: _MarkdownSelectionArea(
         areaKey: ValueKey('user_${widget.message.id}'),
         markdownSource: visualText,
+        onQuoteText: widget.onQuoteText,
         child: content,
       ),
     );
@@ -2207,6 +2210,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
       child: _MarkdownSelectionArea(
         areaKey: ValueKey('assistant_${widget.message.id}'),
         markdownSource: visualContent,
+        onQuoteText: widget.onQuoteText,
         child: DefaultTextStyle.merge(
           style: TextStyle(fontSize: baseAssistant, height: 1.5),
           child: assistantContent,
@@ -6545,6 +6549,7 @@ class _MarkdownSelectionArea extends StatefulWidget {
   const _MarkdownSelectionArea({
     required this.areaKey,
     required this.markdownSource,
+    this.onQuoteText,
     required this.child,
   });
 
@@ -6555,6 +6560,7 @@ class _MarkdownSelectionArea extends StatefulWidget {
 
   /// The full Markdown source used to recover syntax stripped by rendering.
   final String markdownSource;
+  final ValueChanged<String>? onQuoteText;
 
   final Widget child;
 
@@ -6655,6 +6661,22 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
                   return item;
                 })
                 .toList();
+            final selectedText = _selectedPlainText;
+            if (widget.onQuoteText != null &&
+                selectedText != null &&
+                selectedText.isNotEmpty) {
+              items.add(
+                ContextMenuButtonItem(
+                  label: AppLocalizations.of(
+                    context,
+                  )!.chatMessageWidgetQuoteSelection,
+                  onPressed: () {
+                    widget.onQuoteText!(selectedText);
+                    selectableRegionState.hideToolbar();
+                  },
+                ),
+              );
+            }
             return AdaptiveTextSelectionToolbar.buttonItems(
               anchors: selectableRegionState.contextMenuAnchors,
               buttonItems: items,

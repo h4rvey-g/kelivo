@@ -2308,6 +2308,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatMessageWidgetCopiedToClipboard => 'Copied to clipboard';
 
   @override
+  String get chatMessageWidgetQuoteSelection => 'Quote';
+
+  @override
   String get chatMessageWidgetResendTooltip => 'Resend';
 
   @override

@@ -977,6 +977,7 @@
     }
   },
   "chatMessageWidgetCopiedToClipboard": "Copied to clipboard",
+  "chatMessageWidgetQuoteSelection": "Quote",
   "chatMessageWidgetResendTooltip": "Resend",
   "chatMessageWidgetMoreTooltip": "More",
   "chatMessageWidgetThinking": "Thinking...",

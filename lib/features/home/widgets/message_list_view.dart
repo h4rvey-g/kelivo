@@ -46,6 +46,7 @@ typedef OnSelectMessages =
     void Function(int messageIndex, List<ChatMessage> messages);
 typedef OnSpeakMessage = Future<void> Function(ChatMessage message);
 typedef OnSuggestionTap = void Function(String suggestion);
+typedef OnQuoteText = void Function(String text);
 typedef OnRecoveredAskUserAnswer =
     Future<void> Function(
       ChatMessage message,
@@ -124,6 +125,7 @@ class MessageListView extends StatefulWidget {
     this.onShareMessage,
     this.onSelectMessages,
     this.onSpeakMessage,
+    this.onQuoteText,
     this.suggestions = const <String>[],
     this.onSuggestionTap,
     this.onRecoveredAskUserAnswer,
@@ -207,6 +209,7 @@ class MessageListView extends StatefulWidget {
   final OnShareMessage? onShareMessage;
   final OnSelectMessages? onSelectMessages;
   final OnSpeakMessage? onSpeakMessage;
+  final OnQuoteText? onQuoteText;
   final List<String> suggestions;
   final OnSuggestionTap? onSuggestionTap;
   final OnRecoveredAskUserAnswer? onRecoveredAskUserAnswer;
@@ -1712,6 +1715,7 @@ class _MessageListViewState extends State<MessageListView> {
       onSpeak: message.role == 'assistant'
           ? () => widget.onSpeakMessage?.call(message)
           : null,
+      onQuoteText: widget.onQuoteText,
       onEdit: (message.role == 'assistant' || message.role == 'user')
           ? () => widget.onEditMessage?.call(message)
           : null,

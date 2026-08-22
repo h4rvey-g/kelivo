@@ -2269,6 +2269,27 @@ class HomePageController extends ChangeNotifier {
     } catch (_) {}
   }
 
+  void quoteSelectedText(String selectedText) {
+    if (selectedText.isEmpty) return;
+
+    final currentText = _inputController.text;
+    final separator = currentText.isEmpty || currentText.endsWith('\n')
+        ? ''
+        : '\n';
+    final trailingNewline = selectedText.endsWith('\n') ? '' : '\n';
+    final newText = '$currentText$separator$selectedText$trailingNewline';
+    _inputController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+      composing: TextRange.empty,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_context.mounted) return;
+      _inputFocus.requestFocus();
+    });
+    notifyListeners();
+  }
+
   // ============================================================================
   // Public Methods - Quick Phrases
   // ============================================================================

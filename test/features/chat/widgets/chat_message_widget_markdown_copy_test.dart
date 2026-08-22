@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Widget _buildHarness(Widget child) {
+Widget _buildHarness(Widget child, {Locale? locale}) {
   SharedPreferences.setMockInitialValues(const {});
   return MultiProvider(
     providers: [
@@ -37,6 +37,7 @@ Widget _buildHarness(Widget child) {
       ChangeNotifierProvider(create: (_) => AskUserInteractionService()),
     ],
     child: MaterialApp(
+      locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(body: child),
@@ -379,6 +380,47 @@ void main() {
       expect(content, contains(copiedText!));
     } finally {
       messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('selected message text can be quoted from the context menu', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    String? quotedText;
+    try {
+      const content = 'Text selected for quoting';
+      await tester.pumpWidget(
+        _buildHarness(
+          ChatMessageWidget(
+            message: ChatMessage(
+              id: 'quote-selection',
+              role: 'assistant',
+              content: content,
+              conversationId: 'conversation-1',
+            ),
+            showModelIcon: false,
+            onQuoteText: (text) => quotedText = text,
+          ),
+          locale: const Locale('zh'),
+        ),
+      );
+      await tester.pump();
+
+      final areaFinder = find.byType(SelectionArea);
+      final areaState = tester.state<SelectionAreaState>(areaFinder);
+      areaState.selectableRegion.selectAll(SelectionChangedCause.keyboard);
+      await tester.pump();
+
+      await tester.tap(find.text(content), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('引用'), findsOneWidget);
+      await tester.tap(find.text('引用'));
+      await tester.pump();
+      expect(quotedText, content);
+    } finally {
       debugDefaultTargetPlatformOverride = null;
     }
   });

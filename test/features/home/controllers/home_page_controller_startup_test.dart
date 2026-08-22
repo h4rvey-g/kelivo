@@ -25,7 +25,9 @@ void main() {
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          home: _ControllerHarness(onCreated: (value) => controller = value),
+          home: _ControllerHarness(
+            onCreated: (value, _, __) => controller = value,
+          ),
         ),
       ),
     );
@@ -51,12 +53,59 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     replacement.dispose();
   });
+
+  testWidgets('quotes selected text into the draft and focuses the input', (
+    tester,
+  ) async {
+    late HomePageController controller;
+    late TextEditingController inputController;
+    late FocusNode inputFocus;
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(createBusinessTestPreferences()),
+          ),
+          ChangeNotifierProvider(create: (_) => ChatService()),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: _ControllerHarness(
+            onCreated: (value, textController, focusNode) {
+              controller = value;
+              inputController = textController;
+              inputFocus = focusNode;
+            },
+          ),
+        ),
+      ),
+    );
+
+    inputController.text = 'Existing draft';
+    controller.quoteSelectedText('Selected text');
+    await tester.pump();
+
+    expect(inputController.text, 'Existing draft\nSelected text\n');
+    expect(inputController.selection.extentOffset, inputController.text.length);
+    expect(inputFocus.hasFocus, isTrue);
+
+    controller.quoteSelectedText('Next line\n');
+    await tester.pump();
+    expect(inputController.text, 'Existing draft\nSelected text\nNext line\n');
+    expect(inputController.selection.extentOffset, inputController.text.length);
+  });
 }
 
 class _ControllerHarness extends StatefulWidget {
   const _ControllerHarness({required this.onCreated});
 
-  final ValueChanged<HomePageController> onCreated;
+  final void Function(
+    HomePageController controller,
+    TextEditingController inputController,
+    FocusNode inputFocus,
+  )
+  onCreated;
 
   @override
   State<_ControllerHarness> createState() => _ControllerHarnessState();
@@ -85,7 +134,7 @@ class _ControllerHarnessState extends State<_ControllerHarness>
       mediaController: _mediaController,
       scrollController: _scrollController,
     );
-    widget.onCreated(_controller);
+    widget.onCreated(_controller, _inputController, _inputFocus);
   }
 
   @override
@@ -98,5 +147,8 @@ class _ControllerHarnessState extends State<_ControllerHarness>
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(key: _scaffoldKey);
+  Widget build(BuildContext context) => Scaffold(
+    key: _scaffoldKey,
+    body: TextField(controller: _inputController, focusNode: _inputFocus),
+  );
 }
