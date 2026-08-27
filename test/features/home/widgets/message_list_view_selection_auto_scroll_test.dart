@@ -33,7 +33,7 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     final scrollController = scroll_ctrl.ChatAutoFollowScrollController();
     final listController = ListController();
-    final isProcessingFiles = ValueNotifier<bool>(false);
+    final processingFilesMessageId = ValueNotifier<String?>(null);
     final settings = SettingsProvider(createBusinessTestPreferences());
     final assistant = AssistantProvider(
       preferences: createBusinessTestPreferences(),
@@ -49,7 +49,7 @@ void main() {
 
     addTearDown(scrollController.dispose);
     addTearDown(listController.dispose);
-    addTearDown(isProcessingFiles.dispose);
+    addTearDown(processingFilesMessageId.dispose);
     addTearDown(settings.dispose);
     addTearDown(assistant.dispose);
     addTearDown(tts.dispose);
@@ -94,7 +94,7 @@ void main() {
                 selecting: false,
                 selectedItems: const {},
                 dividerPadding: EdgeInsets.zero,
-                isProcessingFiles: isProcessingFiles,
+                processingFilesMessageId: processingFilesMessageId,
               ),
             ),
           ),
@@ -145,7 +145,7 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     final scrollController = scroll_ctrl.ChatAutoFollowScrollController();
     final listController = ListController();
-    final isProcessingFiles = ValueNotifier<bool>(false);
+    final processingFilesMessageId = ValueNotifier<String?>(null);
     final settings = SettingsProvider(createBusinessTestPreferences());
     final assistant = AssistantProvider(
       preferences: createBusinessTestPreferences(),
@@ -170,7 +170,7 @@ void main() {
 
     addTearDown(scrollController.dispose);
     addTearDown(listController.dispose);
-    addTearDown(isProcessingFiles.dispose);
+    addTearDown(processingFilesMessageId.dispose);
     addTearDown(settings.dispose);
     addTearDown(assistant.dispose);
     addTearDown(tts.dispose);
@@ -215,7 +215,7 @@ void main() {
                 selecting: false,
                 selectedItems: const {},
                 dividerPadding: EdgeInsets.zero,
-                isProcessingFiles: isProcessingFiles,
+                processingFilesMessageId: processingFilesMessageId,
               ),
             ),
           ),
@@ -301,7 +301,7 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     final scrollController = scroll_ctrl.ChatAutoFollowScrollController();
     final listController = ListController();
-    final isProcessingFiles = ValueNotifier<bool>(false);
+    final processingFilesMessageId = ValueNotifier<String?>(null);
     final settings = SettingsProvider(createBusinessTestPreferences());
     final assistant = AssistantProvider(
       preferences: createBusinessTestPreferences(),
@@ -320,7 +320,7 @@ void main() {
 
     addTearDown(scrollController.dispose);
     addTearDown(listController.dispose);
-    addTearDown(isProcessingFiles.dispose);
+    addTearDown(processingFilesMessageId.dispose);
     addTearDown(settings.dispose);
     addTearDown(assistant.dispose);
     addTearDown(tts.dispose);
@@ -365,7 +365,7 @@ void main() {
                 selecting: false,
                 selectedItems: const {},
                 dividerPadding: EdgeInsets.zero,
-                isProcessingFiles: isProcessingFiles,
+                processingFilesMessageId: processingFilesMessageId,
               ),
             ),
           ),

@@ -25,6 +25,10 @@ class _DisplaySettingsBody extends StatelessWidget {
                   _RowDivider(),
                   _ToggleRowPureBackground(),
                   _RowDivider(),
+                  _ToggleRowLayeredSurfaces(),
+                  _RowDivider(),
+                  _ToggleRowLayeredSheetTiles(),
+                  _RowDivider(),
                   _MessageStyleRow(),
                   _RowDivider(),
                   _TopicPositionRow(),
@@ -77,6 +81,10 @@ class _DisplaySettingsBody extends StatelessWidget {
                   _ToggleRowShowProviderInChatMessage(),
                   _RowDivider(),
                   _ToggleRowShowTokenStats(),
+                  _RowDivider(),
+                  _ToggleRowShowThinkingCards(),
+                  _RowDivider(),
+                  _ToggleRowShowToolCards(),
                 ],
               ),
               const SizedBox(height: 16),
@@ -115,6 +123,8 @@ class _DisplaySettingsBody extends StatelessWidget {
                   _ToggleRowCollapseThinkingSteps(),
                   _RowDivider(),
                   _ToggleRowShowToolResultSummary(),
+                  _RowDivider(),
+                  _ToggleRowHideToolResultImages(),
                   _RowDivider(),
                   _ToggleRowInsertSuggestionOnly(),
                   _RowDivider(),
@@ -351,11 +361,8 @@ class _SettingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sp = context.watch<SettingsProvider>();
     return Material(
-      color: sp.usePureBackground
-          ? cs.surface
-          : (Theme.of(context).colorScheme.surfaceContainerHigh),
+      color: context.appColors.surfaceCard,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
@@ -814,6 +821,38 @@ class _ToggleRowPureBackground extends StatelessWidget {
       value: sp.usePureBackground,
       onChanged: (v) =>
           context.read<SettingsProvider>().setUsePureBackground(v),
+    );
+  }
+}
+
+class _ToggleRowLayeredSurfaces extends StatelessWidget {
+  const _ToggleRowLayeredSurfaces();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.themeAdvancedSettingsPageUseLayeredSurfacesTitle,
+      tip: l10n.themeAdvancedSettingsPageUseLayeredSurfacesSubtitle,
+      value: sp.useLayeredSurfaces,
+      onChanged: (v) =>
+          context.read<SettingsProvider>().setUseLayeredSurfaces(v),
+    );
+  }
+}
+
+class _ToggleRowLayeredSheetTiles extends StatelessWidget {
+  const _ToggleRowLayeredSheetTiles();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.themeAdvancedSettingsPageUseLayeredSheetTilesTitle,
+      tip: l10n.themeAdvancedSettingsPageUseLayeredSheetTilesSubtitle,
+      value: sp.useLayeredSheetTiles,
+      onChanged: (v) =>
+          context.read<SettingsProvider>().setUseLayeredSheetTiles(v),
     );
   }
 }
@@ -1907,7 +1946,6 @@ Future<String?> _showDesktopFontChooserDialog(
   bool showSystemDefault = false,
   bool showMonospaceDefault = false,
 }) async {
-  final cs = Theme.of(context).colorScheme;
   final l10n = AppLocalizations.of(context)!;
   final rootNavigator = Navigator.of(context, rootNavigator: true);
   final ctrl = TextEditingController();
@@ -2003,7 +2041,7 @@ Future<String?> _showDesktopFontChooserDialog(
     barrierDismissible: true,
     builder: (ctx) {
       return Dialog(
-        backgroundColor: cs.surface,
+        backgroundColor: context.overlaySurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: ConstrainedBox(
@@ -2451,6 +2489,37 @@ class _ToggleRowAutoCollapseCodeBlocks extends StatelessWidget {
   }
 }
 
+class _ToggleRowShowThinkingCards extends StatelessWidget {
+  const _ToggleRowShowThinkingCards();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.displaySettingsPageShowThinkingCardsTitle,
+      tip: l10n.displaySettingsPageShowThinkingCardsSubtitle,
+      value: sp.showThinkingCards,
+      onChanged: (v) =>
+          context.read<SettingsProvider>().setShowThinkingCards(v),
+    );
+  }
+}
+
+class _ToggleRowShowToolCards extends StatelessWidget {
+  const _ToggleRowShowToolCards();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.displaySettingsPageShowToolCardsTitle,
+      tip: l10n.displaySettingsPageShowToolCardsSubtitle,
+      value: sp.showToolCards,
+      onChanged: (v) => context.read<SettingsProvider>().setShowToolCards(v),
+    );
+  }
+}
+
 class _ToggleRowAutoCollapseThinking extends StatelessWidget {
   const _ToggleRowAutoCollapseThinking();
   @override
@@ -2492,6 +2561,21 @@ class _ToggleRowShowToolResultSummary extends StatelessWidget {
       value: sp.showToolResultSummary,
       onChanged: (v) =>
           context.read<SettingsProvider>().setShowToolResultSummary(v),
+    );
+  }
+}
+
+class _ToggleRowHideToolResultImages extends StatelessWidget {
+  const _ToggleRowHideToolResultImages();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.displaySettingsPageHideToolResultImagesTitle,
+      value: sp.hideToolResultImages,
+      onChanged: (v) =>
+          context.read<SettingsProvider>().setHideToolResultImages(v),
     );
   }
 }
@@ -3033,8 +3117,10 @@ class _ToggleRow extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onChanged,
+    this.tip,
   });
   final String label;
+  final String? tip;
   final bool value;
   final ValueChanged<bool>? onChanged;
   @override
@@ -3061,6 +3147,7 @@ class _ToggleRow extends StatelessWidget {
               ],
             ),
           ),
+          if (tip != null) MemoryTipIcon(message: tip!),
           const SizedBox(width: 12),
           IosSwitch(value: value, onChanged: onChanged),
         ],
@@ -3471,13 +3558,7 @@ class _SendShortcutDropdownState extends State<_SendShortcutDropdown> {
 
     _entry = OverlayEntry(
       builder: (ctx) {
-        final usePure = Provider.of<SettingsProvider>(
-          ctx,
-          listen: false,
-        ).usePureBackground;
-        final bgColor = usePure
-            ? Theme.of(ctx).colorScheme.surface
-            : (Theme.of(context).colorScheme.surfaceContainerHigh);
+        final bgColor = ctx.appColors.surfaceCard;
         final sp = Provider.of<SettingsProvider>(ctx, listen: false);
 
         return Stack(

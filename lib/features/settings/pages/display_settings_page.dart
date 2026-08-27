@@ -15,11 +15,13 @@ import 'theme_settings_page.dart';
 import '../../../theme/palettes.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/widgets/ios_switch.dart';
+import '../widgets/memory_ui.dart';
 import '../../../core/services/haptics.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/language_select_sheet.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
+import 'package:Kelivo/shared/widgets/section_card.dart';
 
 enum _FontTarget { app, code }
 
@@ -62,7 +64,7 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
           // header(l10n.displaySettingsPageThemeSettingsTitle),
-          _iosSectionCard(
+          SectionCard(
             children: [
               _iosNavRow(
                 context,
@@ -398,11 +400,10 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
     BuildContext context, {
     required _FontTarget target,
   }) async {
-    final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final choice = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -457,11 +458,10 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   }
 
   Future<void> _showAndroidBackgroundChatSheet(BuildContext context) async {
-    final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final choice = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -535,11 +535,10 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   }
 
   Future<void> _showLanguageSheet(BuildContext context) async {
-    final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     final selected = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -602,11 +601,10 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   }
 
   Future<void> _showChatFontSizeSheet(BuildContext context) async {
-    final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     await showModalBottomSheet(
       context: context,
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -739,11 +737,10 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   }
 
   Future<void> _showAutoScrollIdleSheet(BuildContext context) async {
-    final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context)!;
     await showModalBottomSheet(
       context: context,
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -894,10 +891,9 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   }
 
   Future<void> _showChatBackgroundMaskSheet(BuildContext context) async {
-    final cs = Theme.of(context).colorScheme;
     await showModalBottomSheet(
       context: context,
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1017,10 +1013,9 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
   Future<void> _showChatInputBackgroundOpacitySheet(
     BuildContext context,
   ) async {
-    final cs = Theme.of(context).colorScheme;
     await showModalBottomSheet(
       context: context,
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1175,32 +1170,6 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
 }
 
 // --- iOS-style helpers ---
-
-Widget _iosSectionCard({required List<Widget> children}) {
-  return Builder(
-    builder: (context) {
-      final theme = Theme.of(context);
-      final cs = theme.colorScheme;
-      final isDark = theme.brightness == Brightness.dark;
-      final Color bg = context.appColors.surfaceCard;
-      return Container(
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: isDark ? 0.08 : 0.06),
-            width: 0.6,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(children: children),
-        ),
-      );
-    },
-  );
-}
 
 Widget _iosDivider(BuildContext context) {
   final cs = Theme.of(context).colorScheme;
@@ -1466,58 +1435,72 @@ Widget _iosSwitchRow(
   IconData? icon,
   required String label,
   String? subtitle,
+  String? tip,
   required bool value,
   required ValueChanged<bool> onChanged,
 }) {
   final cs = Theme.of(context).colorScheme;
-  return _TactileRow(
-    onTap: () => onChanged(!value),
-    builder: (pressed) {
-      final baseColor = cs.onSurface.withValues(alpha: 0.9);
-      return _AnimatedPressColor(
-        pressed: pressed,
-        base: baseColor,
-        builder: (c) {
-          return Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: subtitle == null ? 2 : 8,
-            ),
-            child: Row(
-              children: [
-                if (icon != null) ...[
-                  SizedBox(width: 36, child: Icon(icon, size: 20, color: c)),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+  return Padding(
+    padding: EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: subtitle == null ? 2 : 8,
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: _TactileRow(
+            onTap: () => onChanged(!value),
+            builder: (pressed) {
+              final baseColor = cs.onSurface.withValues(alpha: 0.9);
+              return _AnimatedPressColor(
+                pressed: pressed,
+                base: baseColor,
+                builder: (c) {
+                  return Row(
                     children: [
-                      Text(label, style: TextStyle(fontSize: 15, color: c)),
-                      if (subtitle != null && subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          subtitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.2,
-                            color: cs.onSurface.withValues(alpha: 0.56),
-                          ),
+                      if (icon != null) ...[
+                        SizedBox(
+                          width: 36,
+                          child: Icon(icon, size: 20, color: c),
                         ),
+                        const SizedBox(width: 12),
                       ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              label,
+                              style: TextStyle(fontSize: 15, color: c),
+                            ),
+                            if (subtitle != null && subtitle.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                subtitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.2,
+                                  color: cs.onSurface.withValues(alpha: 0.56),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                IosSwitch(value: value, onChanged: onChanged),
-              ],
-            ),
-          );
-        },
-      );
-    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        if (tip != null) MemoryTipIcon(message: tip),
+        const SizedBox(width: 12),
+        IosSwitch(value: value, onChanged: onChanged),
+      ],
+    ),
   );
 }
 
@@ -1580,11 +1563,10 @@ Widget _sheetDividerNoIcon(BuildContext context) {
 }
 
 Future<void> _showMobileMessageNavModeSheet(BuildContext context) async {
-  final cs = Theme.of(context).colorScheme;
   final l10n = AppLocalizations.of(context)!;
   final choice = await showModalBottomSheet<MobileMessageNavButtonsMode>(
     context: context,
-    backgroundColor: cs.surface,
+    backgroundColor: context.overlaySurface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -1649,7 +1631,7 @@ class ChatItemDisplaySettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
-          _iosSectionCard(
+          SectionCard(
             children: [
               _iosSwitchRow(
                 context,
@@ -1743,6 +1725,26 @@ class ChatItemDisplaySettingsPage extends StatelessWidget {
                 onChanged: (v) =>
                     context.read<SettingsProvider>().setShowTokenStats(v),
               ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
+                icon: Lucide.Sparkles,
+                label: l10n.displaySettingsPageShowThinkingCardsTitle,
+                tip: l10n.displaySettingsPageShowThinkingCardsSubtitle,
+                value: sp.showThinkingCards,
+                onChanged: (v) =>
+                    context.read<SettingsProvider>().setShowThinkingCards(v),
+              ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
+                icon: Lucide.Wrench,
+                label: l10n.displaySettingsPageShowToolCardsTitle,
+                tip: l10n.displaySettingsPageShowToolCardsSubtitle,
+                value: sp.showToolCards,
+                onChanged: (v) =>
+                    context.read<SettingsProvider>().setShowToolCards(v),
+              ),
             ],
           ),
         ],
@@ -1774,7 +1776,7 @@ class RenderingSettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
-          _iosSectionCard(
+          SectionCard(
             children: [
               _iosSwitchRow(
                 context,
@@ -2003,7 +2005,7 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
-          _iosSectionCard(
+          SectionCard(
             children: [
               _iosSwitchRow(
                 context,
@@ -2094,6 +2096,15 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
               _iosDivider(context),
               _iosSwitchRow(
                 context,
+                icon: Lucide.ImageOff,
+                label: l10n.displaySettingsPageHideToolResultImagesTitle,
+                value: sp.hideToolResultImages,
+                onChanged: (v) =>
+                    context.read<SettingsProvider>().setHideToolResultImages(v),
+              ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
                 icon: Lucide.TextSelect,
                 label: l10n.displaySettingsPageInsertSuggestionOnlyTitle,
                 value: sp.insertSuggestionOnTapOnly,
@@ -2141,6 +2152,21 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
                 onChanged: (v) =>
                     context.read<SettingsProvider>().setShowAppUpdates(v),
               ),
+              if (Platform.isAndroid || Platform.isIOS) ...[
+                _iosDivider(context),
+                _iosSwitchRow(
+                  context,
+                  icon: Lucide.Sun,
+                  label:
+                      l10n.displaySettingsPageKeepScreenOnDuringGenerationTitle,
+                  tip: l10n
+                      .displaySettingsPageKeepScreenOnDuringGenerationSubtitle,
+                  value: sp.keepScreenOnDuringGeneration,
+                  onChanged: (v) => context
+                      .read<SettingsProvider>()
+                      .setKeepScreenOnDuringGeneration(v),
+                ),
+              ],
               _iosDivider(context),
               _iosNavRow(
                 context,
@@ -2467,7 +2493,7 @@ class _IosBackgroundSettingsPageState extends State<IosBackgroundSettingsPage> {
             body: l10n.iosBackgroundLimitNoticeBody,
           ),
           const SizedBox(height: 12),
-          _iosSectionCard(
+          SectionCard(
             children: [
               _iosSwitchRow(
                 context,
@@ -2517,7 +2543,7 @@ class _IosBackgroundSettingsPageState extends State<IosBackgroundSettingsPage> {
             future: _statusFuture,
             builder: (context, snapshot) {
               final status = snapshot.data;
-              return _iosSectionCard(
+              return SectionCard(
                 children: [
                   _iosNavRow(
                     context,
@@ -2576,7 +2602,7 @@ class HapticsSettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
-          _iosSectionCard(
+          SectionCard(
             children: [
               _iosSwitchRow(
                 context,

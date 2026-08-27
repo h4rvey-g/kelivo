@@ -16,6 +16,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/services/chat/chat_service.dart';
 import '../../../core/services/chat/document_text_extractor.dart';
+import '../../../utils/mcp_structured_image.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../../../core/services/chat/prompt_transformer.dart';
 import '../../../core/services/logging/context_log_models.dart';
@@ -238,7 +239,7 @@ class MessageBuilderService {
                 'role': 'tool',
                 'name': name,
                 'tool_call_id': id,
-                'content': c.toString(),
+                'content': toolResultContentForModel(c?.toString()),
                 if (e['metadata'] is Map)
                   'metadata': (e['metadata'] as Map).cast<String, dynamic>(),
               });
@@ -573,6 +574,64 @@ class MessageBuilderService {
 
   String _effectiveAttachmentMime(DocumentAttachment attachment) {
     return resolveDocumentAttachmentMime(attachment);
+  }
+
+  /// True when [apiMessages] still carries attachments that
+  /// [processUserMessagesForApi] may have to extract or OCR.
+  ///
+  /// Deliberately a superset: a frozen prompt can still turn the work into a
+  /// no-op. A false result, however, guarantees there is no file work at all —
+  /// the remaining cost (frozen prompt reads, memory injection, templating) is
+  /// not file parsing and must never raise the parsing indicator.
+  bool hasPendingAttachmentWork(
+    List<Map<String, dynamic>> apiMessages,
+    SettingsProvider settings, {
+    Conversation? conversation,
+    List<ChatMessage>? sourceMessages,
+  }) {
+    final bool ocrActive =
+        settings.ocrEnabled &&
+        settings.ocrModelProvider != null &&
+        settings.ocrModelId != null &&
+        ocrHandler != null;
+
+    for (final message in apiMessages) {
+      if (message['role'] != 'user') continue;
+      // WorldBook lore also uses role=user; only persisted input carries a
+      // revision id and can hold attachments.
+      final revisionId = (message[internalRevisionIdKey] ?? '')
+          .toString()
+          .trim();
+      if (revisionId.isEmpty) continue;
+      final chatMessage = _resolveChatMessage(
+        revisionId: revisionId,
+        conversation: conversation,
+        sourceMessages: sourceMessages,
+      );
+      final parsed = chatMessage != null
+          ? parseInputFromMessage(chatMessage)
+          : parseInputFromApiMap(message);
+
+      final mediaPaths = <String>{};
+      for (final document in parsed.documents) {
+        final mime = _effectiveAttachmentMime(document);
+        if (isVideoMime(mime) || isAudioMime(mime)) {
+          final path = document.path.trim();
+          if (path.isNotEmpty) mediaPaths.add(path);
+          continue;
+        }
+        // A document that still needs text extraction.
+        return true;
+      }
+      if (!ocrActive) continue;
+      for (final rawPath in parsed.imagePaths) {
+        final path = rawPath.trim();
+        if (path.isEmpty || mediaPaths.contains(path)) continue;
+        // An image OCR still has to read.
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Process user messages in apiMessages: prefer frozen `promptContent`, else

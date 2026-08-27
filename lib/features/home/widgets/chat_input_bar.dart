@@ -268,6 +268,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   bool _isTranslatingInput = false;
   late TextEditingValue _lastTextEditingValue;
   late final String _inputTranslationRequestId;
+  int _submitSerial = 0;
   String? _imageModeModelKey;
   String? _lastImageModeModelKey;
   String? _dismissedImageModeModelKey;
@@ -762,6 +763,17 @@ class _ChatInputBarState extends State<ChatInputBar>
       _transientTextPasteTargetFocused = null;
       scheduleMicrotask(_syncTransientTextPasteTarget);
     }
+    final previousConversationId = oldWidget.conversationId;
+    final nextConversationId = widget.conversationId;
+    if (previousConversationId != null &&
+        nextConversationId != null &&
+        previousConversationId != nextConversationId) {
+      // The composer is reused across conversations (stable GlobalKey). A
+      // submit that is still awaiting onSend must not lock the next chat.
+      _submitSerial++;
+      _isSubmitting = false;
+      _draftReplacementRevision++;
+    }
     if (!identical(oldWidget.asrProvider, widget.asrProvider)) {
       _stopVoiceLevelSampling();
       oldWidget.asrProvider?.removeListener(_handleAsrChanged);
@@ -1140,8 +1152,18 @@ class _ChatInputBarState extends State<ChatInputBar>
     final submittedImageIds = submittedImages.map((image) => image.id).toSet();
     final submittedDocuments = List<DocumentAttachment>.of(_docs);
     final submittedDraftRevision = _draftReplacementRevision;
+    final submitSerial = ++_submitSerial;
     _isSubmitting = true;
-    setState(_controller.clear);
+    // Attachments leave the composer with the text, not when the send future
+    // completes: that future now resolves at send time, but the draft must not
+    // depend on it at all. A rejected send puts everything back below.
+    setState(() {
+      _controller.clear();
+      _images.removeWhere((image) => submittedImageIds.contains(image.id));
+      for (final document in submittedDocuments) {
+        _docs.remove(document);
+      }
+    });
     try {
       final result =
           await widget.onSend?.call(
@@ -1153,15 +1175,11 @@ class _ChatInputBarState extends State<ChatInputBar>
             ),
           ) ??
           ChatInputSubmissionResult.rejected;
-      if (!mounted) return;
+      if (!mounted || submitSerial != _submitSerial) return;
       if (result == ChatInputSubmissionResult.sent ||
           result == ChatInputSubmissionResult.queued) {
         if (_draftReplacementRevision != submittedDraftRevision) return;
         _discardImageState(submittedImageIds);
-        _images.removeWhere((image) => submittedImageIds.contains(image.id));
-        for (final document in submittedDocuments) {
-          _docs.remove(document);
-        }
         setState(() {});
         // Keep focus on desktop so user can continue typing
         try {
@@ -1170,16 +1188,51 @@ class _ChatInputBarState extends State<ChatInputBar>
           }
         } catch (_) {}
       } else if (_draftReplacementRevision == submittedDraftRevision) {
-        setState(() => _restoreSubmittedText(submittedValue));
+        setState(
+          () => _restoreSubmittedDraft(
+            submittedValue,
+            submittedImages,
+            submittedDocuments,
+          ),
+        );
       }
     } catch (_) {
-      if (mounted && _draftReplacementRevision == submittedDraftRevision) {
-        setState(() => _restoreSubmittedText(submittedValue));
+      if (mounted &&
+          submitSerial == _submitSerial &&
+          _draftReplacementRevision == submittedDraftRevision) {
+        setState(
+          () => _restoreSubmittedDraft(
+            submittedValue,
+            submittedImages,
+            submittedDocuments,
+          ),
+        );
       }
       rethrow;
     } finally {
-      _isSubmitting = false;
+      if (submitSerial == _submitSerial) {
+        _isSubmitting = false;
+      }
     }
+  }
+
+  /// Puts a rejected submission back into the composer: text first, then the
+  /// attachments ahead of anything added while the send was in flight.
+  void _restoreSubmittedDraft(
+    TextEditingValue submittedValue,
+    List<_DraftImage> submittedImages,
+    List<DocumentAttachment> submittedDocuments,
+  ) {
+    _restoreSubmittedText(submittedValue);
+    final existingImageIds = _images.map((image) => image.id).toSet();
+    _images.insertAll(
+      0,
+      submittedImages.where((image) => !existingImageIds.contains(image.id)),
+    );
+    _docs.insertAll(
+      0,
+      submittedDocuments.where((document) => !_docs.contains(document)),
+    );
   }
 
   void _restoreSubmittedText(TextEditingValue submittedValue) {

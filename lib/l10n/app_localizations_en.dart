@@ -136,6 +136,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storageSpaceCategoryFiles => 'Files';
 
   @override
+  String get storageSpaceCategoryFonts => 'Fonts';
+
+  @override
+  String get storageSpaceCategoryLocalModels => 'Local Models';
+
+  @override
+  String get storageSpaceOtherHint =>
+      'Fonts, downloaded local models, and other app files.';
+
+  @override
+  String get storageSpaceSubOtherApp => 'App files';
+
+  @override
   String get storageSpaceCategoryChatData => 'Chat Records';
 
   @override
@@ -169,7 +182,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storageSpaceCategoryLogs => 'Logs';
 
   @override
-  String get storageSpaceCategoryOther => 'App';
+  String get storageSpaceCategoryOther => 'Other';
 
   @override
   String storageSpaceFilesCount(int count) {
@@ -1825,6 +1838,70 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backupPageExporting => 'Exporting...';
 
   @override
+  String get backupProgressCancel => 'Cancel';
+
+  @override
+  String get backupProgressCancelled => 'Cancelled';
+
+  @override
+  String get backupProgressPreparing => 'Preparing';
+
+  @override
+  String get backupProgressSnapshotting => 'Creating database snapshot';
+
+  @override
+  String get backupProgressPacking => 'Packing';
+
+  @override
+  String get backupProgressVerifying => 'Verifying';
+
+  @override
+  String get backupProgressUploading => 'Uploading';
+
+  @override
+  String get backupProgressDownloading => 'Downloading';
+
+  @override
+  String get backupProgressExtracting => 'Extracting';
+
+  @override
+  String get backupProgressValidating => 'Validating';
+
+  @override
+  String get backupProgressReadingSettings => 'Reading settings';
+
+  @override
+  String get backupProgressStaging => 'Staging';
+
+  @override
+  String get backupProgressCommitting => 'Committing';
+
+  @override
+  String get backupProgressImportingSessions => 'Importing sessions';
+
+  @override
+  String get backupProgressImportingMessages => 'Importing messages';
+
+  @override
+  String get backupProgressMaterializingFiles => 'Writing files';
+
+  @override
+  String get backupProgressListingRemote => 'Listing remote backups';
+
+  @override
+  String get backupProgressFinalizing => 'Finishing';
+
+  @override
+  String backupProgressBytes(String done, String total) {
+    return '$done / $total';
+  }
+
+  @override
+  String backupProgressItems(String done, String total) {
+    return '$done / $total';
+  }
+
+  @override
   String get backupPageExportToFile => 'Export to File';
 
   @override
@@ -3148,7 +3225,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get defaultModelPageTitleModelSubtitle =>
-      'Used for summarizing conversation titles; prefer fast & cheap models';
+      'Used for summarizing conversation titles; prefer fast & cheap models. Disabled until a model is selected.';
 
   @override
   String get titleModelThinkingTitle => 'Enable Thinking';
@@ -4415,6 +4492,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutPageQQGroupTwo => 'Kelivo Group 2';
 
   @override
+  String get aboutPageQQGroupThree => 'Kelivo Group 3';
+
+  @override
   String get aboutPageJoinDiscord => 'Join us on Discord';
 
   @override
@@ -4485,6 +4565,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'Show token usage and message count';
 
   @override
+  String get displaySettingsPageShowThinkingCardsTitle => 'Show Thinking Cards';
+
+  @override
+  String get displaySettingsPageShowThinkingCardsSubtitle =>
+      'When off, thinking-process cards are hidden in chat.';
+
+  @override
+  String get displaySettingsPageShowToolCardsTitle => 'Show Tool Cards';
+
+  @override
+  String get displaySettingsPageShowToolCardsSubtitle =>
+      'When off, tool-use cards are hidden in chat.';
+
+  @override
   String get displaySettingsPageAutoCollapseThinkingTitle =>
       'Auto-collapse Thinking';
 
@@ -4511,6 +4605,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get displaySettingsPageShowToolResultSummarySubtitle =>
       'Display the summary text below tool steps';
+
+  @override
+  String get displaySettingsPageHideToolResultImagesTitle =>
+      'Hide images in tool results';
 
   @override
   String get displaySettingsPageRegenerateDeleteTrailingMessagesTitle =>
@@ -4565,6 +4663,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get displaySettingsPageShowUpdatesSubtitle =>
       'Show app update notifications';
+
+  @override
+  String get displaySettingsPageKeepScreenOnDuringGenerationTitle =>
+      'Keep Screen On While Generating';
+
+  @override
+  String get displaySettingsPageKeepScreenOnDuringGenerationSubtitle =>
+      'Prevents the lock screen from interrupting generation. Increases battery use.';
 
   @override
   String get displaySettingsPageMessageNavButtonsTitle =>
@@ -4774,6 +4880,25 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get themeSettingsPageUsePureBackgroundSubtitle =>
       'Bubbles and accents follow theme.';
+
+  @override
+  String get themeAdvancedSettingsPageTitle => 'Theme Advanced';
+
+  @override
+  String get themeAdvancedSettingsPageUseLayeredSurfacesTitle =>
+      'Layered surfaces (experimental)';
+
+  @override
+  String get themeAdvancedSettingsPageUseLayeredSurfacesSubtitle =>
+      'Darker page, brighter cards; both keep theme hue. Turn off to restore the previous look.';
+
+  @override
+  String get themeAdvancedSettingsPageUseLayeredSheetTilesTitle =>
+      'Layered sheet tiles';
+
+  @override
+  String get themeAdvancedSettingsPageUseLayeredSheetTilesSubtitle =>
+      'By default, tiles match the sheet background.';
 
   @override
   String get themeSettingsPageColorPalettesSection => 'Color Palettes';
@@ -7575,6 +7700,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get migrationSaveBackupButton => 'Save Backup ZIP';
 
   @override
+  String get migrationStartWithoutBackupButton => 'Migrate Without Backing Up';
+
+  @override
+  String get migrationSkipChatsJsonOption => 'Skip chats.json';
+
+  @override
+  String get migrationSkipChatsJsonDescription =>
+      'Still backs up the original Hive files, settings, and local files. Recommended for very large histories.';
+
+  @override
+  String get migrationSkipBackupOption => 'Skip this backup';
+
+  @override
+  String get migrationSkipBackupDescription =>
+      'Only select this if you already have a verified backup. Migration will start immediately.';
+
+  @override
   String get migrationBackingUpTitle => 'Backing Up';
 
   @override
@@ -7671,7 +7813,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get migrationFailedSubtitle =>
-      'The original Hive data and your backup are still intact. Review the reason below, then retry.';
+      'The original Hive data is still intact. Any backup that finished earlier is unchanged. Review the reason below, then retry.';
 
   @override
   String get migrationUnknownError => 'Unknown migration error.';
@@ -8029,6 +8171,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Follows the theme; not customizable';
 
   @override
+  String get messageStyleSettingsPageAssistantFitContent =>
+      'Fit assistant bubble to content';
+
+  @override
+  String get messageStyleSettingsPageAssistantFitContentSubtitle =>
+      'Assistant bubbles hug their text instead of filling the row';
+
+  @override
   String get messageStyleSettingsPageStyleFrostedSubtitle =>
       'Translucent frosted glass';
 
@@ -8072,4 +8222,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get messageStyleSettingsPagePreviewThinking => 'Thinking';
+
+  @override
+  String get messageStyleSettingsPageRoleUser => 'User';
+
+  @override
+  String get messageStyleSettingsPageRoleAssistant => 'Assistant';
+
+  @override
+  String get messageStyleSettingsPageRoleAssistantHint =>
+      'Assistant settings also apply to thinking, tool-call, and translation cards.';
 }

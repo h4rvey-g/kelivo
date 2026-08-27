@@ -3250,6 +3250,7 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
   int _visibleRows = _initialRows + 1;
   bool _showHorizontalEndHint = false;
   bool _isDesktopTableHovered = false;
+  bool _capturingTableImage = false;
 
   _MarkdownTableData get rows => widget.rows;
   TextStyle get style => widget.style;
@@ -3276,14 +3277,22 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
     final borderColor = cs.outlineVariant.withValues(
       alpha: isDark ? 0.22 : 0.30,
     );
-    final headerBg = Color.alphaBlend(
+    final headerFill = Color.alphaBlend(
       cs.primary.withValues(alpha: isDark ? 0.15 : 0.07),
       cs.surface,
-    ).withValues(alpha: kBlockFillAlphaTable);
-    final bodyBg = Color.alphaBlend(
+    );
+    final bodyFill = Color.alphaBlend(
       cs.primary.withValues(alpha: isDark ? 0.04 : 0.015),
       cs.surface,
-    ).withValues(alpha: kBlockFillAlphaTable);
+    );
+    // Wallpaper tints stay translucent on screen. Capture must be opaque:
+    // Android ImageGallerySaverPlus encodes JPEG, which turns holes black.
+    final headerBg = _capturingTableImage
+        ? headerFill
+        : headerFill.withValues(alpha: kBlockFillAlphaTable);
+    final bodyBg = _capturingTableImage
+        ? bodyFill
+        : bodyFill.withValues(alpha: kBlockFillAlphaTable);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3321,7 +3330,11 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
           table: table,
           // Compact tables already paint the card fill on the outer
           // container; a second body fill would stack and hide wallpaper.
-          bodyBg: useCompactTable ? Colors.transparent : bodyBg,
+          // During image capture the boundary is only this surface, so
+          // keep an opaque body fill or JPEG export turns holes black.
+          bodyBg: useCompactTable && !_capturingTableImage
+              ? Colors.transparent
+              : bodyBg,
           borderColor: borderColor,
           compact: useCompactTable,
         );
@@ -3910,14 +3923,19 @@ class _MarkdownTableBlockState extends State<_MarkdownTableBlock> {
   }
 
   Future<Uint8List?> _captureTablePngBytes() async {
+    setState(() => _capturingTableImage = true);
     await WidgetsBinding.instance.endOfFrame;
-    final boundary =
-        _tableBoundaryKey.currentContext?.findRenderObject()
-            as RenderRepaintBoundary?;
-    if (boundary == null) return null;
-    final image = await boundary.toImage(pixelRatio: 3.0);
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    return data?.buffer.asUint8List();
+    try {
+      final boundary =
+          _tableBoundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      return data?.buffer.asUint8List();
+    } finally {
+      if (mounted) setState(() => _capturingTableImage = false);
+    }
   }
 
   Future<File> _writeTableImageTempFile(Uint8List bytes) async {

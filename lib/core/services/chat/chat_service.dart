@@ -13,6 +13,9 @@ import '../../database/business_data.dart';
 import '../../database/business_repository.dart';
 import '../../database/chat_database_gateway.dart';
 import '../../database/chat_database_repository.dart';
+import '../backup/backup_cancel_token.dart';
+import '../backup/backup_isolate_runner.dart';
+import '../backup/backup_task_progress.dart';
 import '../../database/generation_run.dart';
 import '../../models/chat_message.dart';
 import '../../models/message_part.dart';
@@ -2444,17 +2447,41 @@ class ChatService extends ChangeNotifier {
   }
 
   Future<ChatDatabaseSnapshotInfo> createBackupDatabaseSnapshot(
-    File destinationFile,
-  ) async {
+    File destinationFile, {
+    BackupProgressSink? onProgress,
+    BackupCancelToken? cancelToken,
+    Duration timeout = const Duration(minutes: 10),
+  }) async {
     if (!_initialized) await init();
     final sourcePath = _databaseFile.path;
     final destinationPath = destinationFile.path;
-    return Isolate.run(
-      () => ChatDatabaseRepository.createConsistentSnapshot(
-        sourceFile: File(sourcePath),
-        destinationFile: File(destinationPath),
-      ),
-    );
+    try {
+      return await runBackupIsolate<ChatDatabaseSnapshotInfo, List<String>>(
+        body: _createBackupSnapshotIsolate,
+        payload: [sourcePath, destinationPath],
+        cancelToken: cancelToken,
+        onProgress: onProgress,
+        timeout: timeout,
+      );
+    } catch (error) {
+      Future<void> deleteDestination() async {
+        try {
+          if (await destinationFile.exists()) {
+            await destinationFile.delete();
+          }
+        } catch (_) {}
+      }
+
+      if (!backupIsolateStillAlive(error)) {
+        await deleteDestination();
+      } else {
+        final isolateExit = backupIsolateExitFuture(error);
+        if (isolateExit != null) {
+          unawaited(isolateExit.then((_) => deleteDestination()));
+        }
+      }
+      rethrow;
+    }
   }
 
   Future<BackupMergeReport> mergeDatabaseSnapshot(File snapshotFile) async {
@@ -2770,6 +2797,7 @@ class ChatService extends ChangeNotifier {
     String? groupId,
     int? version,
     bool selectVersion = false,
+    String? temporaryAfterGroupId,
   }) async {
     if (!_initialized) await init();
 
@@ -2813,8 +2841,22 @@ class ChatService extends ChangeNotifier {
       return message;
     }
 
+    int? temporaryInsertIndex;
     if (temporary) {
-      conversation.messageIds.add(message.id);
+      if (temporaryAfterGroupId != null) {
+        final messages = _messagesCache[conversationId]!;
+        final anchorIndex = messages.indexWhere(
+          (candidate) =>
+              (candidate.groupId ?? candidate.id) == temporaryAfterGroupId,
+        );
+        if (anchorIndex < 0) {
+          throw StateError('linear_message_group_missing');
+        }
+        temporaryInsertIndex = anchorIndex + 1;
+        conversation.messageIds.insert(temporaryInsertIndex, message.id);
+      } else {
+        conversation.messageIds.add(message.id);
+      }
       conversation.updatedAt = DateTime.now();
       if (selectVersion) {
         conversation.versionSelections[message.groupId ?? message.id] =
@@ -2822,6 +2864,9 @@ class ChatService extends ChangeNotifier {
       }
       _messagesCache.putIfAbsent(conversationId, () => <ChatMessage>[]);
     } else {
+      if (temporaryAfterGroupId != null) {
+        throw StateError('anchored_message_requires_temporary_conversation');
+      }
       if (_conversationsCache.containsKey(conversationId)) {
         await _loadMessageOrder(conversationId);
       }
@@ -2849,7 +2894,12 @@ class ChatService extends ChangeNotifier {
 
     // Update cache
     if (_messagesCache.containsKey(conversationId)) {
-      _messagesCache[conversationId]!.add(message);
+      final messages = _messagesCache[conversationId]!;
+      if (temporaryInsertIndex == null) {
+        messages.add(message);
+      } else {
+        messages.insert(temporaryInsertIndex, message);
+      }
     }
     _touchMessageCache(conversationId);
 
@@ -2967,12 +3017,10 @@ class ChatService extends ChangeNotifier {
       runId: const Uuid().v4(),
       truncateFuture: truncateFuture,
     );
-    if (truncateFuture) {
-      _messagesCache.remove(conversationId);
-      _messageOrderIds.remove(conversationId);
-      _firstGroupIndicesCache.remove(conversationId);
-      await _loadMessageOrder(conversationId);
-    }
+    _messagesCache.remove(conversationId);
+    _messageOrderIds.remove(conversationId);
+    _firstGroupIndicesCache.remove(conversationId);
+    await _loadMessageOrder(conversationId);
     await _publishGenerationBegin(result);
     return result;
   }
@@ -3552,6 +3600,10 @@ class ChatService extends ChangeNotifier {
           : versions.reduce((a, b) => a > b ? a : b) + 1;
       // Content-only append must keep prior attachments and TextPart slots
       // ([Text, Tool, Text] stays three parts, not a merged first TextPart).
+      // Assistant body-only edits also inherit reasoning metadata so the
+      // collapsed card stays toggleable on the new version.
+      final preserveReasoning =
+          parts == null && temporaryOriginal.role == 'assistant';
       final resolvedParts =
           parts ??
           ChatMessage.partsWithRedistributedText(
@@ -3564,6 +3616,20 @@ class ChatService extends ChangeNotifier {
         conversationId: conversationId,
         modelId: temporaryOriginal.modelId,
         providerId: temporaryOriginal.providerId,
+        totalTokens: null,
+        isStreaming: false,
+        reasoningText: preserveReasoning
+            ? temporaryOriginal.reasoningText
+            : null,
+        reasoningStartAt: preserveReasoning
+            ? temporaryOriginal.reasoningStartAt
+            : null,
+        reasoningFinishedAt: preserveReasoning
+            ? temporaryOriginal.reasoningFinishedAt
+            : null,
+        reasoningSegmentsJson: preserveReasoning
+            ? temporaryOriginal.reasoningSegmentsJson
+            : null,
         groupId: groupId,
         version: nextVersion,
       );
@@ -4062,6 +4128,26 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
     return n;
   }
+}
+
+Future<ChatDatabaseSnapshotInfo> _createBackupSnapshotIsolate(
+  BackupIsolateContext ctx,
+  List<String> paths,
+) {
+  ctx.reportProgress(
+    const BackupProgress(
+      phase: BackupPhase.snapshottingDatabase,
+      processed: 0,
+      cancellable: true,
+    ),
+  );
+  ctx.throwIfCancelled();
+  return ChatDatabaseRepository.createConsistentSnapshot(
+    sourceFile: File(paths[0]),
+    destinationFile: File(paths[1]),
+    registerSourceHandle: ctx.registerSqliteInterruptHandle,
+    waitForSourceCloseAck: ctx.waitForSqliteCloseAck,
+  );
 }
 
 class UploadStats {

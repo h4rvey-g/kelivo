@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../theme/app_font_weights.dart';
 import 'custom_bottom_sheet.dart';
 import 'ios_tactile.dart';
+import 'package:Kelivo/theme/app_semantic_colors.dart';
 
 class _QQGroupEntry {
   const _QQGroupEntry({required this.name, required this.joinUrl});
@@ -25,6 +26,10 @@ List<_QQGroupEntry> _groups(AppLocalizations l10n) => <_QQGroupEntry>[
   _QQGroupEntry(
     name: l10n.aboutPageQQGroupTwo,
     joinUrl: 'https://qm.qq.com/q/7t6VEqSXhm',
+  ),
+  _QQGroupEntry(
+    name: l10n.aboutPageQQGroupThree,
+    joinUrl: 'https://qm.qq.com/q/ebEJBgvDMs',
   ),
 ];
 
@@ -78,8 +83,8 @@ Future<void> showQQGroupJoinSheet({required BuildContext context}) {
     context: context,
     title: l10n.aboutPageJoinQQGroup,
     closeSemanticLabel: l10n.mcpPageClose,
-    partialHeightFactor: 0.42,
-    expandedHeightFactor: 0.42,
+    partialHeightFactor: 0.50,
+    expandedHeightFactor: 0.50,
     builder: (sheetContext, controller) => ListView(
       controller: controller,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -170,7 +175,7 @@ class _QQGroupJoinDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Dialog(
-      backgroundColor: cs.surface,
+      backgroundColor: context.overlaySurface,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(

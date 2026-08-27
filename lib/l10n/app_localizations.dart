@@ -322,6 +322,30 @@ abstract class AppLocalizations {
   /// **'Files'**
   String get storageSpaceCategoryFiles;
 
+  /// No description provided for @storageSpaceCategoryFonts.
+  ///
+  /// In en, this message translates to:
+  /// **'Fonts'**
+  String get storageSpaceCategoryFonts;
+
+  /// No description provided for @storageSpaceCategoryLocalModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Local Models'**
+  String get storageSpaceCategoryLocalModels;
+
+  /// No description provided for @storageSpaceOtherHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Fonts, downloaded local models, and other app files.'**
+  String get storageSpaceOtherHint;
+
+  /// No description provided for @storageSpaceSubOtherApp.
+  ///
+  /// In en, this message translates to:
+  /// **'App files'**
+  String get storageSpaceSubOtherApp;
+
   /// No description provided for @storageSpaceCategoryChatData.
   ///
   /// In en, this message translates to:
@@ -385,7 +409,7 @@ abstract class AppLocalizations {
   /// No description provided for @storageSpaceCategoryOther.
   ///
   /// In en, this message translates to:
-  /// **'App'**
+  /// **'Other'**
   String get storageSpaceCategoryOther;
 
   /// No description provided for @storageSpaceFilesCount.
@@ -3442,6 +3466,126 @@ abstract class AppLocalizations {
   /// **'Exporting...'**
   String get backupPageExporting;
 
+  /// No description provided for @backupProgressCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get backupProgressCancel;
+
+  /// No description provided for @backupProgressCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get backupProgressCancelled;
+
+  /// No description provided for @backupProgressPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing'**
+  String get backupProgressPreparing;
+
+  /// No description provided for @backupProgressSnapshotting.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating database snapshot'**
+  String get backupProgressSnapshotting;
+
+  /// No description provided for @backupProgressPacking.
+  ///
+  /// In en, this message translates to:
+  /// **'Packing'**
+  String get backupProgressPacking;
+
+  /// No description provided for @backupProgressVerifying.
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying'**
+  String get backupProgressVerifying;
+
+  /// No description provided for @backupProgressUploading.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading'**
+  String get backupProgressUploading;
+
+  /// No description provided for @backupProgressDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get backupProgressDownloading;
+
+  /// No description provided for @backupProgressExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'Extracting'**
+  String get backupProgressExtracting;
+
+  /// No description provided for @backupProgressValidating.
+  ///
+  /// In en, this message translates to:
+  /// **'Validating'**
+  String get backupProgressValidating;
+
+  /// No description provided for @backupProgressReadingSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading settings'**
+  String get backupProgressReadingSettings;
+
+  /// No description provided for @backupProgressStaging.
+  ///
+  /// In en, this message translates to:
+  /// **'Staging'**
+  String get backupProgressStaging;
+
+  /// No description provided for @backupProgressCommitting.
+  ///
+  /// In en, this message translates to:
+  /// **'Committing'**
+  String get backupProgressCommitting;
+
+  /// No description provided for @backupProgressImportingSessions.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing sessions'**
+  String get backupProgressImportingSessions;
+
+  /// No description provided for @backupProgressImportingMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing messages'**
+  String get backupProgressImportingMessages;
+
+  /// No description provided for @backupProgressMaterializingFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Writing files'**
+  String get backupProgressMaterializingFiles;
+
+  /// No description provided for @backupProgressListingRemote.
+  ///
+  /// In en, this message translates to:
+  /// **'Listing remote backups'**
+  String get backupProgressListingRemote;
+
+  /// No description provided for @backupProgressFinalizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing'**
+  String get backupProgressFinalizing;
+
+  /// No description provided for @backupProgressBytes.
+  ///
+  /// In en, this message translates to:
+  /// **'{done} / {total}'**
+  String backupProgressBytes(String done, String total);
+
+  /// No description provided for @backupProgressItems.
+  ///
+  /// In en, this message translates to:
+  /// **'{done} / {total}'**
+  String backupProgressItems(String done, String total);
+
   /// No description provided for @backupPageExportToFile.
   ///
   /// In en, this message translates to:
@@ -5851,7 +5995,7 @@ abstract class AppLocalizations {
   /// No description provided for @defaultModelPageTitleModelSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Used for summarizing conversation titles; prefer fast & cheap models'**
+  /// **'Used for summarizing conversation titles; prefer fast & cheap models. Disabled until a model is selected.'**
   String get defaultModelPageTitleModelSubtitle;
 
   /// No description provided for @titleModelThinkingTitle.
@@ -8131,6 +8275,12 @@ abstract class AppLocalizations {
   /// **'Kelivo Group 2'**
   String get aboutPageQQGroupTwo;
 
+  /// No description provided for @aboutPageQQGroupThree.
+  ///
+  /// In en, this message translates to:
+  /// **'Kelivo Group 3'**
+  String get aboutPageQQGroupThree;
+
   /// No description provided for @aboutPageJoinDiscord.
   ///
   /// In en, this message translates to:
@@ -8245,6 +8395,30 @@ abstract class AppLocalizations {
   /// **'Show token usage and message count'**
   String get displaySettingsPageShowTokenStatsSubtitle;
 
+  /// No description provided for @displaySettingsPageShowThinkingCardsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show Thinking Cards'**
+  String get displaySettingsPageShowThinkingCardsTitle;
+
+  /// No description provided for @displaySettingsPageShowThinkingCardsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When off, thinking-process cards are hidden in chat.'**
+  String get displaySettingsPageShowThinkingCardsSubtitle;
+
+  /// No description provided for @displaySettingsPageShowToolCardsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show Tool Cards'**
+  String get displaySettingsPageShowToolCardsTitle;
+
+  /// No description provided for @displaySettingsPageShowToolCardsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When off, tool-use cards are hidden in chat.'**
+  String get displaySettingsPageShowToolCardsSubtitle;
+
   /// No description provided for @displaySettingsPageAutoCollapseThinkingTitle.
   ///
   /// In en, this message translates to:
@@ -8286,6 +8460,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Display the summary text below tool steps'**
   String get displaySettingsPageShowToolResultSummarySubtitle;
+
+  /// No description provided for @displaySettingsPageHideToolResultImagesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide images in tool results'**
+  String get displaySettingsPageHideToolResultImagesTitle;
 
   /// No description provided for @displaySettingsPageRegenerateDeleteTrailingMessagesTitle.
   ///
@@ -8370,6 +8550,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show app update notifications'**
   String get displaySettingsPageShowUpdatesSubtitle;
+
+  /// No description provided for @displaySettingsPageKeepScreenOnDuringGenerationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Screen On While Generating'**
+  String get displaySettingsPageKeepScreenOnDuringGenerationTitle;
+
+  /// No description provided for @displaySettingsPageKeepScreenOnDuringGenerationSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Prevents the lock screen from interrupting generation. Increases battery use.'**
+  String get displaySettingsPageKeepScreenOnDuringGenerationSubtitle;
 
   /// No description provided for @displaySettingsPageMessageNavButtonsTitle.
   ///
@@ -8742,6 +8934,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Bubbles and accents follow theme.'**
   String get themeSettingsPageUsePureBackgroundSubtitle;
+
+  /// No description provided for @themeAdvancedSettingsPageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme Advanced'**
+  String get themeAdvancedSettingsPageTitle;
+
+  /// No description provided for @themeAdvancedSettingsPageUseLayeredSurfacesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Layered surfaces (experimental)'**
+  String get themeAdvancedSettingsPageUseLayeredSurfacesTitle;
+
+  /// No description provided for @themeAdvancedSettingsPageUseLayeredSurfacesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Darker page, brighter cards; both keep theme hue. Turn off to restore the previous look.'**
+  String get themeAdvancedSettingsPageUseLayeredSurfacesSubtitle;
+
+  /// No description provided for @themeAdvancedSettingsPageUseLayeredSheetTilesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Layered sheet tiles'**
+  String get themeAdvancedSettingsPageUseLayeredSheetTilesTitle;
+
+  /// No description provided for @themeAdvancedSettingsPageUseLayeredSheetTilesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'By default, tiles match the sheet background.'**
+  String get themeAdvancedSettingsPageUseLayeredSheetTilesSubtitle;
 
   /// No description provided for @themeSettingsPageColorPalettesSection.
   ///
@@ -13729,6 +13951,36 @@ abstract class AppLocalizations {
   /// **'Save Backup ZIP'**
   String get migrationSaveBackupButton;
 
+  /// No description provided for @migrationStartWithoutBackupButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Migrate Without Backing Up'**
+  String get migrationStartWithoutBackupButton;
+
+  /// No description provided for @migrationSkipChatsJsonOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip chats.json'**
+  String get migrationSkipChatsJsonOption;
+
+  /// No description provided for @migrationSkipChatsJsonDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Still backs up the original Hive files, settings, and local files. Recommended for very large histories.'**
+  String get migrationSkipChatsJsonDescription;
+
+  /// No description provided for @migrationSkipBackupOption.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip this backup'**
+  String get migrationSkipBackupOption;
+
+  /// No description provided for @migrationSkipBackupDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Only select this if you already have a verified backup. Migration will start immediately.'**
+  String get migrationSkipBackupDescription;
+
   /// No description provided for @migrationBackingUpTitle.
   ///
   /// In en, this message translates to:
@@ -13906,7 +14158,7 @@ abstract class AppLocalizations {
   /// No description provided for @migrationFailedSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'The original Hive data and your backup are still intact. Review the reason below, then retry.'**
+  /// **'The original Hive data is still intact. Any backup that finished earlier is unchanged. Review the reason below, then retry.'**
   String get migrationFailedSubtitle;
 
   /// No description provided for @migrationUnknownError.
@@ -14563,6 +14815,18 @@ abstract class AppLocalizations {
   /// **'Follows the theme; not customizable'**
   String get messageStyleSettingsPageStyleDefaultSubtitle;
 
+  /// No description provided for @messageStyleSettingsPageAssistantFitContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Fit assistant bubble to content'**
+  String get messageStyleSettingsPageAssistantFitContent;
+
+  /// No description provided for @messageStyleSettingsPageAssistantFitContentSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant bubbles hug their text instead of filling the row'**
+  String get messageStyleSettingsPageAssistantFitContentSubtitle;
+
   /// No description provided for @messageStyleSettingsPageStyleFrostedSubtitle.
   ///
   /// In en, this message translates to:
@@ -14646,6 +14910,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Thinking'**
   String get messageStyleSettingsPagePreviewThinking;
+
+  /// No description provided for @messageStyleSettingsPageRoleUser.
+  ///
+  /// In en, this message translates to:
+  /// **'User'**
+  String get messageStyleSettingsPageRoleUser;
+
+  /// No description provided for @messageStyleSettingsPageRoleAssistant.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant'**
+  String get messageStyleSettingsPageRoleAssistant;
+
+  /// No description provided for @messageStyleSettingsPageRoleAssistantHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant settings also apply to thinking, tool-call, and translation cards.'**
+  String get messageStyleSettingsPageRoleAssistantHint;
 }
 
 class _AppLocalizationsDelegate
