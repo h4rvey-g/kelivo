@@ -304,10 +304,18 @@ void main() {
       );
     });
 
-    test('skips fenced code block content (non-selectable)', () {
+    test('maps text around a selectable fenced code block independently', () {
       const md = 'Before\n```dart\nvoid f() {}\n```\nAfter';
       expect(findMarkdownRangeForSelection(md, 'Before'), 'Before');
       expect(findMarkdownRangeForSelection(md, 'After'), 'After');
+    });
+
+    test('wraps a selected code line in its source fence', () {
+      const md = 'Before\n```dart\nvoid f() {}\n```\nAfter';
+      expect(
+        findMarkdownRangeForSelection(md, 'void f() {}'),
+        '```dart\nvoid f() {}\n```',
+      );
     });
 
     test(
@@ -360,6 +368,37 @@ void main() {
       expect(payload.plainText, 'Progestin-only');
       expect(payload.htmlText, '<p>Progestin-only</p>');
     });
+
+    test('selected fenced code remains a code block in rich text', () {
+      const selected = 'final value = 1;';
+      final payload = buildMarkdownClipboardPayload(
+        selected,
+        markdownSource: 'Before\n\n```dart\n$selected\n```\n\nAfter',
+      );
+
+      expect(payload.plainText, selected);
+      expect(
+        payload.htmlText,
+        '<pre><code class="language-dart">$selected</code></pre>',
+      );
+    });
+
+    test(
+      'selected unfinished fenced code remains a code block in rich text',
+      () {
+        const selected = 'final streaming = true;';
+        final payload = buildMarkdownClipboardPayload(
+          selected,
+          markdownSource: 'Before\n\n```dart\n$selected',
+        );
+
+        expect(payload.plainText, selected);
+        expect(
+          payload.htmlText,
+          '<pre><code class="language-dart">$selected</code></pre>',
+        );
+      },
+    );
 
     test('partial bold selection is rich HTML but exact plain text', () {
       final payload = buildMarkdownClipboardPayload(

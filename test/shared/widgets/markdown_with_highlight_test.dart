@@ -3124,6 +3124,53 @@ final price = "$12";
     },
   );
 
+  testWidgets('streaming code growth is visible on the first updated frame', (
+    tester,
+  ) async {
+    final prefix = 'A completed paragraph before the code block. ' * 14;
+    final text = ValueNotifier<String>('''
+$prefix
+
+```dart
+final first = 1;
+''');
+    addTearDown(text.dispose);
+
+    await tester.pumpWidget(_streamingMarkdownHarness(text));
+    await tester.pump();
+
+    final codeBlock = find.byKey(const ValueKey('code-block-surface'));
+    final highlightView = find.descendant(
+      of: codeBlock,
+      matching: find.byType(SelectableHighlightView),
+    );
+    final stateBefore = tester.state(highlightView);
+    final heightBefore = tester.getSize(codeBlock).height;
+
+    text.value =
+        '''
+$prefix
+
+```dart
+final first = 1;
+final second = 2;
+''';
+    await tester.pump();
+
+    expect(tester.state(highlightView), same(stateBefore));
+    final selectableText = find.descendant(
+      of: highlightView,
+      matching: find.byType(SelectableText),
+    );
+    expect(tester.getSize(selectableText).height, 40);
+    expect(tester.getSize(codeBlock).height, greaterThan(heightBefore));
+    expect(
+      find.descendant(of: codeBlock, matching: find.byType(AnimatedSize)),
+      findsNothing,
+      reason: 'streaming code growth must not restart a clipping animation',
+    );
+  });
+
   testWidgets(
     'MarkdownWithCodeHighlight highlights unclosed code fences after streaming stops',
     (tester) async {

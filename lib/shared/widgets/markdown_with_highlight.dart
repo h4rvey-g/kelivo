@@ -2641,17 +2641,20 @@ class _CollapsibleCodeBlockState extends State<_CollapsibleCodeBlock> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.topLeft,
-                      clipBehavior: Clip.hardEdge,
-                      child: buildCodeView(
-                        isCollapsed
-                            ? _collapsedHighlightedCode(settings)
-                            : _trimTrailingNewlines(widget.code),
+                    if (widget.streaming)
+                      buildCodeView(_trimTrailingNewlines(widget.code))
+                    else
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.topLeft,
+                        clipBehavior: Clip.hardEdge,
+                        child: buildCodeView(
+                          isCollapsed
+                              ? _collapsedHighlightedCode(settings)
+                              : _trimTrailingNewlines(widget.code),
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 if (showCollapsedTailFade)

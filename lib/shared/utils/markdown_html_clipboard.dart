@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:super_clipboard/super_clipboard.dart';
@@ -193,7 +195,7 @@ String markdownSelectionToHtml(String markdown) {
 //      "**bold**"   → "bold"
 //      "*italic*"   → "italic"
 //      "`code`"     → "code"
-//  • Fenced code blocks render in a non-selectable widget — skip entirely.
+//  • Fenced code markers are dropped, but their literal body is selectable.
 //  • Blank lines produce no visible characters.
 // ---------------------------------------------------------------------------
 
@@ -219,8 +221,31 @@ class _Projection {
   final List<int> sourceIndex;
   final String visibleText;
   final List<_InlineMarkdownSpan> inlineSpans;
+  final List<_FencedCodeSpan> fencedCodeSpans;
 
-  const _Projection(this.visibleText, this.sourceIndex, this.inlineSpans);
+  const _Projection(
+    this.visibleText,
+    this.sourceIndex,
+    this.inlineSpans,
+    this.fencedCodeSpans,
+  );
+}
+
+class _FencedCodeSpan {
+  const _FencedCodeSpan({
+    required this.openingLine,
+    required this.closingFence,
+    required this.contentStart,
+    required this.contentEnd,
+  });
+
+  final String openingLine;
+  final String closingFence;
+  final int contentStart;
+  final int contentEnd;
+
+  bool contains(int start, int end) =>
+      start >= contentStart && end <= contentEnd;
 }
 
 const _selectionDecorationRunes = <int>{
@@ -243,6 +268,7 @@ _Projection _buildProjection(String source) {
   final chars = <String>[];
   final indices = <int>[];
   final inlineSpans = <_InlineMarkdownSpan>[];
+  final fencedCodeSpans = <_FencedCodeSpan>[];
 
   void emit(int srcIdx, String ch) {
     chars.add(ch);
@@ -251,7 +277,9 @@ _Projection _buildProjection(String source) {
 
   final lines = source.split('\n');
   int srcPos = 0;
-  bool inFence = false;
+  String? fenceMarker;
+  String? fenceOpeningLine;
+  int? fenceContentStart;
   String? mathBlockClosing;
 
   for (final line in lines) {
@@ -259,15 +287,37 @@ _Projection _buildProjection(String source) {
     final lineStart = srcPos;
     final trimmedLine = line.trim();
 
-    // Skip fenced code blocks (non-selectable widget).
-    if (!inFence && RegExp(r'^(`{3,}|~{3,})').hasMatch(line)) {
-      inFence = true;
+    final openingFence = fenceMarker == null
+        ? RegExp(r'^[ \t]*(([`~])\2{2,})[ \t]*([^\n]*?)$').firstMatch(line)
+        : null;
+    if (openingFence != null) {
+      fenceMarker = openingFence.group(1)!;
+      fenceOpeningLine = line;
+      fenceContentStart = lineStart + lineLen + 1;
       srcPos += lineLen + 1;
       continue;
     }
-    if (inFence) {
-      if (RegExp(r'^(`{3,}|~{3,})\s*$').hasMatch(line)) {
-        inFence = false;
+    if (fenceMarker != null) {
+      if (_isClosingFenceLine(line, fenceMarker)) {
+        fencedCodeSpans.add(
+          _FencedCodeSpan(
+            openingLine: fenceOpeningLine!,
+            closingFence: fenceMarker,
+            contentStart: fenceContentStart!,
+            contentEnd: math.max(fenceContentStart, lineStart - 2),
+          ),
+        );
+        fenceMarker = null;
+        fenceOpeningLine = null;
+        fenceContentStart = null;
+        srcPos += lineLen + 1;
+        continue;
+      }
+      if (chars.isNotEmpty) {
+        emit(lineStart > 0 ? lineStart - 1 : lineStart, '\n');
+      }
+      for (var i = 0; i < line.length; i++) {
+        emit(lineStart + i, line[i]);
       }
       srcPos += lineLen + 1;
       continue;
@@ -365,7 +415,28 @@ _Projection _buildProjection(String source) {
     srcPos += lineLen + 1;
   }
 
-  return _Projection(chars.join(), indices, inlineSpans);
+  if (fenceMarker != null) {
+    fencedCodeSpans.add(
+      _FencedCodeSpan(
+        openingLine: fenceOpeningLine!,
+        closingFence: fenceMarker,
+        contentStart: fenceContentStart!,
+        contentEnd: math.max(fenceContentStart, source.length - 1),
+      ),
+    );
+  }
+
+  return _Projection(chars.join(), indices, inlineSpans, fencedCodeSpans);
+}
+
+bool _isClosingFenceLine(String line, String openingFence) {
+  final trimmed = line.trim();
+  if (trimmed.length < openingFence.length || trimmed.isEmpty) return false;
+  final marker = openingFence.codeUnitAt(0);
+  for (var i = 0; i < trimmed.length; i++) {
+    if (trimmed.codeUnitAt(i) != marker) return false;
+  }
+  return true;
 }
 
 /// Emits the recursively rendered inline text and maps every visible
@@ -554,6 +625,12 @@ String findMarkdownRangeForSelection(
 
   final srcStart = proj.sourceIndex[projStartPos];
   final srcEnd = proj.sourceIndex[projEndPos];
+
+  for (final fence in proj.fencedCodeSpans) {
+    if (!fence.contains(srcStart, srcEnd)) continue;
+    final selectedCode = markdownSource.substring(srcStart, srcEnd + 1);
+    return '${fence.openingLine}\n$selectedCode\n${fence.closingFence}';
+  }
 
   // Locate the source lines touched by the selection.
   int lineStart = srcStart;
