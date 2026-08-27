@@ -1582,6 +1582,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hotkeySwitchModel => 'Switch Model';
 
   @override
+  String get hotkeyCycleModelShortcutForward => 'Next Model Shortcut';
+
+  @override
+  String get hotkeyCycleModelShortcutBackward => 'Previous Model Shortcut';
+
+  @override
   String get hotkeyToggleAssistantPanel => 'Toggle Assistants';
 
   @override

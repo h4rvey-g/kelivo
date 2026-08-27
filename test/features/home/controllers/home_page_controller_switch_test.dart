@@ -303,6 +303,74 @@ void main() {
   }
 
   group('HomePageController conversation switch pipeline', () {
+    testWidgets(
+      'cycles configured model shortcut slots in both directions with wraparound',
+      (tester) async {
+        await runAsDesktop(() async {
+          const providerId = 'provider-a';
+          final service = _ControlledChatService(const {});
+          final controller = await pumpHarness(tester, service);
+          final settings = Provider.of<SettingsProvider>(
+            tester.element(find.byType(_ControllerHarness)),
+            listen: false,
+          );
+          await settings.loaded;
+          await settings.setProviderConfig(
+            providerId,
+            ProviderConfig(
+              id: providerId,
+              enabled: true,
+              name: 'Provider A',
+              apiKey: '',
+              baseUrl: '',
+              models: const ['model-1', 'model-2', 'model-3'],
+            ),
+          );
+          await settings.setQuickModelSlotCount(5);
+          await settings.setQuickModel(3, providerId, 'model-2');
+          await settings.setQuickModel(5, providerId, 'model-3');
+
+          final assistantProvider = Provider.of<AssistantProvider>(
+            tester.element(find.byType(_ControllerHarness)),
+            listen: false,
+          );
+          await assistantProvider.loaded;
+          final assistantId = await assistantProvider.addAssistant(
+            name: 'Assistant A',
+          );
+          await assistantProvider.setCurrentAssistant(assistantId);
+          await assistantProvider.updateAssistant(
+            assistantProvider.currentAssistant!.copyWith(
+              chatModelProvider: providerId,
+              chatModelId: 'model-1',
+            ),
+          );
+
+          await controller.cycleQuickModelShortcut(forward: true);
+          expect(assistantProvider.currentAssistant?.chatModelId, 'model-2');
+          expect(settings.quickModelKey(1), '$providerId::model-1');
+
+          await controller.cycleQuickModelShortcut(forward: true);
+          expect(assistantProvider.currentAssistant?.chatModelId, 'model-3');
+
+          await controller.cycleQuickModelShortcut(forward: true);
+          expect(assistantProvider.currentAssistant?.chatModelId, 'model-1');
+
+          await controller.cycleQuickModelShortcut(forward: false);
+          expect(assistantProvider.currentAssistant?.chatModelId, 'model-3');
+
+          await assistantProvider.updateAssistant(
+            assistantProvider.currentAssistant!.copyWith(
+              chatModelProvider: providerId,
+              chatModelId: 'outside-shortcuts',
+            ),
+          );
+          await controller.cycleQuickModelShortcut(forward: false);
+          expect(assistantProvider.currentAssistant?.chatModelId, 'model-3');
+        });
+      },
+    );
+
     testWidgets('restores the model last used by each conversation', (
       tester,
     ) async {

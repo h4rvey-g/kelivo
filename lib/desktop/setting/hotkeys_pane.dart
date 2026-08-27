@@ -145,6 +145,10 @@ class _HotkeyRowState extends State<_HotkeyRow> {
           return loc.hotkeyNewTopic;
         case 'hotkeySwitchModel':
           return loc.hotkeySwitchModel;
+        case 'hotkeyCycleModelShortcutForward':
+          return loc.hotkeyCycleModelShortcutForward;
+        case 'hotkeyCycleModelShortcutBackward':
+          return loc.hotkeyCycleModelShortcutBackward;
         case 'hotkeyToggleAssistantPanel':
           return loc.hotkeyToggleAssistantPanel;
         case 'hotkeyToggleTopicPanel':

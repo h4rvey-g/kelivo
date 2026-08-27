@@ -3004,6 +3004,18 @@ abstract class AppLocalizations {
   /// **'Switch Model'**
   String get hotkeySwitchModel;
 
+  /// No description provided for @hotkeyCycleModelShortcutForward.
+  ///
+  /// In en, this message translates to:
+  /// **'Next Model Shortcut'**
+  String get hotkeyCycleModelShortcutForward;
+
+  /// No description provided for @hotkeyCycleModelShortcutBackward.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous Model Shortcut'**
+  String get hotkeyCycleModelShortcutBackward;
+
   /// No description provided for @hotkeyToggleAssistantPanel.
   ///
   /// In en, this message translates to:

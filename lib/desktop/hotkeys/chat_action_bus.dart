@@ -6,6 +6,8 @@ enum ChatAction {
   toggleLeftPanelTopics,
   focusInput,
   switchModel,
+  cycleModelShortcutForward,
+  cycleModelShortcutBackward,
   enterGlobalSearch,
   exitGlobalSearch,
 }

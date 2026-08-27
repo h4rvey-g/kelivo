@@ -1524,6 +1524,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hotkeySwitchModel => '切换模型';
 
   @override
+  String get hotkeyCycleModelShortcutForward => '下一个模型快捷槽位';
+
+  @override
+  String get hotkeyCycleModelShortcutBackward => '上一个模型快捷槽位';
+
+  @override
   String get hotkeyToggleAssistantPanel => '切换助手显示';
 
   @override
@@ -9249,6 +9255,12 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get hotkeySwitchModel => '切换模型';
 
   @override
+  String get hotkeyCycleModelShortcutForward => '下一个模型快捷槽位';
+
+  @override
+  String get hotkeyCycleModelShortcutBackward => '上一个模型快捷槽位';
+
+  @override
   String get hotkeyToggleAssistantPanel => '切换助手显示';
 
   @override
@@ -16898,6 +16910,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get hotkeySwitchModel => '切換模型';
+
+  @override
+  String get hotkeyCycleModelShortcutForward => '下一個模型快捷槽位';
+
+  @override
+  String get hotkeyCycleModelShortcutBackward => '上一個模型快捷槽位';
 
   @override
   String get hotkeyToggleAssistantPanel => '切換助理顯示';

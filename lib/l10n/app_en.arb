@@ -666,6 +666,8 @@
   "hotkeyOpenSettings": "Open Settings",
   "hotkeyNewTopic": "New Topic",
   "hotkeySwitchModel": "Switch Model",
+  "hotkeyCycleModelShortcutForward": "Next Model Shortcut",
+  "hotkeyCycleModelShortcutBackward": "Previous Model Shortcut",
   "hotkeyToggleAssistantPanel": "Toggle Assistants",
   "hotkeyToggleTopicPanel": "Toggle Topics",
   "hotkeysPressShortcut": "Press a shortcut",

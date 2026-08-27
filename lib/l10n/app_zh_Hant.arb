@@ -265,6 +265,8 @@
   "hotkeyOpenSettings": "打開設定",
   "hotkeyNewTopic": "新建話題",
   "hotkeySwitchModel": "切換模型",
+  "hotkeyCycleModelShortcutForward": "下一個模型快捷槽位",
+  "hotkeyCycleModelShortcutBackward": "上一個模型快捷槽位",
   "hotkeyToggleAssistantPanel": "切換助理顯示",
   "hotkeyToggleTopicPanel": "切換話題顯示",
   "hotkeysPressShortcut": "按下快捷鍵",

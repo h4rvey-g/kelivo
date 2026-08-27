@@ -142,6 +142,7 @@ class HomePageController extends ChangeNotifier {
 
   McpProvider? _mcpProvider;
   StreamSubscription<ChatAction>? _chatActionSub;
+  int? _lastCycledQuickModelSlot;
 
   // ============================================================================
   // Animation Controllers
@@ -646,6 +647,12 @@ class HomePageController extends ChangeNotifier {
         case ChatAction.switchModel:
           unawaited(showModelSelectSheet(ctx));
           break;
+        case ChatAction.cycleModelShortcutForward:
+          unawaited(cycleQuickModelShortcut(forward: true));
+          break;
+        case ChatAction.cycleModelShortcutBackward:
+          unawaited(cycleQuickModelShortcut(forward: false));
+          break;
         case ChatAction.enterGlobalSearch:
           enterGlobalSearchMode(preserveQuery: true);
           break;
@@ -654,6 +661,80 @@ class HomePageController extends ChangeNotifier {
           break;
       }
     });
+  }
+
+  Future<void> cycleQuickModelShortcut({required bool forward}) async {
+    final settings = _context.read<SettingsProvider>();
+    final assistantProvider = _context.read<AssistantProvider>();
+    final assistant = assistantProvider.currentAssistant;
+    final activeProvider =
+        assistant?.chatModelProvider ?? settings.currentModelProvider;
+    final activeModel = assistant?.chatModelId ?? settings.currentModelId;
+
+    Future<void>? fallbackSlotPersistence;
+    if (settings.quickModelKey(1) == null &&
+        activeProvider != null &&
+        activeModel != null) {
+      final activeConfig = settings.providerConfigs[activeProvider];
+      if (activeConfig != null &&
+          activeConfig.enabled &&
+          activeConfig.models.contains(activeModel)) {
+        fallbackSlotPersistence = settings.setQuickModel(
+          1,
+          activeProvider,
+          activeModel,
+        );
+      }
+    }
+
+    final slots = <({int slot, String provider, String model})>[];
+    for (var slot = 1; slot <= settings.quickModelSlotCount; slot++) {
+      final provider = settings.quickModelProvider(slot);
+      final model = settings.quickModelId(slot);
+      if (provider == null || model == null) continue;
+      final config = settings.providerConfigs[provider];
+      if (config == null || !config.enabled || !config.models.contains(model)) {
+        continue;
+      }
+      slots.add((slot: slot, provider: provider, model: model));
+    }
+    if (slots.isEmpty) return;
+
+    var currentIndex = -1;
+    final lastSlot = _lastCycledQuickModelSlot;
+    if (lastSlot != null) {
+      currentIndex = slots.indexWhere(
+        (entry) =>
+            entry.slot == lastSlot &&
+            entry.provider == activeProvider &&
+            entry.model == activeModel,
+      );
+    }
+    if (currentIndex < 0) {
+      currentIndex = slots.indexWhere(
+        (entry) =>
+            entry.provider == activeProvider && entry.model == activeModel,
+      );
+    }
+
+    final targetIndex = currentIndex < 0
+        ? (forward ? 0 : slots.length - 1)
+        : (currentIndex + (forward ? 1 : -1) + slots.length) % slots.length;
+    final target = slots[targetIndex];
+    _lastCycledQuickModelSlot = target.slot;
+
+    if (assistant != null) {
+      await assistantProvider.updateAssistant(
+        assistant.copyWith(
+          chatModelProvider: target.provider,
+          chatModelId: target.model,
+        ),
+      );
+      await fallbackSlotPersistence;
+      return;
+    }
+    await settings.setCurrentModel(target.provider, target.model);
+    await fallbackSlotPersistence;
   }
 
   void enterGlobalSearchMode({bool preserveQuery = true}) {

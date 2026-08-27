@@ -7,6 +7,8 @@ enum HotkeyAction {
   openSettings,
   newTopic,
   switchModel,
+  cycleModelShortcutForward,
+  cycleModelShortcutBackward,
   toggleLeftPanelAssistants,
   toggleLeftPanelTopics,
 }

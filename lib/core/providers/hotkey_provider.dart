@@ -75,6 +75,22 @@ class HotkeyProvider extends ChangeNotifier {
       defaultMac: '',
       enabledByDefault: true,
     ),
+    // Cycle forward through configured model shortcut slots
+    'cycle_model_shortcut_forward': AppHotkey(
+      id: 'cycle_model_shortcut_forward',
+      l10nLabelKey: 'hotkeyCycleModelShortcutForward',
+      defaultWinLinux: '',
+      defaultMac: 'cmd+s',
+      enabledByDefault: true,
+    ),
+    // Cycle backward through configured model shortcut slots
+    'cycle_model_shortcut_backward': AppHotkey(
+      id: 'cycle_model_shortcut_backward',
+      l10nLabelKey: 'hotkeyCycleModelShortcutBackward',
+      defaultWinLinux: '',
+      defaultMac: 'cmd+shift+s',
+      enabledByDefault: true,
+    ),
     // Toggle assistants panel (left topics layout only)
     'toggle_assistants': AppHotkey(
       id: 'toggle_assistants',
@@ -246,6 +262,12 @@ class HotkeyProvider extends ChangeNotifier {
         break;
       case 'switch_model':
         HotkeyEventBus.instance.fire(HotkeyAction.switchModel);
+        break;
+      case 'cycle_model_shortcut_forward':
+        HotkeyEventBus.instance.fire(HotkeyAction.cycleModelShortcutForward);
+        break;
+      case 'cycle_model_shortcut_backward':
+        HotkeyEventBus.instance.fire(HotkeyAction.cycleModelShortcutBackward);
         break;
       case 'toggle_assistants':
         HotkeyEventBus.instance.fire(HotkeyAction.toggleLeftPanelAssistants);
