@@ -38,6 +38,7 @@ import 'package:Kelivo/desktop/html_preview_dialog.dart';
 import '../cache/byte_lru_cache.dart';
 import 'incremental_markdown_document.dart';
 import 'markdown_line_lexer.dart';
+import 'safe_html_block.dart';
 
 // Inline math is parsed on the UI thread. Bound the lookahead window so a long
 // line with many unmatched openers cannot trigger repeated whole-line scans.
@@ -343,6 +344,11 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
       final detailsRegistry = MarkdownDetailsRegistry(
         enableMath: settings.enableMathRendering,
       );
+      final htmlRegistry = MarkdownHtmlBlockRegistry(
+        enableMath: settings.enableMathRendering,
+      );
+      String preprocessBlocks(String source) =>
+          detailsRegistry.rewrite(htmlRegistry.rewrite(source));
       return GptMarkdown(
         key: key,
         markdown,
@@ -351,9 +357,13 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
         // Disable built-in $...$ LaTeX so our custom scrollable handlers take over
         useDollarSignsForLatex: false,
         onLinkTap: (url, title) => _handleLinkTap(context, url),
-        preprocessBlocks: detailsRegistry.rewrite,
+        preprocessBlocks: preprocessBlocks,
         generation: themeSignature,
-        components: [DetailsHtmlMd(detailsRegistry), ...components],
+        components: [
+          DetailsHtmlMd(detailsRegistry),
+          SafeHtmlBlockMd(htmlRegistry),
+          ...components,
+        ],
         inlineComponents: inlineComponents,
         imageBuilder: (ctx, url, width, height) {
           final imgs = imageUrls.isNotEmpty ? imageUrls : <String>[url];

@@ -8,6 +8,7 @@ import 'package:Kelivo/shared/widgets/markdown_line_lexer.dart';
 import 'package:Kelivo/shared/widgets/markdown_with_highlight.dart';
 import 'package:Kelivo/shared/widgets/export_capture_scope.dart';
 import 'package:Kelivo/shared/widgets/mermaid_image_cache.dart';
+import 'package:Kelivo/shared/widgets/safe_html_block.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/icons/lucide_adapter.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
@@ -20,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_math_fork/tex.dart' show TexEncoderExt;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:gpt_markdown/custom_widgets/unordered_ordered_list.dart';
 import 'package:gpt_markdown/gpt_markdown.dart' show GptMarkdown, HTag;
 import 'package:provider/provider.dart';
@@ -4128,6 +4130,158 @@ press5
     expect(plainText, isNot(contains('<br>')));
     expect(plainText, isNot(contains('<a href=')));
     expect(find.text('链接'), findsOneWidget);
+  });
+
+  testWidgets('renders a styled HTML flex block in place', (tester) async {
+    const markdown = '''
+建议将算法定义为 **QGER**：输入原始 FASTQ。
+
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;color:#1e293b;"> <div style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#1e3a8a;"><b>FASTQ + 参考序列/GTF</b></div> <div style="font-weight:700;color:#64748b;">→</div> <div style="padding:10px 14px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;"><b>比对与基线定量</b></div> <div style="font-weight:700;color:#64748b;">→</div> <div style="padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;"><b>计算目标片段数</b></div> <div style="font-weight:700;color:#64748b;">→</div> <div style="padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#166534;"><b>删除或模拟片段</b></div> <div style="font-weight:700;color:#64748b;">→</div> <div style="padding:10px 14px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;color:#6b21a8;"><b>重新定量并闭环校准</b></div> </div>
+''';
+
+    await tester.pumpWidget(_markdownHarness(markdown));
+    await tester.pump();
+
+    final htmlBlock = find.byKey(const ValueKey('markdown-safe-html-block'));
+    expect(htmlBlock, findsOneWidget);
+    expect(
+      find.descendant(of: htmlBlock, matching: find.byType(HtmlWidget)),
+      findsOneWidget,
+    );
+    for (final label in const [
+      'FASTQ + 参考序列/GTF',
+      '比对与基线定量',
+      '计算目标片段数',
+      '删除或模拟片段',
+      '重新定量并闭环校准',
+    ]) {
+      expect(find.text(label, findRichText: true), findsOneWidget);
+    }
+
+    final wrap = tester.widget<Wrap>(
+      find.descendant(of: htmlBlock, matching: find.byType(Wrap)).first,
+    );
+    expect(wrap.spacing, 8);
+    expect(wrap.runSpacing, 8);
+    expect(wrap.crossAxisAlignment, WrapCrossAlignment.center);
+
+    final colors = tester
+        .widgetList<Container>(
+          find.descendant(of: htmlBlock, matching: find.byType(Container)),
+        )
+        .map((container) => container.decoration)
+        .whereType<BoxDecoration>()
+        .map((decoration) => decoration.color)
+        .whereType<Color>()
+        .toSet();
+    expect(colors, contains(const Color(0xFFEFF6FF)));
+    expect(colors, contains(const Color(0xFFF0FDF4)));
+
+    final plainText = tester
+        .widgetList<RichText>(find.byType(RichText))
+        .map((widget) => widget.text.toPlainText())
+        .join('\n');
+    expect(plainText, isNot(contains('<div')));
+    expect(plainText, isNot(contains('style=')));
+  });
+
+  testWidgets('safe HTML drops active content and unsafe style properties', (
+    tester,
+  ) async {
+    const markdown = '''
+<div style="display:flex;position:fixed;background-image:url(https://example.com/x);">
+  <script>window.bad()</script>
+  <iframe src="https://example.com">frame text</iframe>
+  <img src="https://example.com/tracker.png" onerror="window.bad()">
+  <a href="javascript:window.bad()">不可执行链接</a>
+  <span onclick="window.bad()" style="color:#166534;position:absolute;">安全内容</span>
+</div>
+''';
+
+    await tester.pumpWidget(_markdownHarness(markdown));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('markdown-safe-html-block')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('安全内容', findRichText: true), findsOneWidget);
+    expect(find.textContaining('window.bad'), findsNothing);
+    expect(find.textContaining('frame text'), findsNothing);
+    expect(find.byType(Image), findsNothing);
+    expect(find.textContaining('不可执行链接', findRichText: true), findsOneWidget);
+
+    final htmlWidget = tester.widget<HtmlWidget>(find.byType(HtmlWidget));
+    expect(htmlWidget.html, isNot(contains('script')));
+    expect(htmlWidget.html, isNot(contains('iframe')));
+    expect(htmlWidget.html, isNot(contains('img')));
+    expect(htmlWidget.html, isNot(contains('javascript:')));
+    expect(htmlWidget.html, isNot(contains('onclick')));
+    expect(htmlWidget.html, isNot(contains('position')));
+    expect(htmlWidget.html, isNot(contains('background-image')));
+
+    final safeSpan = _resolvedTextSpansFromRichText(
+      tester,
+    ).singleWhere((span) => span.text == '安全内容');
+    expect(safeSpan.style.color, const Color(0xFF166534));
+  });
+
+  testWidgets('safe HTML delegates non-wrapping flex to the package', (
+    tester,
+  ) async {
+    const markdown = '''
+<div style="display:flex;flex-wrap:nowrap;gap:6px;">
+  <span>one</span><span>two</span>
+</div>
+''';
+
+    await tester.pumpWidget(_markdownHarness(markdown));
+    await tester.pump();
+
+    final htmlBlock = find.byKey(const ValueKey('markdown-safe-html-block'));
+    expect(
+      find.descendant(of: htmlBlock, matching: find.byType(HtmlWidget)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: htmlBlock, matching: find.byType(HtmlFlex)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: htmlBlock, matching: find.byType(Wrap)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('does not promote incomplete or fenced div markup', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_markdownHarness('<div style="color:red">尚未完成'));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('markdown-safe-html-block')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(
+      _markdownHarness('```html\n<div style="color:red">代码</div>\n```'),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('markdown-safe-html-block')),
+      findsNothing,
+    );
+    expect(find.byType(SelectableHighlightView), findsOneWidget);
+  });
+
+  test('HTML registry only resolves placeholders it issued', () {
+    const source = '<div><div>nested</div></div>\n\nafter';
+    final registry = MarkdownHtmlBlockRegistry();
+    final rewritten = registry.rewrite(source);
+
+    expect(rewritten, isNot(contains('<div>')));
+    expect(registry.lookup(rewritten.split('\n').first), contains('nested'));
+    expect(registry.lookup('\uE0200:999\uE021'), isNull);
   });
 
   testWidgets('MarkdownWithCodeHighlight normalizes strong weight on Android', (

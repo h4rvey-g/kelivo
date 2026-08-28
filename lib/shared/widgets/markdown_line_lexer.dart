@@ -6,8 +6,10 @@ final class MarkdownLineLexer {
   int? _fenceMarker;
   int _fenceLength = 0;
   final MarkdownDetailsWalker _details = MarkdownDetailsWalker();
+  final MarkdownHtmlDivWalker _htmlDiv = MarkdownHtmlDivWalker();
 
-  bool get protected => _fenceMarker != null || _details.depth > 0;
+  bool get protected =>
+      _fenceMarker != null || _details.depth > 0 || _htmlDiv.depth > 0;
 
   bool get fenced => _fenceMarker != null;
 
@@ -17,12 +19,17 @@ final class MarkdownLineLexer {
 
   bool get detailsOverflowed => _details.overflowed;
 
+  int get htmlDivDepth => _htmlDiv.depth;
+
+  int? get htmlDivClosedAt => _htmlDiv.closedAt;
+
   void resetDetails() => _details.reset();
 
   void reset() {
     _fenceMarker = null;
     _fenceLength = 0;
     _details.reset();
+    _htmlDiv.reset();
   }
 
   /// One LF-delimited line, which may still hold LS/PS/`\r` logical rows.
@@ -48,7 +55,11 @@ final class MarkdownLineLexer {
     _updateFence(line);
     if (_fenceMarker != null) return;
     final trimmed = line.trimLeft();
+    final wasInDetails = _details.depth > 0;
     _updateDetails(trimmed, () => _LineBackticks.of(trimmed));
+    if (_htmlDiv.depth > 0 || (!wasInDetails && _details.depth == 0)) {
+      _updateHtmlDiv(trimmed, () => _LineBackticks.of(trimmed));
+    }
   }
 
   /// Fence only. True when this line is inside a fence — including the
@@ -84,6 +95,81 @@ final class MarkdownLineLexer {
       return;
     }
     _details.consume(line, advance: spans().advance);
+  }
+
+  void _updateHtmlDiv(String line, _LineBackticks Function() spans) {
+    if (_htmlDiv.depth == 0 &&
+        MarkdownHtmlDivWalker.open.matchAsPrefix(line) == null) {
+      return;
+    }
+    _htmlDiv.consume(line, advance: spans().advance);
+  }
+}
+
+/// Tracks a top-level raw HTML `<div>` block across logical lines.
+///
+/// A root opener must start the trimmed line, which keeps prose mentions from
+/// protecting later blank lines. Nested divs can occur anywhere inside the
+/// root. Tags in paired inline code are ignored.
+final class MarkdownHtmlDivWalker {
+  static const openSource = r'<[Dd][Ii][Vv](?:[ \t][^><\r\n\u2028\u2029]*)?>';
+  static const closeSource = r'</[Dd][Ii][Vv][ \t]*>';
+
+  static final open = RegExp(openSource, caseSensitive: false);
+  static final close = RegExp(closeSource, caseSensitive: false);
+
+  int _depth = 0;
+  int _ignoredOpens = 0;
+
+  int get depth => _depth;
+
+  /// Index just after the close tag that returned to depth zero.
+  int? closedAt;
+
+  void reset() {
+    _depth = 0;
+    _ignoredOpens = 0;
+    closedAt = null;
+  }
+
+  void consume(String line, {required int Function(int) advance}) {
+    closedAt = null;
+    if (_depth == 0 && open.matchAsPrefix(line) == null) return;
+
+    var i = 0;
+    while (i < line.length) {
+      if (line.codeUnitAt(i) == 0x60) {
+        final advanced = advance(i);
+        if (advanced != i + 1) {
+          i = advanced;
+          continue;
+        }
+      }
+
+      final opener = open.matchAsPrefix(line, i);
+      if (opener != null) {
+        if (_depth < 64) {
+          _depth++;
+        } else {
+          _ignoredOpens++;
+        }
+        i = opener.end;
+        continue;
+      }
+
+      final closer = close.matchAsPrefix(line, i);
+      if (closer != null) {
+        if (_ignoredOpens > 0) {
+          _ignoredOpens--;
+        } else if (_depth > 0) {
+          _depth--;
+          if (_depth == 0) closedAt = closer.end;
+        }
+        i = closer.end;
+        continue;
+      }
+      i++;
+    }
   }
 }
 

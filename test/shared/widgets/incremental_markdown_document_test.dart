@@ -119,6 +119,21 @@ void main() {
     expect(blocks[1].text, contains('</details>'));
   });
 
+  test('blank lines inside a raw HTML div do not split source blocks', () {
+    final document = IncrementalMarkdownDocument();
+    final blocks = document.update(
+      'before\n\n<div style="display:flex">\n'
+      '<div>first</div>\n\n'
+      '<div>second</div>\n'
+      '</div>\n\nafter',
+    );
+
+    expect(blocks, hasLength(3));
+    expect(blocks[1].text, contains('first</div>\n\n<div>second'));
+    expect(blocks[1].text, endsWith('</div>'));
+    expect(blocks.last.text, 'after');
+  });
+
   test('blank lines inside a loose list do not split source blocks', () {
     final document = IncrementalMarkdownDocument();
     final blocks = document.update('- first\n\n- second\n\nnext paragraph\n');
