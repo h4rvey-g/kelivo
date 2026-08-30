@@ -9,6 +9,7 @@ class MainFlutterWindow: NSWindow {
   private weak var transientTextPasteResponder: NSResponder?
   private var transientPasteMonitor: Any?
   private var transientPasteKeyDownPending = false
+  private var textInputContextRecovery: TextInputContextRecovery?
 
   deinit {
     if let transientPasteMonitor {
@@ -34,6 +35,7 @@ class MainFlutterWindow: NSWindow {
         return nil
       }
       self.transientPasteKeyDownPending = false
+      _ = self.textInputContextRecovery?.recoverBeforeKeyDown()
       guard self.firstResponder is NSTextInputClient else { return event }
       guard self.firstResponder === self.transientTextPasteResponder else {
         return event
@@ -53,6 +55,25 @@ class MainFlutterWindow: NSWindow {
       self.transientPasteKeyDownPending = true
       return nil
     }
+  }
+
+  private func recoverRimeTextInputContext() -> Bool {
+    guard NSApp.isActive,
+          isKeyWindow,
+          let responder = firstResponder,
+          let inputContext = NSTextInputContext.current,
+          (inputContext.client as AnyObject) === responder,
+          inputContext.selectedKeyboardInputSource?.hasPrefix(
+            "im.rime.inputmethod.Squirrel"
+          ) == true else {
+      return false
+    }
+
+    // macOS can leave Squirrel's context deactivated after an input-source or
+    // focus change, causing the first keystroke to bypass the IME as ASCII.
+    inputContext.deactivate()
+    inputContext.activate()
+    return true
   }
 
   override var accessibilityFocusedUIElement: Any? {
@@ -235,6 +256,7 @@ class MainFlutterWindow: NSWindow {
         }
         self.transientTextPasteTarget = target
         self.transientTextPasteResponder = self.firstResponder
+        self.textInputContextRecovery?.requestRecovery()
       } else if self.transientTextPasteTarget == target {
         self.transientTextPasteTarget = nil
         self.transientTextPasteResponder = nil
@@ -312,6 +334,9 @@ class MainFlutterWindow: NSWindow {
     }
 
     super.awakeFromNib()
+    textInputContextRecovery = TextInputContextRecovery { [weak self] in
+      self?.recoverRimeTextInputContext() ?? false
+    }
     installTransientPasteMonitor()
   }
 }

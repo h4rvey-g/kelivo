@@ -6,6 +6,79 @@ import XCTest
 
 class RunnerTests: XCTestCase {
 
+  func testTextInputContextRecoveryRunsBeforeFirstKeyDown() {
+    let notificationCenter = NotificationCenter()
+    var scheduledActions: [() -> Void] = []
+    var recoveryCount = 0
+    let recovery = TextInputContextRecovery(
+      notificationCenter: notificationCenter,
+      scheduler: { _, action in scheduledActions.append(action) },
+      recovery: {
+        recoveryCount += 1
+        return true
+      }
+    )
+
+    recovery.requestRecovery()
+
+    XCTAssertTrue(recovery.recoverBeforeKeyDown())
+    XCTAssertEqual(recoveryCount, 1)
+    scheduledActions.forEach { $0() }
+    XCTAssertEqual(recoveryCount, 1)
+  }
+
+  func testTextInputContextRecoveryCoalescesFallbacks() {
+    let notificationCenter = NotificationCenter()
+    var scheduledActions: [() -> Void] = []
+    var recoveryCount = 0
+    let recovery = TextInputContextRecovery(
+      notificationCenter: notificationCenter,
+      scheduler: { _, action in scheduledActions.append(action) },
+      recovery: {
+        recoveryCount += 1
+        return true
+      }
+    )
+
+    notificationCenter.post(
+      name: NSTextInputContext.keyboardSelectionDidChangeNotification,
+      object: nil
+    )
+    notificationCenter.post(
+      name: NSTextInputContext.keyboardSelectionDidChangeNotification,
+      object: nil
+    )
+
+    XCTAssertEqual(scheduledActions.count, 1)
+    scheduledActions.forEach { $0() }
+    XCTAssertEqual(recoveryCount, 1)
+    withExtendedLifetime(recovery) {}
+  }
+
+  func testTextInputContextRecoveryClearsIneligibleRequest() {
+    let notificationCenter = NotificationCenter()
+    var scheduledActions: [() -> Void] = []
+    var recoveryCount = 0
+    let recovery = TextInputContextRecovery(
+      notificationCenter: notificationCenter,
+      scheduler: { _, action in scheduledActions.append(action) },
+      recovery: {
+        recoveryCount += 1
+        return false
+      }
+    )
+
+    notificationCenter.post(
+      name: NSTextInputContext.keyboardSelectionDidChangeNotification,
+      object: nil
+    )
+    scheduledActions.forEach { $0() }
+
+    XCTAssertEqual(recoveryCount, 1)
+    XCTAssertFalse(recovery.recoverBeforeKeyDown())
+    XCTAssertEqual(recoveryCount, 1)
+  }
+
   func testTransientCommandVCapturesPasteboardText() throws {
     let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
     let item = NSPasteboardItem()
