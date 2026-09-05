@@ -868,7 +868,11 @@ class _HomePageState extends State<HomePage>
     final settings = context.watch<SettingsProvider>();
     final assistant = context.watch<AssistantProvider>().currentAssistant;
 
-    final modelInfo = getModelDisplayInfo(settings, assistant: assistant);
+    final modelInfo = getModelDisplayInfo(
+      settings,
+      conversation: _controller.currentConversation,
+      assistant: assistant,
+    );
 
     final title = _controller.isTemporaryConversation
         ? AppLocalizations.of(context)!.temporaryChatTitle
@@ -936,7 +940,8 @@ class _HomePageState extends State<HomePage>
       canToggleTemporaryConversation:
           _controller.canToggleTemporaryConversation,
       temporaryConversationEnabled: _controller.isTemporaryConversation,
-      onSelectModel: () => showModelSelectSheet(context),
+      onSelectModel: () =>
+          showModelSelectSheet(context, controller: _controller),
       globalSearchMode: _controller.isGlobalSearchMode,
       globalSearchQuery: _controller.globalSearchQuery,
       onGlobalSearchQueryChanged: _controller.setGlobalSearchQuery,
@@ -1067,7 +1072,8 @@ class _HomePageState extends State<HomePage>
       onGlobalSearchQueryChanged: _controller.setGlobalSearchQuery,
       onOpenGlobalSearchResult: (convId, msgId) => _controller
           .openGlobalSearchResult(conversationId: convId, messageId: msgId),
-      onSelectModel: () => showModelSelectSheet(context),
+      onSelectModel: () =>
+          showModelSelectSheet(context, controller: _controller),
       onSidebarWidthChanged: _controller.updateSidebarWidth,
       onSidebarWidthChangeEnd: _controller.saveSidebarWidth,
       onRightSidebarWidthChanged: _controller.updateRightSidebarWidth,
@@ -1257,9 +1263,7 @@ class _HomePageState extends State<HomePage>
     }
 
     final settings = context.watch<SettingsProvider>();
-    final suggestionsEnabled =
-        settings.suggestionModelProvider != null &&
-        settings.suggestionModelId != null;
+    final suggestionsEnabled = settings.isSuggestionGenerationEnabled;
     final assistant = context.watch<AssistantProvider>().currentAssistant;
     return MessageListView(
       processingFilesMessageId: _controller.processingFilesMessageId,
@@ -1354,8 +1358,21 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildChatInputBar(BuildContext context, {required bool isTablet}) {
+    final conversation = _controller.currentConversation;
+    final settings = context.watch<SettingsProvider>();
+    final chatModel = resolveChatModel(
+      settings,
+      conversation: conversation,
+      assistant: context.watch<AssistantProvider>().currentAssistant,
+    );
     return ChatInputSection(
       inputBarKey: _inputBarKey,
+      chatModelProviderKey: chatModel.providerKey,
+      chatModelId: chatModel.modelId,
+      chatModelIsConversationOverride:
+          settings.perChatModelEnabled &&
+          conversation?.chatModelProvider != null &&
+          conversation?.chatModelId != null,
       inputFocus: _inputFocus,
       inputController: _inputController,
       mediaController: _mediaController,
@@ -1711,19 +1728,48 @@ class _HomePageState extends State<HomePage>
   // Action Handlers (UI-specific, not in controller)
   // ============================================================================
 
+  /// The model this chat sends with: the conversation's own override first,
+  /// then the assistant's model, then the global default.
+  ({String? providerKey, String? modelId}) _resolvedChatModel() =>
+      resolveChatModel(
+        context.read<SettingsProvider>(),
+        conversation: _controller.currentConversation,
+        assistant: context.read<AssistantProvider>().currentAssistant,
+      );
+
   void _openSearchSettings() {
+    final model = _resolvedChatModel();
     if (PlatformUtils.isDesktop) {
-      showDesktopSearchProviderPopover(context, anchorKey: _inputBarKey);
+      showDesktopSearchProviderPopover(
+        context,
+        anchorKey: _inputBarKey,
+        chatModelProviderKey: model.providerKey,
+        chatModelId: model.modelId,
+      );
     } else {
-      showSearchSettingsSheet(context);
+      showSearchSettingsSheet(
+        context,
+        chatModelProviderKey: model.providerKey,
+        chatModelId: model.modelId,
+      );
     }
   }
 
   Future<void> _openReasoningSettings() async {
+    final model = _resolvedChatModel();
     if (PlatformUtils.isDesktop) {
-      await showDesktopReasoningBudgetPopover(context, anchorKey: _inputBarKey);
+      await showDesktopReasoningBudgetPopover(
+        context,
+        anchorKey: _inputBarKey,
+        modelProvider: model.providerKey,
+        modelId: model.modelId,
+      );
     } else {
-      await showReasoningBudgetSheet(context);
+      await showReasoningBudgetSheet(
+        context,
+        modelProvider: model.providerKey,
+        modelId: model.modelId,
+      );
     }
   }
 

@@ -1,8 +1,7 @@
 name: Flutter Multi-Platform Build Stable 3.44
 
 env:
-  FLUTTER_VERSION: '3.44.6'  # 当前 stable 3.44.6 / Dart 3.12.x
-  SPARKLE_VERSION: '2.9.6'
+  FLUTTER_VERSION: '3.44.9'  # 当前 stable 3.44.9 / Dart 3.12.x
 
 on:
   push:

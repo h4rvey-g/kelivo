@@ -9,9 +9,11 @@ import '../../../utils/unicode_sanitizer.dart';
 import '../logging/context_log_models.dart';
 import '../../utils/multimodal_input_utils.dart';
 import 'generation/text_generation_result.dart';
+import 'generation/tool_loop_runner.dart';
 import 'stream/stream_chunk.dart';
 import 'stream/stream_chunk_handler.dart';
 
+import '../../models/auto_retry_options.dart';
 import 'chat_api_helpers.dart';
 import 'providers/claude_official.dart';
 import 'providers/google_gemini.dart';
@@ -21,6 +23,8 @@ import 'providers/openai/openai_vendor_compat.dart';
 import 'providers/openai_images.dart';
 import 'providers/openai_responses.dart';
 import 'providers/zhipu_layout_parsing.dart';
+import 'retry_policy.dart';
+import 'stream/retrying_stream.dart';
 
 export 'chat_api_helpers.dart' show ToolCallHandler;
 export 'generation/text_generation_result.dart';
@@ -74,7 +78,9 @@ class ChatApiService {
       allowRemoteImages: false,
       allowLocalImages: false,
       allowDataImages: false,
-      keepRemoteMarkdownText: false,
+      // Remote links are plain text to a text-only model; only the
+      // payload-carrying data:/local forms are dropped.
+      keepRemoteMarkdownText: true,
       keepDisallowedImageText: false,
     );
     return parsed.text;
@@ -154,19 +160,22 @@ class ChatApiService {
     bool ocrActive = false,
     bool builtInSearchOnly = false,
     bool skipImageParsing = false,
+    bool parseMarkdownImageLinks = true,
+    AutoRetryOptions? retryOverride,
   }) async* {
+    final options = retryOverride ?? AutoRetryConfig.current;
     final kind = ProviderConfig.classify(
       config.id,
       explicitType: config.providerType,
     );
-    final cancelToken = CancelToken();
+    final sessionToken = CancelToken();
     final rid = (requestId ?? '').trim();
     if (rid.isNotEmpty) {
       final prev = _activeCancelTokens.remove(rid);
       try {
         prev?.cancel('replaced');
       } catch (_) {}
-      _activeCancelTokens[rid] = cancelToken;
+      _activeCancelTokens[rid] = sessionToken;
     }
     final useOpenAIImagesApi =
         kind == ProviderKind.openai &&
@@ -186,74 +195,44 @@ class ChatApiService {
     final safeUserImagePaths = stripUnsupportedImageInputs
         ? const <String>[]
         : userImagePaths;
-    final client = _clientFor(config, cancelToken);
+
+    final imageOutput = effectiveModelInfo(
+      config,
+      modelId,
+    ).output.contains(Modality.image);
+    final retryNetworkErrors =
+        !useOpenAIImagesApi && !useZhipuLayoutParsing && !imageOutput;
+    final emitRetryUi = options.enabled && options.maxRetries > 0;
+    Stream<StreamChunk> retryRound(Stream<StreamChunk> Function() sendRound) {
+      return retryingStream<StreamChunk>(
+        options: options,
+        isCancelled: () => sessionToken.isCancelled,
+        cancelled: _whenCancelled(sessionToken),
+        shouldRetry: (error) => shouldRetryError(
+          error,
+          options,
+          retryOnNetworkError: retryNetworkErrors ? null : false,
+        ),
+        retryEvent: emitRetryUi
+            ? (attempt, delay, error) => RetryPending(
+                attempt: attempt + 1,
+                maxRetries: options.maxRetries,
+                delay: delay,
+                errorText: error.toString(),
+                retryAt: DateTime.now().add(delay),
+              )
+            : null,
+        attemptStartEvent: emitRetryUi ? () => const RetryAttemptStart() : null,
+        attempt: (_) => sendRound(),
+      );
+    }
 
     try {
-      if (useZhipuLayoutParsing) {
-        yield* sendZhipuLayoutParsingStream(
-          client,
-          config,
-          modelId,
-          safeMessages,
-          userImagePaths: safeUserImagePaths,
-          extraHeaders: extraHeaders,
-        );
-      } else if (kind == ProviderKind.openai) {
-        if (useOpenAIImagesApi) {
-          yield* sendOpenAIImagesStream(
-            client,
-            config,
-            modelId,
-            safeMessages,
-            userImagePaths: safeUserImagePaths,
-            extraHeaders: extraHeaders,
-            extraBody: extraBody,
-          );
-        } else if (config.useResponseApi == true) {
-          yield* sendOpenAIResponsesStream(
-            client,
-            config,
-            modelId,
-            safeMessages,
-            userImagePaths: safeUserImagePaths,
-            thinkingBudget: thinkingBudget,
-            temperature: temperature,
-            topP: topP,
-            maxTokens: maxTokens,
-            tools: tools,
-            onToolCall: onToolCall,
-            extraHeaders: extraHeaders,
-            extraBody: extraBody,
-            stream: stream,
-            builtInSearchOnly: builtInSearchOnly,
-            skipImageParsing: skipImageParsing,
-          );
-        } else {
-          yield* sendOpenAIChatCompletionsStream(
-            client,
-            config,
-            modelId,
-            safeMessages,
-            userImagePaths: safeUserImagePaths,
-            thinkingBudget: thinkingBudget,
-            temperature: temperature,
-            topP: topP,
-            maxTokens: maxTokens,
-            tools: tools,
-            onToolCall: onToolCall,
-            extraHeaders: extraHeaders,
-            extraBody: extraBody,
-            stream: stream,
-            builtInSearchOnly: builtInSearchOnly,
-            skipImageParsing: skipImageParsing,
-          );
-        }
-      } else if (kind == ProviderKind.claude) {
-        yield* sendClaudeStream(
-          client,
-          config,
-          modelId,
-          safeMessages,
+      yield* retryRound(
+        () => _sendOnce(
+          config: config,
+          modelId: modelId,
+          messages: safeMessages,
           userImagePaths: safeUserImagePaths,
           thinkingBudget: thinkingBudget,
           temperature: temperature,
@@ -264,7 +243,167 @@ class ChatApiService {
           extraHeaders: extraHeaders,
           extraBody: extraBody,
           stream: stream,
+          builtInSearchOnly: builtInSearchOnly,
+          skipImageParsing: skipImageParsing || !parseMarkdownImageLinks,
+          kind: kind,
+          useOpenAIImagesApi: useOpenAIImagesApi,
+          useZhipuLayoutParsing: useZhipuLayoutParsing,
+          sessionToken: sessionToken,
+          retryRound: retryRound,
+        ),
+      );
+    } finally {
+      if (rid.isNotEmpty) {
+        final cur = _activeCancelTokens[rid];
+        if (identical(cur, sessionToken)) {
+          _activeCancelTokens.remove(rid);
+        }
+      }
+    }
+  }
+
+  static Future<void> _whenCancelled(CancelToken token) async {
+    try {
+      await token.whenCancel;
+    } catch (_) {}
+  }
+
+  static void _bridgeCancel(CancelToken parent, CancelToken child) {
+    if (parent.isCancelled) {
+      if (!child.isCancelled) {
+        try {
+          child.cancel('cancelled');
+        } catch (_) {}
+      }
+      return;
+    }
+    parent.whenCancel.then(
+      (_) {
+        if (!child.isCancelled) {
+          try {
+            child.cancel('cancelled');
+          } catch (_) {}
+        }
+      },
+      onError: (_) {
+        if (!child.isCancelled) {
+          try {
+            child.cancel('cancelled');
+          } catch (_) {}
+        }
+      },
+    );
+  }
+
+  static Stream<StreamChunk> _sendOnce({
+    required ProviderConfig config,
+    required String modelId,
+    required List<Map<String, dynamic>> messages,
+    List<String>? userImagePaths,
+    int? thinkingBudget,
+    double? temperature,
+    double? topP,
+    int? maxTokens,
+    List<Map<String, dynamic>>? tools,
+    ToolCallHandler? onToolCall,
+    Map<String, String>? extraHeaders,
+    Map<String, dynamic>? extraBody,
+    required bool stream,
+    required bool builtInSearchOnly,
+    required bool skipImageParsing,
+    required ProviderKind kind,
+    required bool useOpenAIImagesApi,
+    required bool useZhipuLayoutParsing,
+    required CancelToken sessionToken,
+    required StreamRoundRunner retryRound,
+  }) async* {
+    if (sessionToken.isCancelled) {
+      throw http.ClientException('cancelled');
+    }
+    final cancelToken = CancelToken();
+    _bridgeCancel(sessionToken, cancelToken);
+    final client = _clientFor(config, cancelToken);
+    try {
+      if (useZhipuLayoutParsing) {
+        yield* sendZhipuLayoutParsingStream(
+          client,
+          config,
+          modelId,
+          messages,
+          userImagePaths: userImagePaths,
+          extraHeaders: extraHeaders,
+        );
+      } else if (kind == ProviderKind.openai) {
+        if (useOpenAIImagesApi) {
+          yield* sendOpenAIImagesStream(
+            client,
+            config,
+            modelId,
+            messages,
+            userImagePaths: userImagePaths,
+            extraHeaders: extraHeaders,
+            extraBody: extraBody,
+          );
+        } else if (config.useResponseApi == true) {
+          yield* sendOpenAIResponsesStream(
+            client,
+            config,
+            modelId,
+            messages,
+            userImagePaths: userImagePaths,
+            thinkingBudget: thinkingBudget,
+            temperature: temperature,
+            topP: topP,
+            maxTokens: maxTokens,
+            tools: tools,
+            onToolCall: onToolCall,
+            extraHeaders: extraHeaders,
+            extraBody: extraBody,
+            stream: stream,
+            builtInSearchOnly: builtInSearchOnly,
+            skipImageParsing: skipImageParsing,
+            retryRound: retryRound,
+          );
+        } else {
+          yield* sendOpenAIChatCompletionsStream(
+            client,
+            config,
+            modelId,
+            messages,
+            userImagePaths: userImagePaths,
+            thinkingBudget: thinkingBudget,
+            temperature: temperature,
+            topP: topP,
+            maxTokens: maxTokens,
+            tools: tools,
+            onToolCall: onToolCall,
+            extraHeaders: extraHeaders,
+            extraBody: extraBody,
+            stream: stream,
+            builtInSearchOnly: builtInSearchOnly,
+            skipImageParsing: skipImageParsing,
+            retryRound: retryRound,
+          );
+        }
+      } else if (kind == ProviderKind.claude) {
+        yield* sendClaudeStream(
+          client,
+          config,
+          modelId,
+          messages,
+          userImagePaths: userImagePaths,
+          thinkingBudget: thinkingBudget,
+          temperature: temperature,
+          topP: topP,
+          maxTokens: maxTokens,
+          tools: tools,
+          onToolCall: onToolCall,
+          extraHeaders: extraHeaders,
+          extraBody: extraBody,
+          stream: stream,
+          builtInSearchOnly: builtInSearchOnly,
           skipImageParsing: skipImageParsing,
+          retryRound: retryRound,
         );
       } else if (kind == ProviderKind.google) {
         final isVertex = config.vertexAI == true;
@@ -275,8 +414,8 @@ class ChatApiService {
             client: client,
             config: config,
             modelId: modelId,
-            messages: safeMessages,
-            userImagePaths: safeUserImagePaths,
+            messages: messages,
+            userImagePaths: userImagePaths,
             thinkingBudget: thinkingBudget,
             temperature: temperature,
             topP: topP,
@@ -287,14 +426,15 @@ class ChatApiService {
             extraBody: extraBody,
             stream: stream,
             skipImageParsing: skipImageParsing,
+            retryRound: retryRound,
           );
         } else if (isVertex) {
           yield* sendGoogleVertexStream(
             client,
             config,
             modelId,
-            safeMessages,
-            userImagePaths: safeUserImagePaths,
+            messages,
+            userImagePaths: userImagePaths,
             thinkingBudget: thinkingBudget,
             temperature: temperature,
             topP: topP,
@@ -305,14 +445,15 @@ class ChatApiService {
             extraBody: extraBody,
             stream: stream,
             skipImageParsing: skipImageParsing,
+            retryRound: retryRound,
           );
         } else {
           yield* sendGoogleGeminiStream(
             client,
             config,
             modelId,
-            safeMessages,
-            userImagePaths: safeUserImagePaths,
+            messages,
+            userImagePaths: userImagePaths,
             thinkingBudget: thinkingBudget,
             temperature: temperature,
             topP: topP,
@@ -323,17 +464,12 @@ class ChatApiService {
             extraBody: extraBody,
             stream: stream,
             skipImageParsing: skipImageParsing,
+            retryRound: retryRound,
           );
         }
       }
     } finally {
       client.close();
-      if (rid.isNotEmpty) {
-        final cur = _activeCancelTokens[rid];
-        if (identical(cur, cancelToken)) {
-          _activeCancelTokens.remove(rid);
-        }
-      }
     }
   }
 
@@ -356,8 +492,13 @@ class ChatApiService {
     bool ocrActive = false,
     bool builtInSearchOnly = false,
     bool skipImageParsing = false,
+    bool parseMarkdownImageLinks = true,
+    AutoRetryOptions? retryOverride,
+    void Function(RetryPending? pending)? onRetry,
   }) async {
-    final handler = StreamChunkHandler();
+    final handler = StreamChunkHandler(
+      onRetry: onRetry == null ? null : (pending) => onRetry(pending),
+    );
     await for (final chunk in sendMessageStream(
       config: config,
       modelId: modelId,
@@ -377,7 +518,12 @@ class ChatApiService {
       ocrActive: ocrActive,
       builtInSearchOnly: builtInSearchOnly,
       skipImageParsing: skipImageParsing,
+      parseMarkdownImageLinks: parseMarkdownImageLinks,
+      retryOverride: retryOverride,
     )) {
+      if (chunk is RetryAttemptStart) {
+        onRetry?.call(null);
+      }
       handler.handle(chunk);
     }
     return handler.toResult();

@@ -19,8 +19,8 @@ import '../stream/stream_chunk.dart';
 import '../stream/stream_chunk_emit.dart';
 import '../stream/stream_chunk_ids.dart';
 import 'claude/claude_decoder.dart';
+import 'claude/claude_history.dart';
 
-import 'claude_official.dart';
 import 'google_common.dart';
 
 Stream<StreamChunk> sendGoogleVertexStream(
@@ -39,6 +39,7 @@ Stream<StreamChunk> sendGoogleVertexStream(
   Map<String, dynamic>? extraBody,
   bool stream = true,
   bool skipImageParsing = false,
+  StreamRoundRunner? retryRound,
 }) {
   final cfg = config.copyWith(vertexAI: true);
   return sendGoogleStream(
@@ -57,6 +58,7 @@ Stream<StreamChunk> sendGoogleVertexStream(
     extraBody: extraBody,
     stream: stream,
     skipImageParsing: skipImageParsing,
+    retryRound: retryRound,
   );
 }
 
@@ -177,6 +179,7 @@ Stream<StreamChunk> sendGoogleVertexClaudeStream({
   Map<String, dynamic>? extraBody,
   bool stream = true,
   bool skipImageParsing = false,
+  StreamRoundRunner? retryRound,
 }) async* {
   final upstreamId = apiModelId(config, modelId);
   final loc = (config.location ?? 'us-central1').trim();
@@ -241,6 +244,9 @@ Stream<StreamChunk> sendGoogleVertexClaudeStream({
     nonSystemMessages.add(
       Map<String, dynamic>.from(m)
         ..remove(multimodalInternalRevisionIdKey)
+        ..remove(multimodalInternalClaudeContainerKey)
+        ..remove(multimodalInternalClaudeTurnKey)
+        ..remove(multimodalInternalGeminiThoughtSignatureKey)
         ..['role'] = role.isEmpty ? 'user' : role,
     );
   }
@@ -466,6 +472,7 @@ Stream<StreamChunk> sendGoogleVertexClaudeStream({
   var pauseTurn = false;
 
   yield* runProviderToolRounds(
+    retryRound: retryRound,
     sendRound: () async* {
       pendingCalls = [];
       lastStreamResults = [];
@@ -664,7 +671,7 @@ Stream<StreamChunk> sendGoogleVertexClaudeStream({
         lastStreamResults.add({
           'type': 'tool_result',
           'tool_use_id': tool.id,
-          if (res.isNotEmpty) 'content': res,
+          'content': claudeToolResultContent(res),
         });
       }
     },
@@ -688,7 +695,7 @@ Stream<StreamChunk> sendGoogleVertexClaudeStream({
                 <String, dynamic>{
                   'type': 'tool_result',
                   'tool_use_id': item.call.id,
-                  'content': item.content,
+                  'content': claudeToolResultContent(item.content),
                 },
             ];
       convo = [

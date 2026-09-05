@@ -20,6 +20,7 @@ import '../../chat/widgets/chat_message_widget.dart' show ToolUIPart;
 import '../services/message_builder_service.dart';
 import '../services/message_generation_service.dart';
 import '../services/chat_suggestion_service.dart';
+import '../utils/model_display_helper.dart';
 import 'chat_actions.dart';
 import 'file_processing_indicator_controller.dart';
 import 'chat_controller.dart';
@@ -890,10 +891,10 @@ class HomeViewModel extends ChangeNotifier {
         if (assistantSwitch != null) assistantSwitch,
       ]);
       await restoreConversationModel(id);
-      _streamController.clearGeminiThoughtSigs();
       // Arm the new list's initial position before listeners can paint it with
       // the previous conversation's scroll offset.
       onConversationSwitched?.call();
+      restoreRetryUiFromStreamingState();
       notifyListeners();
       unawaited(_drainQueuedInputIfReady(id));
     }
@@ -940,10 +941,11 @@ class HomeViewModel extends ChangeNotifier {
       prepared.conversation.assistantId,
     );
     unawaited(restoreConversationModel(id, assistantSwitch: assistantSwitch));
-    _streamController.clearGeminiThoughtSigs();
+    if (assistantSwitch != null) unawaited(assistantSwitch);
     // Arm the new list's initial position before listeners can paint it with
     // the previous conversation's scroll offset.
     onConversationSwitched?.call();
+    restoreRetryUiFromStreamingState();
     notifyListeners();
     unawaited(_drainQueuedInputIfReady(id));
   }
@@ -1135,6 +1137,26 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   /// Clear context (toggle truncate at tail).
+  /// Sets or clears the current conversation's model override.
+  ///
+  /// Passing null for both makes the conversation follow the assistant again.
+  Future<void> setConversationModel({
+    String? providerKey,
+    String? modelId,
+  }) async {
+    final convo = currentConversation;
+    if (convo == null) return;
+    final updated = await _chatService.setConversationModel(
+      convo.id,
+      providerKey: providerKey,
+      modelId: modelId,
+    );
+    if (updated != null) {
+      _chatController.updateCurrentConversation(updated);
+      notifyListeners();
+    }
+  }
+
   Future<void> clearContext() async {
     final convo = currentConversation;
     if (convo == null) return;
@@ -1409,6 +1431,12 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-apply auto-retry countdown from still-running background streams.
+  void restoreRetryUiFromStreamingState() {
+    final cid = currentConversation?.id;
+    if (cid != null) _chatActions.restoreRetryUi(cid);
+  }
+
   void _restoreMessageUiState() {
     for (int i = 0; i < messages.length; i++) {
       final m = messages[i];
@@ -1416,12 +1444,9 @@ class HomeViewModel extends ChangeNotifier {
         _streamController.restoreMessageUiState(
           m,
           getToolEventsFromDb: (id) => _chatService.getToolEvents(id),
-          getGeminiThoughtSigFromDb: (id) =>
-              _chatService.getGeminiThoughtSignature(id),
         );
 
-        // Clean content from gemini thought signatures
-        final cleanedContent = _streamController.captureGeminiThoughtSignature(
+        final cleanedContent = _chatService.migrateLegacyGeminiThoughtSignature(
           m.content,
           m.id,
         );
@@ -1439,6 +1464,7 @@ class HomeViewModel extends ChangeNotifier {
         );
       }
     }
+    restoreRetryUiFromStreamingState();
   }
 
   /// Serialize reasoning segments to JSON string.
@@ -1525,12 +1551,7 @@ class HomeViewModel extends ChangeNotifier {
     }
 
     final settings = _contextProvider.read<SettingsProvider>();
-    final provKey = settings.titleModelProvider;
-    final mdlId = settings.titleModelId;
-    // Opt-in: do not fall back to the chat model. Falling back made every
-    // reply try title summarization and toast failures for users who never
-    // configured it.
-    if (provKey == null || mdlId == null) return;
+    if (!settings.isTitleGenerationEnabled) return;
 
     final assistantProvider = _contextProvider.read<AssistantProvider>();
 
@@ -1538,6 +1559,14 @@ class HomeViewModel extends ChangeNotifier {
     final assistant = convo.assistantId != null
         ? assistantProvider.getById(convo.assistantId!)
         : assistantProvider.currentAssistant;
+    final chatModel = resolveChatModel(
+      settings,
+      conversation: convo,
+      assistant: assistant,
+    );
+    final provKey = settings.titleModelProvider ?? chatModel.providerKey;
+    final mdlId = settings.titleModelId ?? chatModel.modelId;
+    if (provKey == null || mdlId == null) return;
     final cfg = settings.getProviderConfig(provKey);
     final budget = settings.titleGenerationThinkingBudgetFor(
       assistant?.thinkingBudget,
@@ -1788,15 +1817,21 @@ class HomeViewModel extends ChangeNotifier {
     if (convo == null) return;
 
     final settings = _contextProvider.read<SettingsProvider>();
-    final provKey = settings.suggestionModelProvider;
-    final mdlId = settings.suggestionModelId;
-    if (provKey == null || mdlId == null) return;
+    if (!settings.isSuggestionGenerationEnabled) return;
 
     // Read context-dependent inputs before the async gap below.
     final assistantProvider = _contextProvider.read<AssistantProvider>();
     final assistant = convo.assistantId != null
         ? assistantProvider.getById(convo.assistantId!)
         : assistantProvider.currentAssistant;
+    final chatModel = resolveChatModel(
+      settings,
+      conversation: convo,
+      assistant: assistant,
+    );
+    final provKey = settings.suggestionModelProvider ?? chatModel.providerKey;
+    final mdlId = settings.suggestionModelId ?? chatModel.modelId;
+    if (provKey == null || mdlId == null) return;
     final locale = Localizations.localeOf(_contextProvider).toLanguageTag();
     final budget = settings.suggestionGenerationThinkingBudgetFor(
       assistant?.thinkingBudget,

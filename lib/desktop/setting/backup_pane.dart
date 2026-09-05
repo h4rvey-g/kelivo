@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+
+import '../../features/backup/forward_compat_consent_dialog.dart';
 import 'package:provider/provider.dart';
 
 import '../../icons/lucide_adapter.dart' as lucide;
@@ -10,6 +12,7 @@ import '../../core/database/business_repository.dart';
 import '../../core/models/backup.dart';
 import '../../core/providers/backup_provider.dart';
 import '../../core/providers/backup_reminder_provider.dart';
+import '../../core/providers/local_snapshot_provider.dart';
 import '../../core/providers/s3_backup_provider.dart';
 import '../../core/providers/settings_provider.dart';
 import '../../core/services/chat/chat_service.dart';
@@ -23,6 +26,8 @@ import '../../features/backup/backup_task_runner.dart';
 import '../../features/backup/widgets/backup_progress_dialog.dart';
 import '../../features/backup/backup_restart_dialog.dart';
 import '../../features/backup/widgets/backup_reminder_helpers.dart';
+import '../../features/backup/pages/local_snapshots_page.dart';
+import '../../core/database/startup_failure_report.dart' show formatBytes;
 import '../widgets/desktop_select_dropdown.dart';
 import '../../theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
@@ -52,6 +57,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
   bool _includeChats = true;
   bool _includeFiles = true;
   bool _s3PathStyle = true;
+  bool _remoteBackupDialogActive = false;
 
   @override
   void initState() {
@@ -208,6 +214,20 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     s3BackupProvider.updateConfig(cfg);
   }
 
+  Future<bool> _runRemoteBackupTask({
+    required String title,
+    required Future<void> Function(BackupTaskHandle handle) task,
+  }) async {
+    setState(() => _remoteBackupDialogActive = true);
+    try {
+      return await runBackupTask(context, title: title, task: task);
+    } finally {
+      if (mounted) {
+        setState(() => _remoteBackupDialogActive = false);
+      }
+    }
+  }
+
   Future<void> _chooseRestoreModeAndRun(
     Future<void> Function(RestoreMode, BackupTaskHandle) action,
   ) async {
@@ -239,6 +259,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
     final webdavVm = context.watch<BackupProvider>();
     final s3Vm = context.watch<S3BackupProvider>();
     final busy = webdavVm.busy || s3Vm.busy;
+    final showHeaderBusy = busy && !_remoteBackupDialogActive;
 
     return Container(
       alignment: Alignment.topCenter,
@@ -267,8 +288,8 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                           ),
                         ),
                       ),
-                      if (busy) const SizedBox(width: 8),
-                      if (busy)
+                      if (showHeaderBusy) const SizedBox(width: 8),
+                      if (showHeaderBusy)
                         SizedBox(
                           width: 18,
                           height: 18,
@@ -340,6 +361,8 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
               const SliverToBoxAdapter(child: SizedBox(height: 10)),
 
               SliverToBoxAdapter(child: _BackupReminderDesktopSection()),
+              const SliverToBoxAdapter(child: SizedBox(height: 12)),
+              const SliverToBoxAdapter(child: _LocalSnapshotDesktopSection()),
 
               const SliverToBoxAdapter(child: SizedBox(height: 10)),
 
@@ -501,22 +524,22 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                                             onProgress: handle.report,
                                             cancelToken: handle.cancelToken,
                                           ),
-                                      restoreFromItem:
-                                          (it, mode, handle) async {
-                                            await backupProvider
-                                                .restoreFromItem(
-                                                  it,
-                                                  mode: mode,
-                                                  onProgress: handle.report,
-                                                  cancelToken:
-                                                      handle.cancelToken,
-                                                );
-                                            final msg = backupProvider.message;
-                                            if (msg != null &&
-                                                msg != 'Restored') {
-                                              throw Exception(msg);
-                                            }
-                                          },
+                                      restoreFromItem: (it, mode, handle) async {
+                                        await backupProvider.restoreFromItem(
+                                          it,
+                                          mode: mode,
+                                          onProgress: handle.report,
+                                          cancelToken: handle.cancelToken,
+                                          onForwardCompatibility:
+                                              forwardCompatibilityPrompt(
+                                                context,
+                                              ),
+                                        );
+                                        final msg = backupProvider.message;
+                                        if (msg != null && msg != 'Restored') {
+                                          throw Exception(msg);
+                                        }
+                                      },
                                       skippedConversations: () =>
                                           backupProvider.skippedConversations,
                                       deleteAndReload:
@@ -537,8 +560,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                                         .read<BackupReminderProvider>();
                                     await _saveConfig();
                                     if (!context.mounted) return;
-                                    final success = await runBackupTask(
-                                      context,
+                                    final success = await _runRemoteBackupTask(
                                       title: l10n.backupPageBackupNow,
                                       task: (handle) async {
                                         final ok = await backupProvider.backup(
@@ -790,23 +812,22 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                                             onProgress: handle.report,
                                             cancelToken: handle.cancelToken,
                                           ),
-                                      restoreFromItem:
-                                          (it, mode, handle) async {
-                                            await s3BackupProvider
-                                                .restoreFromItem(
-                                                  it,
-                                                  mode: mode,
-                                                  onProgress: handle.report,
-                                                  cancelToken:
-                                                      handle.cancelToken,
-                                                );
-                                            final msg =
-                                                s3BackupProvider.message;
-                                            if (msg != null &&
-                                                msg != 'Restored') {
-                                              throw Exception(msg);
-                                            }
-                                          },
+                                      restoreFromItem: (it, mode, handle) async {
+                                        await s3BackupProvider.restoreFromItem(
+                                          it,
+                                          mode: mode,
+                                          onProgress: handle.report,
+                                          cancelToken: handle.cancelToken,
+                                          onForwardCompatibility:
+                                              forwardCompatibilityPrompt(
+                                                context,
+                                              ),
+                                        );
+                                        final msg = s3BackupProvider.message;
+                                        if (msg != null && msg != 'Restored') {
+                                          throw Exception(msg);
+                                        }
+                                      },
                                       skippedConversations: () =>
                                           s3BackupProvider.skippedConversations,
                                       deleteAndReload:
@@ -827,8 +848,7 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                                         .read<BackupReminderProvider>();
                                     await _saveS3Config();
                                     if (!context.mounted) return;
-                                    final success = await runBackupTask(
-                                      context,
+                                    final success = await _runRemoteBackupTask(
                                       title: l10n.backupPageBackupNow,
                                       task: (handle) async {
                                         final ok = await s3BackupProvider
@@ -965,13 +985,31 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                   );
                   final path = result?.files.single.path;
                   if (path == null) return;
+                  if (!context.mounted) return;
                   final f = File(path);
+                  // Settle the schema question before the progress dialog
+                  // goes up.
+                  final decision = await resolveForwardCompatibility(
+                    context,
+                    f,
+                  );
+                  if (!context.mounted) return;
+                  if (decision == ForwardCompatDecision.cancelled) return;
+                  if (decision == ForwardCompatDecision.unreadable) {
+                    showAppSnackBar(
+                      context,
+                      message: l10n.backupPageSchemaTooNewMessage,
+                    );
+                    return;
+                  }
                   await _chooseRestoreModeAndRun((mode, handle) async {
                     await backupProvider.restoreFromLocalFile(
                       f,
                       mode: mode,
                       onProgress: handle.report,
                       cancelToken: handle.cancelToken,
+                      allowUnverifiedForwardCompatible:
+                          decision == ForwardCompatDecision.proceedUnverified,
                     );
                   });
                 },
@@ -1095,6 +1133,65 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LocalSnapshotDesktopSection extends StatelessWidget {
+  const _LocalSnapshotDesktopSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    final vm = context.watch<LocalSnapshotProvider>();
+
+    return SectionCard(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(
+            l10n.localSnapshotSectionTitle,
+            style: TextStyle(fontSize: 15, fontWeight: AppFontWeights.semibold),
+          ),
+        ),
+        _ItemRow(
+          label: l10n.localSnapshotEnabledTitle,
+          vpad: 2,
+          trailing: IosSwitch(
+            value: vm.settings.enabled,
+            onChanged: (value) => context
+                .read<LocalSnapshotProvider>()
+                .updateSettings(vm.settings.copyWith(enabled: value)),
+          ),
+        ),
+        _rowDivider(context),
+        _ItemRow(
+          label: l10n.localSnapshotManageCopies,
+          trailing: _DeskIosButton(
+            label: l10n.localSnapshotUsage(
+              vm.copies.length,
+              formatBytes(vm.totalBytes),
+            ),
+            filled: false,
+            dense: true,
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const LocalSnapshotsPage()),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            l10n.localSnapshotEnabledSubtitle,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.45,
+              color: cs.onSurface.withValues(alpha: 0.55),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

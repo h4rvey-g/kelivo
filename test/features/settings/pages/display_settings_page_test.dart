@@ -96,6 +96,41 @@ void main() {
     expect(find.textContaining('French'), findsOneWidget);
   });
 
+  testWidgets('auto retry sits between message style and haptics', (
+    tester,
+  ) async {
+    final settings = SettingsProvider(createBusinessTestPreferences());
+    addTearDown(settings.dispose);
+    await settings.loaded;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsProvider>.value(
+        value: settings,
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: DisplaySettingsPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final autoRetry = find.text('Auto Retry');
+    await tester.scrollUntilVisible(
+      autoRetry,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(autoRetry, findsOneWidget);
+    expect(find.text('Message Style'), findsOneWidget);
+    expect(find.text('Haptics'), findsOneWidget);
+
+    await tester.tap(autoRetry);
+    await tester.pumpAndSettle();
+    expect(find.text('Enable auto-retry'), findsOneWidget);
+  });
+
   testWidgets(
     'chat item display page shows thinking and tool card switches with tips',
     (tester) async {
@@ -183,6 +218,22 @@ void main() {
 
     expect(find.text('Show Thinking Cards'), findsNothing);
     expect(find.text('Show Tool Cards'), findsNothing);
+
+    final keepCardsToggle = find.text(
+      'Keep thinking and tool cards when editing assistant',
+    );
+    await tester.scrollUntilVisible(
+      keepCardsToggle,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(keepCardsToggle, findsOneWidget);
+    expect(settings.keepThinkingAndToolCardsWhenEditingAssistant, isFalse);
+
+    await tester.tap(keepCardsToggle);
+    await tester.pumpAndSettle();
+    expect(settings.keepThinkingAndToolCardsWhenEditingAssistant, isTrue);
 
     final toggle = find.text('Paste long text as file');
     await tester.scrollUntilVisible(

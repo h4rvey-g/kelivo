@@ -293,7 +293,11 @@ Future<List<Map<String, dynamic>>> buildOpenAIChatCompletionMessages(
     );
     final outMsg = Map<String, dynamic>.from(m);
     outMsg.remove(multimodalInternalMediaPathsKey);
+    outMsg.remove(multimodalInternalDocumentPathsKey);
     outMsg.remove(multimodalInternalRevisionIdKey);
+    outMsg.remove(multimodalInternalClaudeContainerKey);
+    outMsg.remove(multimodalInternalClaudeTurnKey);
+    outMsg.remove(multimodalInternalGeminiThoughtSignatureKey);
     outMsg.remove('metadata');
     outMsg['role'] = role;
 
@@ -749,6 +753,7 @@ Stream<StreamChunk> runOpenAIChatCompletionsToolFollowUps({
   required int approxPromptTokens,
   required int approxCompletionChars,
   required bool includeReasoningDetailsOnDone,
+  StreamRoundRunner? retryRound,
 }) async* {
   var usage = initialUsage;
   var chars = approxCompletionChars;
@@ -904,6 +909,7 @@ Stream<StreamChunk> runOpenAIChatCompletionsToolFollowUps({
         totalTokens: usage?.totalTokens ?? approxTotal,
       );
     },
+    retryRound: retryRound,
     usageOf: () => usage,
   );
 }
@@ -928,6 +934,7 @@ Stream<StreamChunk> runOpenAIChatCompletionsNonStreamToolFollowUps({
   required bool needsReasoningEcho,
   required Map<String, String>? extraHeaders,
   required TokenUsage? initialUsage,
+  StreamRoundRunner? retryRound,
 }) async* {
   var usage = initialUsage;
   var lastObj = firstObj;
@@ -1029,6 +1036,7 @@ Stream<StreamChunk> runOpenAIChatCompletionsNonStreamToolFollowUps({
             : choice['finish_reason'].toString(),
       );
     },
+    retryRound: retryRound,
     usageOf: () => usage,
   );
 }

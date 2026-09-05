@@ -46,6 +46,7 @@ final class BusinessKeyRegistry {
     'chat_model_quick_slot_3_v1',
     'chat_model_quick_slot_4_v1',
     'chat_model_quick_slot_5_v1',
+    'per_chat_model_enabled_v1',
     'pinned_models_v1',
     'provider_group_map_v1',
     'provider_group_collapsed_v1',
@@ -86,6 +87,7 @@ final class BusinessKeyRegistry {
     'use_dynamic_color_v1',
     'app_locale_v1',
     'title_model_v1',
+    'title_generation_enabled_v1',
     'title_prompt_v1',
     'title_generation_thinking_enabled_v1',
     'summary_generation_thinking_enabled_v1',
@@ -105,6 +107,7 @@ final class BusinessKeyRegistry {
     'summary_model_v1',
     'summary_prompt_v1',
     'suggestion_model_v1',
+    'suggestion_generation_enabled_v1',
     'suggestion_prompt_v1',
     'suggestion_insert_on_tap_only_v1',
     'compress_model_v1',
@@ -175,6 +178,7 @@ final class BusinessKeyRegistry {
     'memory_migration_batch_size_v1',
     'chat_bubble_style_overrides_v1',
     'chat_bubble_style_overrides_user_v1',
+    'tool_schema_overrides_v1',
   };
 
   static BusinessKeyDisposition classify(String key) {
@@ -522,7 +526,11 @@ final class BusinessSettingsRouter {
             'presetMessages',
             'regexRules',
           },
-          stringLists: const {'mcpServerIds', 'localToolIds'},
+          stringLists: const {
+            'mcpServerIds',
+            'localToolIds',
+            'healthDataTypeIds',
+          },
         );
         _validateAssistantChildren(kind, payload);
         return;
@@ -933,7 +941,6 @@ final class BusinessSettingsRouter {
         );
       case 'zhipu':
       case 'linkup':
-      case 'brave':
       case 'metaso':
       case 'ollama':
       case 'jina':
@@ -942,6 +949,15 @@ final class BusinessSettingsRouter {
           kind,
           payload,
           requiredStrings: const {'apiKey'},
+          stringLists: const {'apiKeys'},
+        );
+      case 'brave':
+        _validateKnownFields(
+          kind,
+          payload,
+          requiredStrings: const {'apiKey'},
+          strings: const {'mode'},
+          integers: const {'maximumNumberOfTokens'},
           stringLists: const {'apiKeys'},
         );
       case 'searxng':
@@ -1000,6 +1016,29 @@ final class BusinessSettingsRouter {
             'countries',
             'languages',
           },
+          stringLists: const {'apiKeys'},
+        );
+      case 'anysearch':
+        _validateKnownFields(
+          kind,
+          payload,
+          strings: const {'apiKey', 'url'},
+          stringLists: const {'apiKeys'},
+        );
+      case 'parallel':
+        _validateKnownFields(
+          kind,
+          payload,
+          requiredStrings: const {'apiKey'},
+          strings: const {'mode'},
+          stringLists: const {'apiKeys'},
+        );
+      case 'you':
+        _validateKnownFields(
+          kind,
+          payload,
+          requiredStrings: const {'apiKey'},
+          strings: const {'contentMode'},
           stringLists: const {'apiKeys'},
         );
     }

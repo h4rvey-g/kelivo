@@ -71,21 +71,35 @@ class DefaultModelPage extends StatelessWidget {
             },
           ),
           const SizedBox(height: 16),
+          _PerChatModelCard(
+            value: settings.perChatModelEnabled,
+            onChanged: settings.setPerChatModelEnabled,
+          ),
+          const SizedBox(height: 16),
           _ModelCard(
             icon: Lucide.NotebookTabs,
             title: l10n.defaultModelPageTitleModelTitle,
             subtitle: l10n.defaultModelPageTitleModelSubtitle,
             modelProvider: settings.titleModelProvider,
             modelId: settings.titleModelId,
-            disabledWhenUnset: true,
-            resetIcon: Lucide.Ban,
+            fallbackProvider: settings.currentModelProvider,
+            fallbackModelId: settings.currentModelId,
+            disabledWhenUnset: !settings.isTitleGenerationEnabled,
+            showResetWhenUnset: !settings.isTitleGenerationEnabled,
+            resetTooltip: l10n.defaultModelPageUseCurrentModel,
             onReset: () async {
               await settings.resetTitleModel();
             },
+            onDisable: settings.isTitleGenerationEnabled
+                ? () async {
+                    await settings.disableTitleGeneration();
+                  }
+                : null,
             onPick: () async {
-              final sel = await pickConfiguredModel(
-                settings.titleModelProvider,
-                settings.titleModelId,
+              final sel = await showModelSelectorWithCurrentChatFallback(
+                context,
+                initialProviderKey: settings.titleModelProvider,
+                initialModelId: settings.titleModelId,
               );
               if (sel != null) {
                 await settings.setTitleModel(sel.providerKey, sel.modelId);
@@ -124,15 +138,24 @@ class DefaultModelPage extends StatelessWidget {
             subtitle: l10n.defaultModelPageSuggestionModelSubtitle,
             modelProvider: settings.suggestionModelProvider,
             modelId: settings.suggestionModelId,
-            disabledWhenUnset: true,
-            resetIcon: Lucide.Ban,
+            fallbackProvider: settings.currentModelProvider,
+            fallbackModelId: settings.currentModelId,
+            disabledWhenUnset: !settings.isSuggestionGenerationEnabled,
+            showResetWhenUnset: !settings.isSuggestionGenerationEnabled,
+            resetTooltip: l10n.defaultModelPageUseCurrentModel,
             onReset: () async {
               await settings.resetSuggestionModel();
             },
+            onDisable: settings.isSuggestionGenerationEnabled
+                ? () async {
+                    await settings.disableSuggestionGeneration();
+                  }
+                : null,
             onPick: () async {
-              final sel = await pickConfiguredModel(
-                settings.suggestionModelProvider,
-                settings.suggestionModelId,
+              final sel = await showModelSelectorWithCurrentChatFallback(
+                context,
+                initialProviderKey: settings.suggestionModelProvider,
+                initialModelId: settings.suggestionModelId,
               );
               if (sel != null) {
                 await settings.setSuggestionModel(sel.providerKey, sel.modelId);
@@ -823,7 +846,9 @@ class _ModelCard extends StatelessWidget {
     this.fallbackProvider,
     this.fallbackModelId,
     this.disabledWhenUnset = false,
-    this.resetIcon = Lucide.RotateCcw,
+    this.showResetWhenUnset = false,
+    this.resetTooltip,
+    this.onDisable,
     this.configAction,
   });
 
@@ -835,9 +860,11 @@ class _ModelCard extends StatelessWidget {
   final String? fallbackProvider;
   final String? fallbackModelId;
   final bool disabledWhenUnset;
-  final IconData resetIcon;
+  final bool showResetWhenUnset;
+  final String? resetTooltip;
   final VoidCallback onPick;
   final VoidCallback? onReset;
+  final VoidCallback? onDisable;
   final VoidCallback? configAction;
 
   @override
@@ -910,14 +937,24 @@ class _ModelCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (onReset != null && !usingFallback)
+                if (onReset != null && (!usingFallback || showResetWhenUnset))
                   Tooltip(
-                    message: l10n.defaultModelPageResetDefault,
+                    message: resetTooltip ?? l10n.defaultModelPageResetDefault,
                     child: _TactileIconButton(
-                      icon: resetIcon,
+                      icon: Lucide.RotateCcw,
                       color: cs.onSurface,
                       size: 20,
                       onTap: onReset!,
+                    ),
+                  ),
+                if (onDisable != null)
+                  Tooltip(
+                    message: l10n.defaultModelPageDisable,
+                    child: _TactileIconButton(
+                      icon: Lucide.Ban,
+                      color: cs.onSurface,
+                      size: 20,
+                      onTap: onDisable!,
                     ),
                   ),
                 if (configAction != null)
@@ -1045,6 +1082,70 @@ class _BrandAvatar extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: inner,
+    );
+  }
+}
+
+/// Toggles whether the chat model picker writes to the conversation or to the
+/// current assistant. Conversation pins survive being switched off, so the
+/// wording promises a scope change, not a reset.
+class _PerChatModelCard extends StatelessWidget {
+  const _PerChatModelCard({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      decoration: BoxDecoration(
+        color: context.appColors.surfaceCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.appColors.hairline, width: 0.6),
+      ),
+      child: _TactileRow(
+        onTap: () => onChanged(!value),
+        builder: (_) => Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Lucide.MessagesSquare, size: 18, color: cs.onSurface),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.defaultModelPagePerChatModelTitle,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: AppFontWeights.semibold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      l10n.defaultModelPagePerChatModelSubtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              IosSwitch(
+                value: value,
+                semanticLabel: l10n.defaultModelPagePerChatModelTitle,
+                onChanged: onChanged,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
