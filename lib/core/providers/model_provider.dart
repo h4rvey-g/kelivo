@@ -19,13 +19,13 @@ class ModelRegistry {
   // Qwen vision is intentional and precise (see [_isQwenVisionModel]): not
   // every Qwen 3.7 Max id is multimodal.
   static final RegExp vision = RegExp(
-    // GPT family incl. 4o, 4.1, 5 (exclude gpt-5-chat), and OpenAI o* series
-    r'(gpt-4o|gpt-4\.1|gpt-5(?!-chat)|o\d|gemini|claude|kimi-k2([-.])(?:5|6|7)|kimi-k3(?:$|[/_:@.-])|muse-spark-1\.1(?:$|[/_:@.-])|doubao.+(?:1([-.])(?:6|8)|seed-2|seed-evolving)|grok-4|step-3|intern-s1|minimax-m3(?:$|[/_:@])|mimo-v2(?:-omni(?:$|[/_:@])|\.5(?:$|[/_:@]))|sensenova-6\.7-flash-lite|deepseek.+vision)',
+    // GPT family incl. 4o, 4.1, 5, 6 (exclude chat-only variants), and OpenAI o* series
+    r'(gpt-4o|gpt-4\.1|gpt-5(?!-chat)|gpt-6(?!-chat)|o\d|gemini|claude|kimi-k2([-.])(?:5|6|7)|kimi-k3(?:$|[/_:@.-])|muse-spark-1\.1(?:$|[/_:@.-])|doubao.+(?:1([-.])(?:6|8)|seed-2|seed-evolving)|grok-4|step-3|intern-s1|minimax-m3(?:$|[/_:@])|mimo-v2(?:-omni(?:$|[/_:@])|\.5(?:$|[/_:@]))|sensenova-6\.7-flash-lite|deepseek.+vision)',
     caseSensitive: false,
   );
   // Tool-using models
   static final RegExp tool = RegExp(
-    (r'(gpt-4o|gpt-4\.1|gpt-oss|gpt-5(?!-chat)|o\d|'
+    (r'(gpt-4o|gpt-4\.1|gpt-oss|gpt-5(?!-chat)|gpt-6(?!-chat)|o\d|'
             r'gemini|claude|'
             r'qwen-?3|doubao.+(?:1([-.])(?:6|8)|seed-2|seed-evolving)|grok-4|kimi-k2|'
             r'kimi-k3(?:$|[/_:@.-])|muse-spark-1\.1(?:$|[/_:@.-])|'
@@ -40,7 +40,7 @@ class ModelRegistry {
     caseSensitive: false,
   );
   static final RegExp reasoning = RegExp(
-    (r'(gpt-oss|gpt-5(?!-chat)|o\d|'
+    (r'(gpt-oss|gpt-5(?!-chat)|gpt-6(?!-chat)|o\d|'
             r'gemini-(?:2\.5|3).*|gemini-(?:flash-latest|pro-latest)|'
             r'gemini-3-pro-image-preview|'
             r'gemma[-_]?4|'

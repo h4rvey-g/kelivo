@@ -3,6 +3,19 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('ModelRegistry Qwen / Doubao matrix', () {
+    test('GPT-6 Astra is inferred as a multimodal reasoning tool model', () {
+      final model = ModelRegistry.infer(
+        ModelInfo(id: 'gpt-6-astra', displayName: 'gpt-6-astra'),
+      );
+
+      expect(model.input, contains(Modality.image));
+      expect(model.output, const [Modality.text]);
+      expect(
+        model.abilities,
+        containsAll([ModelAbility.tool, ModelAbility.reasoning]),
+      );
+    });
+
     test('Qwen vision is precise for 3.7/3.8', () {
       final plus = ModelRegistry.infer(
         ModelInfo(id: 'qwen3.7-plus', displayName: 'qwen3.7-plus'),

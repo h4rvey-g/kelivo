@@ -68,6 +68,11 @@ const OpenAIReasoningSupport _gpt56Support = OpenAIReasoningSupport(
   samplingRequiresNone: true,
   samplingAllowsAuto: false,
 );
+const OpenAIReasoningSupport _gpt6AstraSupport = OpenAIReasoningSupport(
+  supportedEfforts: <String>['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  samplingRequiresNone: true,
+  samplingAllowsAuto: false,
+);
 const OpenAIReasoningSupport _kimiK3Support = OpenAIReasoningSupport(
   supportedEfforts: <String>['low', 'high', 'max'],
   offFallback: 'low',
@@ -123,7 +128,7 @@ bool openAISupportsNoneReasoning(String modelId) {
 bool openAIChatCompletionsToolsRequireNone(String modelId) {
   return _matchesModel(
     modelId.trim().toLowerCase(),
-    r'(^|[/_:@])gpt-5\.6(?:-(?:sol|terra|luna))?(?:$|[.@])',
+    r'(^|[/_:@])(?:gpt-5\.6(?:-(?:sol|terra|luna))?|gpt-6-astra)(?:$|[.@])',
   );
 }
 
@@ -232,13 +237,19 @@ OpenAIReasoningSupport? openAIReasoningSupport(String modelId) {
   if (_matchesModel(normalized, r'(^|[/_:@])muse-spark-1\.1(?:$|[-.])')) {
     return _museSpark11Support;
   }
-  if (!isOpenAIGpt5FamilyModel(normalized)) return null;
+  if (!isOpenAIGpt5FamilyModel(normalized) &&
+      !_matchesModel(normalized, r'(^|[/_:@])gpt-6(?:$|[-.])')) {
+    return null;
+  }
 
   if (_matchesModel(
     normalized,
     r'(^|[/_:@])gpt-5\.6(?:-(?:sol|terra|luna))?(?:$|[.@])',
   )) {
     return _gpt56Support;
+  }
+  if (_matchesModel(normalized, r'(^|[/_:@])gpt-6-astra(?:$|[-.])')) {
+    return _gpt6AstraSupport;
   }
   if (_matchesModel(normalized, r'^gpt-5\.5-pro(?:$|[-.])')) {
     return _gpt55ProSupport;

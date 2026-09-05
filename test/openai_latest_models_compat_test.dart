@@ -89,6 +89,8 @@ void main() {
         'gpt-5.6-terra',
         'gpt-5.6-luna',
         'openai/gpt-5.6-sol',
+        'gpt-6-astra',
+        'openai/gpt-6-astra',
       ]) {
         expect(openAINormalizeReasoningEffort('off', modelId), 'none');
         expect(openAINormalizeReasoningEffort('xhigh', modelId), 'xhigh');
@@ -192,6 +194,43 @@ void main() {
       expect(openRouterBody['temperature'], 0.7);
       expect(openRouterBody['top_p'], 0.8);
     });
+
+    test(
+      'GPT-6 Astra Chat tools force none and reject auto sampling',
+      () async {
+        const tools = [
+          {
+            'type': 'function',
+            'function': {
+              'name': 'lookup',
+              'description': 'Look something up',
+              'parameters': {
+                'type': 'object',
+                'properties': <String, dynamic>{},
+              },
+            },
+          },
+        ];
+        final toolBody = await _captureChatBody(
+          modelId: 'gpt-6-astra',
+          thinkingBudget: 128000,
+          temperature: 0.7,
+          topP: 0.8,
+          tools: tools,
+        );
+        final autoBody = await _captureChatBody(
+          modelId: 'gpt-6-astra',
+          thinkingBudget: -1,
+          temperature: 0.7,
+          topP: 0.8,
+        );
+
+        expect(toolBody['reasoning_effort'], 'none');
+        expect(autoBody.containsKey('reasoning_effort'), isFalse);
+        expect(autoBody.containsKey('temperature'), isFalse);
+        expect(autoBody.containsKey('top_p'), isFalse);
+      },
+    );
 
     test('GPT-5.6 auto effort omits incompatible sampling params', () async {
       final body = await _captureChatBody(

@@ -101,6 +101,11 @@ void main() {
         );
         expect(settings.supportsMaxReasoning('OpenAI', 'gpt-5.6-sol'), isTrue);
         expect(
+          settings.supportsXhighReasoning('OpenAI', 'gpt-6-astra'),
+          isTrue,
+        );
+        expect(settings.supportsMaxReasoning('OpenAI', 'gpt-6-astra'), isTrue);
+        expect(
           settings.supportsXhighReasoning('OpenRouter', 'openai/gpt-5.6-sol'),
           isTrue,
         );
