@@ -7362,11 +7362,9 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
   Widget build(BuildContext context) {
     return Actions(
       actions: <Type, Action<Intent>>{
-        CopySelectionTextIntent: CallbackAction<CopySelectionTextIntent>(
-          onInvoke: (_) {
-            _copyMarkdown();
-            return null;
-          },
+        CopySelectionTextIntent: _MarkdownSelectionCopyAction(
+          hasSelection: () => _selectedPlainText?.isNotEmpty ?? false,
+          copySelection: _copyMarkdown,
         ),
       },
       child: KeyedSubtree(
@@ -7426,5 +7424,21 @@ class _MarkdownSelectionAreaState extends State<_MarkdownSelectionArea> {
         ),
       ),
     );
+  }
+}
+
+class _MarkdownSelectionCopyAction extends Action<CopySelectionTextIntent> {
+  _MarkdownSelectionCopyAction({
+    required this.hasSelection,
+    required this.copySelection,
+  });
+
+  final bool Function() hasSelection;
+  final Future<void> Function() copySelection;
+
+  @override
+  Object? invoke(CopySelectionTextIntent intent) {
+    if (hasSelection()) return copySelection();
+    return callingAction?.invoke(intent);
   }
 }

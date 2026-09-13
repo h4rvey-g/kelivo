@@ -9,6 +9,7 @@ import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart';
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
+import 'package:Kelivo/shared/widgets/markdown_with_highlight.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -170,6 +171,66 @@ void main() {
 
       expect(clipboardCall?.method, 'Clipboard.setData');
       expect((clipboardCall?.arguments as Map?)?['text'], 'Alpha');
+    } finally {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('assistant code selection copies with keyboard', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    MethodCall? clipboardCall;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') clipboardCall = call;
+      return null;
+    });
+
+    try {
+      await tester.pumpWidget(
+        _buildHarness(
+          ChatMessageWidget(
+            message: ChatMessage(
+              id: 'markdown-code-selection-copy',
+              role: 'assistant',
+              content: '```dart\nfinal value = 42;\n```',
+              conversationId: 'conversation-1',
+            ),
+            showModelIcon: false,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final editableText = find.descendant(
+        of: find.byType(SelectableHighlightView),
+        matching: find.byType(EditableText),
+      );
+      expect(editableText, findsOneWidget);
+      final editableTextState = tester.state<EditableTextState>(editableText);
+      editableTextState.widget.focusNode.requestFocus();
+      editableTextState.userUpdateTextEditingValue(
+        editableTextState.textEditingValue.copyWith(
+          selection: const TextSelection(baseOffset: 6, extentOffset: 11),
+        ),
+        SelectionChangedCause.keyboard,
+      );
+      await tester.pump();
+
+      expect(editableTextState.widget.focusNode.hasPrimaryFocus, isTrue);
+      expect(
+        editableTextState.textEditingValue.selection,
+        const TextSelection(baseOffset: 6, extentOffset: 11),
+      );
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+
+      expect(clipboardCall?.method, 'Clipboard.setData');
+      expect(clipboardCall?.arguments, <String, dynamic>{'text': 'value'});
     } finally {
       messenger.setMockMethodCallHandler(SystemChannels.platform, null);
       debugDefaultTargetPlatformOverride = null;
