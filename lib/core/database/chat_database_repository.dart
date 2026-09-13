@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:uuid/uuid.dart';
@@ -25,6 +26,7 @@ import 'generation_run_commands.dart';
 import 'schema_migrations.dart';
 import '../services/api/stream/stream_chunk_handler.dart';
 import '../services/backup/restore_durability.dart';
+import '../services/backup/restore_previous_plan.dart';
 
 typedef ChatDatabaseSnapshotInfo = ({
   int schemaVersion,
@@ -2439,7 +2441,8 @@ class ChatDatabaseRepository {
   ///
   /// Version collapsing, truncate-index application, tail limiting, and part
   /// hydration intentionally happen in one SQL statement so a large
-  /// conversation is never materialized merely to discard its prefix.
+  /// conversation is never materialized merely to discard its prefix. A reset
+  /// after the requested revision does not apply to that earlier turn.
   Future<List<ChatMessage>> getSelectedContextMessages(
     String conversationId, {
     required int truncateIndex,
@@ -2517,7 +2520,8 @@ class ChatDatabaseRepository {
                   selected.logical_index
                 )
                 ELSE selected.logical_index
-              END AS logical_index
+              END AS logical_index,
+              selected.logical_index AS target_index
               FROM target
               JOIN ordered selected ON selected.group_id = target.group_id
             ),
@@ -2525,7 +2529,9 @@ class ChatDatabaseRepository {
               SELECT revision_id, logical_index
               FROM ordered
               WHERE logical_index >= CASE
-                WHEN ? >= 0 AND ? <= total_count THEN ?
+                WHEN ? >= 0 AND ? <= total_count
+                  AND (NOT EXISTS (SELECT 1 FROM cutoff)
+                    OR ? <= (SELECT target_index FROM cutoff)) THEN ?
                 ELSE 0
               END
                 AND (
@@ -2555,6 +2561,7 @@ class ChatDatabaseRepository {
               Variable<String>(conversationId),
               Variable<String>(throughRevisionId ?? ''),
               Variable<bool>(includeFollowingAssistant),
+              Variable<int>(truncateIndex),
               Variable<int>(truncateIndex),
               Variable<int>(truncateIndex),
               Variable<int>(truncateIndex),
@@ -4236,6 +4243,35 @@ class ChatDatabaseRepository {
     });
   }
 
+  /// Reads [conversationId]'s extras, applies [update], and writes the result
+  /// in one transaction. [updatedAt] is bumped only when the map changes.
+  Future<void> updateConversationExtras(
+    String conversationId,
+    Map<String, dynamic> Function(Map<String, dynamic> current) update,
+  ) {
+    return _db.transaction(() async {
+      final row = await (_db.select(
+        _db.conversationRows,
+      )..where((t) => t.id.equals(conversationId))).getSingleOrNull();
+      if (row == null) {
+        throw StateError('conversation_not_found');
+      }
+      final current = _decodeExtrasJson(row.extrasJson);
+      final next = update(Map<String, dynamic>.from(current));
+      if (jsonEncode(current) == jsonEncode(next)) {
+        return;
+      }
+      await (_db.update(
+        _db.conversationRows,
+      )..where((t) => t.id.equals(conversationId))).write(
+        ConversationRowsCompanion(
+          extrasJson: Value(jsonEncode(next)),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+    });
+  }
+
   Future<Conversation?> duplicateConversation(String sourceId) {
     return _db.transaction(() async {
       final sourceRow = await (_db.select(
@@ -4461,6 +4497,7 @@ class ChatDatabaseRepository {
                 messageIds: [
                   for (final message in kept) messageIdMap[message.id]!,
                 ],
+                extras: source.extras,
               ),
             ),
           );
@@ -5135,6 +5172,14 @@ class ChatDatabaseRepository {
       ]);
       attached = true;
       return await _db.transaction(() async {
+        // These rows own the workspace references carried by imported chats.
+        // Device-local external folder grants are deliberately excluded.
+        await _db.customStatement(
+          "INSERT OR IGNORE INTO extension_entity_rows "
+          "(kind, id, sort_order, owner_id, payload, updated_at) "
+          "SELECT kind, id, sort_order, owner_id, payload, updated_at "
+          "FROM merge_source.extension_entity_rows WHERE kind IN ('workspace', 'skill');",
+        );
         final sourceRows = await _db
             .customSelect(
               'SELECT id FROM merge_source.conversation_rows ORDER BY id;',
@@ -5321,13 +5366,14 @@ class ChatDatabaseRepository {
   /// processing before publish). Avoids opening a Drift isolate inside
   /// restore staging.
   ///
-  /// Minimal policy: every non-remote/data local attachment becomes
-  /// unavailable. We deliberately do **not** reuse candidate `asset_rows`
-  /// content_hash + path existence — that would treat the candidate's own
-  /// absolute path (or a colliding target file with different bytes) as proof.
+  /// Ordinary imports cannot reuse files based on path coincidence. For an
+  /// explicitly selected snapshot from this device, [localSnapshotAppDataDirectory]
+  /// allows rechecking managed files within that directory, including parts
+  /// that the snapshot had already marked unavailable.
   static Future<int> recomputeAttachmentAvailabilityOnDatabaseFile({
     required File databaseFile,
     required bool filesRestored,
+    Directory? localSnapshotAppDataDirectory,
   }) async {
     if (filesRestored) return 0;
     if (!await databaseFile.exists()) {
@@ -5343,6 +5389,9 @@ class ChatDatabaseRepository {
           "SELECT revision_id, ordinal, kind, payload "
           "FROM message_part_rows WHERE kind IN ('image', 'file');",
         );
+        final localRoot = localSnapshotAppDataDirectory?.absolute.path;
+        final resolvedRoot = localSnapshotAppDataDirectory
+            ?.resolveSymbolicLinksSync();
         var updated = 0;
         final stmt = db.prepare(
           'UPDATE message_part_rows SET payload = ? '
@@ -5355,9 +5404,30 @@ class ChatDatabaseRepository {
             if (decoded is! Map) continue;
             final map = Map<String, dynamic>.from(decoded);
             final uri = (map['uri'] ?? '').toString();
-            if (uri.isEmpty || isRemoteOrDataUri(uri)) continue;
-            if (map['unavailable'] == true) continue;
-            map['unavailable'] = true;
+            if (uri.isEmpty) continue;
+            var restoredUri = uri;
+            var unavailable = true;
+            if (localRoot != null) {
+              if (isRemoteOrDataUri(uri)) {
+                unavailable = false;
+              } else {
+                final local = _localSnapshotAttachment(
+                  uri,
+                  appDataPath: localRoot,
+                  resolvedAppDataPath: resolvedRoot!,
+                );
+                restoredUri = local.uri;
+                unavailable = !local.available;
+              }
+            } else if (isRemoteOrDataUri(uri)) {
+              continue;
+            }
+            if ((map['unavailable'] == true) == unavailable &&
+                restoredUri == uri) {
+              continue;
+            }
+            map['uri'] = restoredUri;
+            map['unavailable'] = unavailable;
             stmt.execute([jsonEncode(map), row['revision_id'], row['ordinal']]);
             updated += 1;
           }
@@ -5369,6 +5439,53 @@ class ChatDatabaseRepository {
         db.close();
       }
     });
+  }
+
+  static ({String uri, bool available}) _localSnapshotAttachment(
+    String uri, {
+    required String appDataPath,
+    required String resolvedAppDataPath,
+  }) {
+    final missing = (uri: uri, available: false);
+    try {
+      var raw = uri;
+      if (uri.startsWith('file:')) {
+        final parsed = Uri.parse(uri);
+        if (parsed.hasAuthority && parsed.host.isNotEmpty ||
+            parsed.hasQuery ||
+            parsed.hasFragment) {
+          return missing;
+        }
+        raw = parsed.toFilePath();
+      }
+      final logical = KelivoFileUri.isKelivoFileUri(uri)
+          ? uri
+          : KelivoFileUri.encodeFromAbsolute(raw, root: appDataPath) ??
+                KelivoFileUri.tryEncodeLegacyAbsolutePath(
+                  raw,
+                  allowGenericFallback: false,
+                );
+      final path = logical == null
+          ? raw
+          : KelivoFileUri.resolveToAbsolute(logical, root: appDataPath);
+      if (path == null || !p.isWithin(appDataPath, path)) return missing;
+      final relative = p.split(p.relative(path, from: appDataPath));
+      if (relative.length < 2 ||
+          !RestorePreviousAssetsPlan.rootNames.contains(relative.first)) {
+        return missing;
+      }
+      final file = File(path);
+      if (!file.existsSync()) return missing;
+      final resolved = file.resolveSymbolicLinksSync();
+      if (!p.isWithin(resolvedAppDataPath, resolved)) return missing;
+      return (uri: logical ?? uri, available: true);
+    } on FileSystemException {
+      return missing;
+    } on FormatException {
+      return missing;
+    } on ArgumentError {
+      return missing;
+    }
   }
 
   Future<String?> _conversationFingerprint(String schema, String id) async {
@@ -6809,6 +6926,7 @@ class ChatDatabaseRepository {
       lastMemoryExtractedOrder: row.lastMemoryExtractedOrder,
       chatModelProvider: row.chatModelProvider,
       chatModelId: row.chatModelId,
+      extras: _decodeExtrasJson(row.extrasJson),
     );
   }
 
@@ -6835,6 +6953,7 @@ class ChatDatabaseRepository {
       lastMemoryExtractedOrder: Value(conversation.lastMemoryExtractedOrder),
       chatModelProvider: Value(conversation.chatModelProvider),
       chatModelId: Value(conversation.chatModelId),
+      extrasJson: Value(jsonEncode(conversation.extras)),
     );
   }
 
@@ -7193,6 +7312,10 @@ class ChatDatabaseRepository {
     } catch (_) {
       return <String>[];
     }
+  }
+
+  Map<String, dynamic> _decodeExtrasJson(String raw) {
+    return Conversation.decodeExtras(raw);
   }
 
   // —— Memory system V1 read path (§13.3) ——

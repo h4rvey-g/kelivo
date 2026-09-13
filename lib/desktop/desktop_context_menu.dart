@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui' as ui;
+import '../icons/lucide_adapter.dart';
 import '../shared/widgets/ios_tactile.dart';
 import '../core/services/haptics.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
@@ -14,6 +15,7 @@ class DesktopContextMenuItem {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool danger;
+  final bool checked;
 
   const DesktopContextMenuItem({
     this.icon,
@@ -22,6 +24,7 @@ class DesktopContextMenuItem {
     this.onTap,
     this.onLongPress,
     this.danger = false,
+    this.checked = false,
   });
 }
 
@@ -31,15 +34,16 @@ Future<void> showDesktopContextMenuAt(
   required Offset globalPosition,
   required List<DesktopContextMenuItem> items,
 }) async {
-  final overlay = Overlay.maybeOf(context);
+  // Match the navigator used by showGeneralDialog, including nested panes.
+  final overlay = Navigator.of(context, rootNavigator: true).overlay;
   if (overlay == null) return;
   final overlayBox = overlay.context.findRenderObject() as RenderBox?;
   if (overlayBox == null) return;
+  final padding = MediaQuery.of(overlay.context).padding;
 
   const double minMenuWidth = 160;
   const double maxMenuWidth = 360;
   final screen = overlayBox.size;
-  final padding = MediaQuery.of(context).padding;
   final estimatedMenuWidth = _estimateMenuWidth(
     context,
     items,
@@ -76,6 +80,7 @@ Future<void> showDesktopContextMenuAt(
 
   await showGeneralDialog<void>(
     context: context,
+    useRootNavigator: true,
     barrierLabel: 'context-menu',
     barrierDismissible: true,
     barrierColor: cs.scrim.withValues(alpha: 0.06),
@@ -128,6 +133,7 @@ Future<void> showDesktopContextMenuAt(
                                         svgAsset: it.svgAsset,
                                         label: it.label,
                                         danger: it.danger,
+                                        checked: it.checked,
                                         onTap: () {
                                           Navigator.of(ctx).pop();
                                           it.onTap?.call();
@@ -181,6 +187,9 @@ double _estimateMenuWidth(
     double width = 12 /*left*/ + tp.width + 12 /*right*/;
     if (it.icon != null || it.svgAsset != null) {
       width += 18 /*icon*/ + 10 /*gap*/;
+    }
+    if (it.checked) {
+      width += 8 /*gap*/ + 16 /*check*/;
     }
     if (width > maxText) maxText = width;
   }
@@ -254,6 +263,7 @@ class _GlassMenuItem extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.danger = false,
+    this.checked = false,
   });
   final IconData? icon;
   final String? svgAsset;
@@ -261,6 +271,7 @@ class _GlassMenuItem extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool danger;
+  final bool checked;
 
   @override
   State<_GlassMenuItem> createState() => _GlassMenuItemState();
@@ -324,6 +335,10 @@ class _GlassMenuItemState extends State<_GlassMenuItem> {
                   ),
                 ),
               ),
+              if (widget.checked) ...[
+                const SizedBox(width: 8),
+                Icon(Lucide.Check, size: 16, color: cs.primary),
+              ],
             ],
           ),
         ),

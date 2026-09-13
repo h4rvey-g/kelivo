@@ -87,6 +87,8 @@ class _DisplaySettingsBody extends StatelessWidget {
                   _ToggleRowShowThinkingCards(),
                   _RowDivider(),
                   _ToggleRowShowToolCards(),
+                  _RowDivider(),
+                  _ToggleRowShowProducedFiles(),
                 ],
               ),
               const SizedBox(height: 16),
@@ -129,6 +131,8 @@ class _DisplaySettingsBody extends StatelessWidget {
                   _ToggleRowHideToolResultImages(),
                   _RowDivider(),
                   _ToggleRowInsertSuggestionOnly(),
+                  _RowDivider(),
+                  _CollapseLongUserMessagesSection(),
                   _RowDivider(),
                   _ToggleRowRegenerateDeleteTrailingMessages(),
                   _RowDivider(),
@@ -1809,6 +1813,8 @@ class _DesktopAppFontRow extends StatelessWidget {
     final current = sp.appFontFamily;
     final displayText = (current == null || current.isEmpty)
         ? l10n.desktopFontFamilySystemDefault
+        : sp.appFontLocalAlias != null
+        ? l10n.displaySettingsPageFontLocalFileLabel
         : current;
     return _LabeledRow(
       label: l10n.desktopFontAppLabel,
@@ -1834,6 +1840,14 @@ class _DesktopAppFontRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Tooltip(
+            message: l10n.googleFontsTitle,
+            child: _IconBtn(
+              icon: lucide.Lucide.Download,
+              onTap: () => showGoogleFontsPicker(context, forCode: false),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
             message: l10n.displaySettingsPageFontResetLabel,
             child: _IconBtn(
               icon: lucide.Lucide.RotateCcw,
@@ -1856,6 +1870,8 @@ class _DesktopCodeFontRow extends StatelessWidget {
     final current = sp.codeFontFamily;
     final displayText = (current == null || current.isEmpty)
         ? l10n.desktopFontFamilyMonospaceDefault
+        : sp.codeFontLocalAlias != null
+        ? l10n.displaySettingsPageFontLocalFileLabel
         : current;
     return _LabeledRow(
       label: l10n.desktopFontCodeLabel,
@@ -1878,6 +1894,14 @@ class _DesktopCodeFontRow extends StatelessWidget {
                 await settingsProvider.setCodeFontSystemFamily(fam);
               }
             },
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: l10n.googleFontsTitle,
+            child: _IconBtn(
+              icon: lucide.Lucide.Download,
+              onTap: () => showGoogleFontsPicker(context, forCode: true),
+            ),
           ),
           const SizedBox(width: 8),
           Tooltip(
@@ -2538,6 +2562,22 @@ class _ToggleRowShowToolCards extends StatelessWidget {
       tip: l10n.displaySettingsPageShowToolCardsSubtitle,
       value: sp.showToolCards,
       onChanged: (v) => context.read<SettingsProvider>().setShowToolCards(v),
+    );
+  }
+}
+
+class _ToggleRowShowProducedFiles extends StatelessWidget {
+  const _ToggleRowShowProducedFiles();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return _ToggleRow(
+      label: l10n.displaySettingsPageShowProducedFilesTitle,
+      tip: l10n.displaySettingsPageShowProducedFilesSubtitle,
+      value: sp.showProducedFiles,
+      onChanged: (v) =>
+          context.read<SettingsProvider>().setShowProducedFiles(v),
     );
   }
 }
@@ -3209,6 +3249,99 @@ class _AutoCollapseCodeBlocksSection extends StatelessWidget {
           const _AutoCollapseCodeBlockLinesRow(),
         ],
       ],
+    );
+  }
+}
+
+class _CollapseLongUserMessagesSection extends StatelessWidget {
+  const _CollapseLongUserMessagesSection();
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final sp = context.watch<SettingsProvider>();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ToggleRow(
+          label: l10n.displaySettingsPageCollapseLongUserMessagesTitle,
+          value: sp.collapseLongUserMessages,
+          onChanged: (v) =>
+              context.read<SettingsProvider>().setCollapseLongUserMessages(v),
+        ),
+        if (sp.collapseLongUserMessages) ...[
+          const _RowDivider(),
+          const _CollapseLongUserMessageCharsRow(),
+        ],
+      ],
+    );
+  }
+}
+
+class _CollapseLongUserMessageCharsRow extends StatefulWidget {
+  const _CollapseLongUserMessageCharsRow();
+  @override
+  State<_CollapseLongUserMessageCharsRow> createState() =>
+      _CollapseLongUserMessageCharsRowState();
+}
+
+class _CollapseLongUserMessageCharsRowState
+    extends State<_CollapseLongUserMessageCharsRow> {
+  late final TextEditingController _controller;
+  @override
+  void initState() {
+    super.initState();
+    final v = context.read<SettingsProvider>().collapseLongUserMessageChars;
+    _controller = TextEditingController(text: '$v');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _commit(String text) {
+    final n = int.tryParse(text.trim());
+    if (n == null) return;
+    final clamped = n.clamp(
+      SettingsProvider.minCollapseLongUserMessageChars,
+      SettingsProvider.maxCollapseLongUserMessageChars,
+    );
+    context.read<SettingsProvider>().setCollapseLongUserMessageChars(clamped);
+    _controller.text = '$clamped';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return _LabeledRow(
+      label: l10n.displaySettingsPageCollapseLongUserMessagesCharsTitle,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IntrinsicWidth(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 36, maxWidth: 72),
+              child: _BorderInput(
+                controller: _controller,
+                onSubmitted: _commit,
+                onFocusLost: _commit,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            l10n.displaySettingsPageCollapseLongUserMessagesCharsUnit,
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 14,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

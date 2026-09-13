@@ -1,3 +1,4 @@
+import '../models/mobile_background_settings.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -206,6 +207,8 @@ class SettingsProvider extends ChangeNotifier {
   static const String _displayShowThinkingCardsKey =
       'display_show_thinking_cards_v1';
   static const String _displayShowToolCardsKey = 'display_show_tool_cards_v1';
+  static const String _displayShowProducedFilesKey =
+      'display_show_produced_files_v1';
   static const String _displayAutoCollapseThinkingKey =
       'display_auto_collapse_thinking_v1';
   static const String _displayCollapseThinkingStepsKey =
@@ -304,6 +307,10 @@ class SettingsProvider extends ChangeNotifier {
       'display_auto_collapse_code_block_v1';
   static const String _displayAutoCollapseCodeBlockLinesKey =
       'display_auto_collapse_code_block_lines_v1';
+  static const String _displayCollapseLongUserMessagesKey =
+      'display_collapse_long_user_messages_v1';
+  static const String _displayCollapseLongUserMessageCharsKey =
+      'display_collapse_long_user_message_chars_v1';
   static const String _displayDesktopAutoSwitchTopicsKey =
       'display_desktop_auto_switch_topics_v1';
   static const String _displayDesktopShowTrayKey =
@@ -348,18 +355,7 @@ class SettingsProvider extends ChangeNotifier {
   static const String _desktopTopicPositionKey = 'desktop_topic_position_v1';
   static const String _desktopRightSidebarOpenKey =
       'desktop_right_sidebar_open_v1';
-  // Android background chat generation mode
-  static const String _androidBackgroundChatModeKey =
-      'android_background_chat_mode_v1';
-  // iOS background generation settings
-  static const String _iosBackgroundGenerationEnabledKey =
-      'ios_background_generation_enabled_v1';
-  static const String _iosBackgroundTaskRefreshEnabledKey =
-      'ios_background_task_refresh_enabled_v1';
-  static const String _iosLiveActivityEnabledKey =
-      'ios_live_activity_enabled_v1';
-  static const String _iosBackgroundNotificationsEnabledKey =
-      'ios_background_notifications_enabled_v1';
+  static const String _mobileBackgroundKey = 'mobile_background_settings_v1';
   // Fonts
   static const String _displayAppFontFamilyKey = 'display_app_font_family_v1';
   static const String _displayCodeFontFamilyKey = 'display_code_font_family_v1';
@@ -425,6 +421,8 @@ class SettingsProvider extends ChangeNotifier {
   static const String _desktopSidebarOpenKey = 'desktop_sidebar_open_v1';
   static const String _desktopRightSidebarWidthKey =
       'desktop_right_sidebar_width_v1';
+  static const String _desktopWorkspaceBarOpenKey =
+      'desktop_workspace_bar_open_v1';
 
   // ===== Network TTS services =====
   List<TtsServiceOptions> _ttsServices = const <TtsServiceOptions>[];
@@ -564,6 +562,8 @@ class SettingsProvider extends ChangeNotifier {
       _desktopTopicPosition == DesktopTopicPosition.right;
   bool _desktopRightSidebarOpen = true;
   bool get desktopRightSidebarOpen => _desktopRightSidebarOpen;
+  bool _desktopWorkspaceBarOpen = false;
+  bool get desktopWorkspaceBarOpen => _desktopWorkspaceBarOpen;
 
   Map<String, ProviderConfig> _providerConfigs = {};
   Map<String, ProviderConfig> get providerConfigs =>
@@ -1127,6 +1127,7 @@ class SettingsProvider extends ChangeNotifier {
         prefs.getBool(_displayShowUserMessageActionsKey) ?? true;
     _showThinkingCards = prefs.getBool(_displayShowThinkingCardsKey) ?? true;
     _showToolCards = prefs.getBool(_displayShowToolCardsKey) ?? true;
+    _showProducedFiles = prefs.getBool(_displayShowProducedFilesKey) ?? true;
     _autoCollapseThinking =
         prefs.getBool(_displayAutoCollapseThinkingKey) ?? true;
     _collapseThinkingSteps =
@@ -1289,6 +1290,15 @@ class SettingsProvider extends ChangeNotifier {
           1,
           999,
         );
+    _collapseLongUserMessages =
+        prefs.getBool(_displayCollapseLongUserMessagesKey) ?? false;
+    _collapseLongUserMessageChars =
+        (prefs.getInt(_displayCollapseLongUserMessageCharsKey) ??
+                defaultCollapseLongUserMessageChars)
+            .clamp(
+              minCollapseLongUserMessageChars,
+              maxCollapseLongUserMessageChars,
+            );
     _desktopAutoSwitchTopics =
         prefs.getBool(_displayDesktopAutoSwitchTopicsKey) ?? false;
     // Desktop: tray settings (default enabled on desktop platforms)
@@ -1332,6 +1342,8 @@ class SettingsProvider extends ChangeNotifier {
     }
     _desktopRightSidebarOpen =
         prefs.getBool(_desktopRightSidebarOpenKey) ?? true;
+    _desktopWorkspaceBarOpen =
+        prefs.getBool(_desktopWorkspaceBarOpenKey) ?? false;
     // Chat message background style (default | frosted | solid)
     final bgStyleStr =
         prefs.getString(_displayChatMessageBackgroundStyleKey) ?? 'default';
@@ -1404,37 +1416,16 @@ class SettingsProvider extends ChangeNotifier {
       await prefs.setString(_appLocaleKey, 'system');
     }
 
-    // Android background chat mode (Android only; default ON on first run)
-    try {
-      final rawBg = prefs.getString(_androidBackgroundChatModeKey);
-      if (rawBg == null) {
-        // Default to OFF to avoid permission prompts on first launch
-        _androidBackgroundChatMode = AndroidBackgroundChatMode.off;
-        await prefs.setString(_androidBackgroundChatModeKey, 'off');
-      } else {
-        switch (rawBg) {
-          case 'on_notify':
-            _androidBackgroundChatMode = AndroidBackgroundChatMode.onNotify;
-            break;
-          case 'on':
-            _androidBackgroundChatMode = AndroidBackgroundChatMode.on;
-            break;
-          case 'off':
-          default:
-            _androidBackgroundChatMode = AndroidBackgroundChatMode.off;
-        }
+    final backgroundJson = prefs.getString(_mobileBackgroundKey);
+    if (backgroundJson != null) {
+      try {
+        _mobileBackground = MobileBackgroundSettings.fromJson(
+          jsonDecode(backgroundJson) as Map<String, dynamic>,
+        );
+      } catch (_) {
+        _mobileBackground = const MobileBackgroundSettings();
       }
-    } catch (_) {
-      _androidBackgroundChatMode = AndroidBackgroundChatMode.off;
     }
-    _iosBackgroundGenerationEnabled =
-        prefs.getBool(_iosBackgroundGenerationEnabledKey) ?? false;
-    _iosBackgroundTaskRefreshEnabled =
-        prefs.getBool(_iosBackgroundTaskRefreshEnabledKey) ?? false;
-    _iosLiveActivityEnabled =
-        prefs.getBool(_iosLiveActivityEnabledKey) ?? false;
-    _iosBackgroundNotificationsEnabled =
-        prefs.getBool(_iosBackgroundNotificationsEnabledKey) ?? false;
 
     // load search settings
     final searchServicesStr = prefs.getString(_searchServicesKey);
@@ -1847,10 +1838,11 @@ class SettingsProvider extends ChangeNotifier {
       (_codeFontLocalAlias?.isNotEmpty == true) ? _codeFontLocalAlias : null;
 
   Future<void> setAppFontSystemFamily(String? family) async {
+    final previousPath = _appFontLocalPath;
     _appFontFamily = (family == null || family.trim().isEmpty)
         ? null
         : family.trim();
-    // Clear local alias for system/google switch
+    // Clear the local font selection when switching to a system family.
     _appFontLocalAlias = null;
     _appFontLocalPath = null;
     notifyListeners();
@@ -1858,9 +1850,11 @@ class SettingsProvider extends ChangeNotifier {
     await prefs.setString(_displayAppFontFamilyKey, _appFontFamily ?? '');
     await prefs.remove(_displayAppFontLocalAliasKey);
     await prefs.remove(_displayAppFontLocalPathKey);
+    await _deleteManagedFontFileIfUnused(previousPath);
   }
 
   Future<void> setCodeFontSystemFamily(String? family) async {
+    final previousPath = _codeFontLocalPath;
     _codeFontFamily = (family == null || family.trim().isEmpty)
         ? null
         : family.trim();
@@ -1871,22 +1865,27 @@ class SettingsProvider extends ChangeNotifier {
     await prefs.setString(_displayCodeFontFamilyKey, _codeFontFamily ?? '');
     await prefs.remove(_displayCodeFontLocalAliasKey);
     await prefs.remove(_displayCodeFontLocalPathKey);
+    await _deleteManagedFontFileIfUnused(previousPath);
   }
 
-  Future<void> setAppFontFromLocal({
+  Future<bool> setAppFontFromLocal({
     required String path,
     String? alias,
+    String? licenseText,
   }) async {
     final previousPath = _appFontLocalPath;
-    final localPath = await _importLocalFontFile(path);
-    if (localPath == null) return;
+    final localPath = await _importLocalFontFile(
+      path,
+      licenseText: licenseText,
+    );
+    if (localPath == null) return false;
     final fam = await _registerLocalFont(
       path: localPath,
       aliasPrefix: alias ?? 'kelivo_local_app',
     );
     if (fam == null) {
       await _deleteManagedFontFileIfUnused(localPath);
-      return;
+      return false;
     }
     _appFontFamily = fam;
     _appFontLocalAlias = fam;
@@ -1897,22 +1896,27 @@ class SettingsProvider extends ChangeNotifier {
     await prefs.setString(_displayAppFontLocalAliasKey, _appFontLocalAlias!);
     await prefs.setString(_displayAppFontLocalPathKey, _appFontLocalPath!);
     await _deleteManagedFontFileIfUnused(previousPath);
+    return true;
   }
 
-  Future<void> setCodeFontFromLocal({
+  Future<bool> setCodeFontFromLocal({
     required String path,
     String? alias,
+    String? licenseText,
   }) async {
     final previousPath = _codeFontLocalPath;
-    final localPath = await _importLocalFontFile(path);
-    if (localPath == null) return;
+    final localPath = await _importLocalFontFile(
+      path,
+      licenseText: licenseText,
+    );
+    if (localPath == null) return false;
     final fam = await _registerLocalFont(
       path: localPath,
       aliasPrefix: alias ?? 'kelivo_local_code',
     );
     if (fam == null) {
       await _deleteManagedFontFileIfUnused(localPath);
-      return;
+      return false;
     }
     _codeFontFamily = fam;
     _codeFontLocalAlias = fam;
@@ -1923,6 +1927,7 @@ class SettingsProvider extends ChangeNotifier {
     await prefs.setString(_displayCodeFontLocalAliasKey, _codeFontLocalAlias!);
     await prefs.setString(_displayCodeFontLocalPathKey, _codeFontLocalPath!);
     await _deleteManagedFontFileIfUnused(previousPath);
+    return true;
   }
 
   Future<void> clearAppFont() async {
@@ -2078,7 +2083,11 @@ class SettingsProvider extends ChangeNotifier {
     }
   }
 
-  Future<String?> _importLocalFontFile(String sourcePath) async {
+  Future<String?> _importLocalFontFile(
+    String sourcePath, {
+    String? licenseText,
+  }) async {
+    File? dest;
     try {
       final source = File(sourcePath);
       if (!await source.exists()) return null;
@@ -2094,15 +2103,21 @@ class SettingsProvider extends ChangeNotifier {
       final base = safeBase.isEmpty ? 'font' : safeBase;
       final ext = p.extension(sourceName).toLowerCase();
       final safeExt = (ext == '.ttf' || ext == '.otf') ? ext : '.ttf';
-      final dest = File(
+      dest = File(
         p.join(
           dir.path,
           '${base}_${DateTime.now().microsecondsSinceEpoch}$safeExt',
         ),
       );
       await dest.writeAsBytes(await source.readAsBytes(), flush: true);
+      if (licenseText != null) {
+        await File(
+          '${dest.path}.license.txt',
+        ).writeAsString(licenseText, flush: true);
+      }
       return dest.path;
     } catch (_) {
+      await _deleteManagedFontFileIfUnused(dest?.path);
       return null;
     }
   }
@@ -2119,6 +2134,8 @@ class SettingsProvider extends ChangeNotifier {
       if (await file.exists()) {
         await file.delete();
       }
+      final license = File('${file.path}.license.txt');
+      if (await license.exists()) await license.delete();
     } catch (_) {}
   }
 
@@ -2200,6 +2217,14 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = _preferences;
     await prefs.setBool(_desktopRightSidebarOpenKey, _desktopRightSidebarOpen);
+  }
+
+  Future<void> setDesktopWorkspaceBarOpen(bool open) async {
+    if (_desktopWorkspaceBarOpen == open) return;
+    _desktopWorkspaceBarOpen = open;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setBool(_desktopWorkspaceBarOpenKey, _desktopWorkspaceBarOpen);
   }
 
   // ===== App locale (UI language) =====
@@ -3124,107 +3149,16 @@ class SettingsProvider extends ChangeNotifier {
     await prefs.setBool(_mobileAssistantDetailOutlineEnabledKey, enabled);
   }
 
-  // ===== Android background chat generation =====
-  AndroidBackgroundChatMode _androidBackgroundChatMode =
-      AndroidBackgroundChatMode.off;
-  AndroidBackgroundChatMode get androidBackgroundChatMode =>
-      _androidBackgroundChatMode;
-  Future<void> setAndroidBackgroundChatMode(
-    AndroidBackgroundChatMode mode,
-  ) async {
-    if (_androidBackgroundChatMode == mode) return;
-    _androidBackgroundChatMode = mode;
-    notifyListeners();
-    final prefs = _preferences;
-    final v = switch (mode) {
-      AndroidBackgroundChatMode.onNotify => 'on_notify',
-      AndroidBackgroundChatMode.on => 'on',
-      AndroidBackgroundChatMode.off => 'off',
-    };
-    await prefs.setString(_androidBackgroundChatModeKey, v);
-    // Best-effort: update Android background execution state immediately
-    try {
-      if (Platform.isAndroid) {
-        // Direct call; file is present in project and guards by Platform
-        // ignore: depend_on_referenced_packages
-        // ignore_for_file: unnecessary_import
-        // ignore: avoid_print
-        // Defer import here is not possible; rely on main.dart sync. This is a no-op placeholder.
-      }
-    } catch (_) {}
-  }
+  MobileBackgroundSettings _mobileBackground = const MobileBackgroundSettings();
+  MobileBackgroundSettings get mobileBackground => _mobileBackground;
 
-  // ===== iOS background chat generation =====
-  bool _iosBackgroundGenerationEnabled = false;
-  bool get iosBackgroundGenerationEnabled => _iosBackgroundGenerationEnabled;
-  Future<void> setIosBackgroundGenerationEnabled(bool v) async {
-    if (_iosBackgroundGenerationEnabled == v) return;
-    _iosBackgroundGenerationEnabled = v;
-    if (!v) {
-      _iosBackgroundTaskRefreshEnabled = false;
-      _iosLiveActivityEnabled = false;
-      _iosBackgroundNotificationsEnabled = false;
-    }
+  Future<void> setMobileBackground(MobileBackgroundSettings settings) async {
+    _mobileBackground = settings;
     notifyListeners();
-    final prefs = _preferences;
-    await prefs.setBool(
-      _iosBackgroundGenerationEnabledKey,
-      _iosBackgroundGenerationEnabled,
+    await _preferences.setString(
+      _mobileBackgroundKey,
+      jsonEncode(settings.toJson()),
     );
-    if (!v) {
-      await prefs.setBool(_iosBackgroundTaskRefreshEnabledKey, false);
-      await prefs.setBool(_iosLiveActivityEnabledKey, false);
-      await prefs.setBool(_iosBackgroundNotificationsEnabledKey, false);
-    }
-  }
-
-  bool _iosBackgroundTaskRefreshEnabled = false;
-  bool get iosBackgroundTaskRefreshEnabled => _iosBackgroundTaskRefreshEnabled;
-  Future<void> setIosBackgroundTaskRefreshEnabled(bool v) async {
-    if (_iosBackgroundTaskRefreshEnabled == v) return;
-    _iosBackgroundTaskRefreshEnabled = v;
-    if (v) _iosBackgroundGenerationEnabled = true;
-    notifyListeners();
-    final prefs = _preferences;
-    await prefs.setBool(
-      _iosBackgroundTaskRefreshEnabledKey,
-      _iosBackgroundTaskRefreshEnabled,
-    );
-    if (v) {
-      await prefs.setBool(_iosBackgroundGenerationEnabledKey, true);
-    }
-  }
-
-  bool _iosLiveActivityEnabled = false;
-  bool get iosLiveActivityEnabled => _iosLiveActivityEnabled;
-  Future<void> setIosLiveActivityEnabled(bool v) async {
-    if (_iosLiveActivityEnabled == v) return;
-    _iosLiveActivityEnabled = v;
-    if (v) _iosBackgroundGenerationEnabled = true;
-    notifyListeners();
-    final prefs = _preferences;
-    await prefs.setBool(_iosLiveActivityEnabledKey, _iosLiveActivityEnabled);
-    if (v) {
-      await prefs.setBool(_iosBackgroundGenerationEnabledKey, true);
-    }
-  }
-
-  bool _iosBackgroundNotificationsEnabled = false;
-  bool get iosBackgroundNotificationsEnabled =>
-      _iosBackgroundNotificationsEnabled;
-  Future<void> setIosBackgroundNotificationsEnabled(bool v) async {
-    if (_iosBackgroundNotificationsEnabled == v) return;
-    _iosBackgroundNotificationsEnabled = v;
-    if (v) _iosBackgroundGenerationEnabled = true;
-    notifyListeners();
-    final prefs = _preferences;
-    await prefs.setBool(
-      _iosBackgroundNotificationsEnabledKey,
-      _iosBackgroundNotificationsEnabled,
-    );
-    if (v) {
-      await prefs.setBool(_iosBackgroundGenerationEnabledKey, true);
-    }
   }
 
   void setDynamicColorSupported(bool v) {
@@ -4905,6 +4839,16 @@ Requirements:
     await prefs.setBool(_displayShowToolCardsKey, v);
   }
 
+  // Display: files produced by tools at the bottom of assistant messages.
+  bool _showProducedFiles = true;
+  bool get showProducedFiles => _showProducedFiles;
+  Future<void> setShowProducedFiles(bool v) async {
+    if (_showProducedFiles == v) return;
+    _showProducedFiles = v;
+    notifyListeners();
+    await _preferences.setBool(_displayShowProducedFilesKey, v);
+  }
+
   // Display: auto-collapse reasoning/thinking section
   bool _autoCollapseThinking = true;
   bool get autoCollapseThinking => _autoCollapseThinking;
@@ -5512,6 +5456,35 @@ Requirements:
     await prefs.setInt(_displayAutoCollapseCodeBlockLinesKey, next);
   }
 
+  // Display: collapse over-long user messages behind an expand toggle
+  bool _collapseLongUserMessages = false;
+  bool get collapseLongUserMessages => _collapseLongUserMessages;
+  Future<void> setCollapseLongUserMessages(bool v) async {
+    if (_collapseLongUserMessages == v) return;
+    _collapseLongUserMessages = v;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setBool(_displayCollapseLongUserMessagesKey, v);
+  }
+
+  // Display: user message collapse threshold (characters)
+  static const int defaultCollapseLongUserMessageChars = 500;
+  static const int minCollapseLongUserMessageChars = 50;
+  static const int maxCollapseLongUserMessageChars = 100000;
+  int _collapseLongUserMessageChars = defaultCollapseLongUserMessageChars;
+  int get collapseLongUserMessageChars => _collapseLongUserMessageChars;
+  Future<void> setCollapseLongUserMessageChars(int v) async {
+    final next = v.clamp(
+      minCollapseLongUserMessageChars,
+      maxCollapseLongUserMessageChars,
+    );
+    if (_collapseLongUserMessageChars == next) return;
+    _collapseLongUserMessageChars = next;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setInt(_displayCollapseLongUserMessageCharsKey, next);
+  }
+
   // Desktop-only: auto switch to Topics tab when changing assistant
   bool _desktopAutoSwitchTopics = false;
   bool get desktopAutoSwitchTopics => _desktopAutoSwitchTopics;
@@ -5960,6 +5933,7 @@ Requirements:
     copy._showModelTimestamp = _showModelTimestamp;
     copy._showThinkingCards = _showThinkingCards;
     copy._showToolCards = _showToolCards;
+    copy._showProducedFiles = _showProducedFiles;
     copy._autoCollapseThinking = _autoCollapseThinking;
     copy._collapseThinkingSteps = _collapseThinkingSteps;
     copy._showToolResultSummary = _showToolResultSummary;
@@ -5999,11 +5973,7 @@ Requirements:
     copy._newChatAfterDelete = _newChatAfterDelete;
     copy._longPasteAsFile = _longPasteAsFile;
     copy._longPasteAsFileThreshold = _longPasteAsFileThreshold;
-    copy._iosBackgroundGenerationEnabled = _iosBackgroundGenerationEnabled;
-    copy._iosBackgroundTaskRefreshEnabled = _iosBackgroundTaskRefreshEnabled;
-    copy._iosLiveActivityEnabled = _iosLiveActivityEnabled;
-    copy._iosBackgroundNotificationsEnabled =
-        _iosBackgroundNotificationsEnabled;
+    copy._mobileBackground = _mobileBackground;
     copy._desktopSendShortcut = _desktopSendShortcut;
     copy._desktopMessageNavButtonsMode = _desktopMessageNavButtonsMode;
     copy._chatFontScale = _chatFontScale;
@@ -6018,6 +5988,8 @@ Requirements:
     copy._mobileCodeBlockWrap = _mobileCodeBlockWrap;
     copy._autoCollapseCodeBlock = _autoCollapseCodeBlock;
     copy._autoCollapseCodeBlockLines = _autoCollapseCodeBlockLines;
+    copy._collapseLongUserMessages = _collapseLongUserMessages;
+    copy._collapseLongUserMessageChars = _collapseLongUserMessageChars;
     copy._desktopAutoSwitchTopics = _desktopAutoSwitchTopics;
     copy._desktopShowTray = _desktopShowTray;
     copy._desktopMinimizeToTrayOnClose = _desktopMinimizeToTrayOnClose;
@@ -6255,8 +6227,6 @@ enum ProviderKind { openai, google, claude }
 
 // Background rendering mode for chat message bubbles
 enum ChatMessageBackgroundStyle { defaultStyle, frosted, solid }
-
-enum AndroidBackgroundChatMode { off, on, onNotify }
 
 class ProviderConfig {
   static const _kelivoInPublicApiKey = 'kelivo';

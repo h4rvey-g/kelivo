@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:gpt_markdown/custom_widgets/markdown_config.dart'
     show GptMarkdownConfig;
+import 'package:gpt_markdown/custom_widgets/selectable_adapter.dart';
 import 'package:flutter_highlight/themes/github.dart';
 import 'package:flutter_highlight/themes/atom-one-dark-reasonable.dart';
 import 'package:flutter/rendering.dart';
@@ -20,6 +21,7 @@ import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import '../../utils/sandbox_path_resolver.dart';
 import '../../utils/clipboard_images.dart';
+import '../../utils/svg_preview_html.dart';
 import '../../features/chat/pages/image_viewer_page.dart';
 import '../../features/chat/pages/html_preview_page.dart';
 import 'snackbar.dart';
@@ -27,6 +29,7 @@ import 'ios_tactile.dart';
 import 'mermaid_bridge.dart';
 import 'export_capture_scope.dart';
 import 'mermaid_image_cache.dart';
+import 'diagram_exporter.dart';
 import 'plantuml_block.dart';
 import 'package:path/path.dart' as p;
 import 'package:Kelivo/l10n/app_localizations.dart';
@@ -35,11 +38,17 @@ import 'package:Kelivo/theme/theme_factory.dart' show getPlatformFontFallback;
 import 'package:provider/provider.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../core/providers/settings_provider.dart';
+import '../../core/services/workspace/file_link_resolver.dart';
+import '../../features/workspace/workspace_file_navigation.dart';
 import 'package:Kelivo/desktop/html_preview_dialog.dart';
 import '../cache/byte_lru_cache.dart';
 import 'incremental_markdown_document.dart';
+import 'markdown_block_list.dart';
+import 'streaming_rich_text.dart';
+import 'streaming_code_fence.dart';
 import 'markdown_line_lexer.dart';
 import 'safe_html_block.dart';
+import 'markdown_source_scan.dart';
 
 // Inline math is parsed on the UI thread. Bound the lookahead window so a long
 // line with many unmatched openers cannot trigger repeated whole-line scans.
@@ -92,9 +101,11 @@ class MarkdownWithCodeHighlight extends StatefulWidget {
     this.citationIndexResolver,
     this.baseStyle,
     this.streaming = false,
+    this.conversationId,
   });
 
   final String text;
+  final String? conversationId;
   final void Function(String id)? onCitationTap;
 
   /// Resolves a citation id (from `[cite:id]` markers) to its display index
@@ -133,6 +144,17 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   Timer? _renderDebounce;
   final IncrementalMarkdownDocument _incrementalDocument =
       IncrementalMarkdownDocument();
+  final _codeFenceParser = StreamingCodeFenceParser();
+  final _separatorCache = Expando<(bool, bool, bool)>();
+  String? _liveBlockSource;
+  String? _liveBlockNormalized;
+  (bool, bool)? _liveBlockOptions;
+  String? _metadataSource;
+  final _sourceScan = MarkdownSourceScan();
+  bool? _metadataAppended;
+  String _sanitizedText = '';
+  List<String> _imageUrls = const [];
+  List<String> _documentCitationIds = const [];
   static final ByteLruCache<String, String> _normalizedBlockCache =
       ByteLruCache<String, String>(
         maxBytes: 4 << 20,
@@ -181,9 +203,50 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     final cs = Theme.of(context).colorScheme;
-    final sanitizedText = _sanitizeImageLinks(_renderText);
-    final imageUrls = _extractImageUrls(sanitizedText);
+    if (!identical(_metadataSource, _renderText)) {
+      final previousSanitizationUnchanged = identical(
+        _metadataSource,
+        _sanitizedText,
+      );
+      _sourceScan.update(_renderText);
+      _metadataSource = _renderText;
+      if (_sourceScan.hasBrackets) {
+        _sanitizedText = _sanitizeImageLinks(_renderText);
+        _imageUrls = _extractImageUrls(_sanitizedText);
+        _documentCitationIds = _citationIds(_sanitizedText);
+      } else {
+        _sanitizedText = _renderText;
+        _imageUrls = _documentCitationIds = const [];
+      }
+      // Image URL rewriting can change an earlier prefix as a link closes.
+      // Share the prefix proof only when both inputs reached the splitter raw.
+      _metadataAppended =
+          previousSanitizationUnchanged &&
+              identical(_sanitizedText, _renderText)
+          ? _sourceScan.appended
+          : null;
+    }
+    final sanitizedText = _sanitizedText;
+    final imageUrls = _imageUrls;
     String normalize(String source, {required bool streaming}) {
+      if (!_sourceScan.needsPreprocessing) return source;
+      if (streaming) {
+        final options = (
+          settings.enableMathRendering,
+          settings.enableDollarLatex,
+        );
+        if (_liveBlockSource == source && _liveBlockOptions == options) {
+          return _liveBlockNormalized!;
+        }
+        _liveBlockSource = source;
+        _liveBlockOptions = options;
+        return _liveBlockNormalized = _preprocessFences(
+          source,
+          enableMath: options.$1,
+          enableDollarLatex: options.$2,
+          streaming: true,
+        );
+      }
       final cacheKey =
           '${settings.enableMathRendering}:${settings.enableDollarLatex}:$streaming:$source';
       final cached = _normalizedBlockCache.get(cacheKey);
@@ -198,13 +261,24 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
       return value;
     }
 
+    // Keep the same block tree from the first streaming frame through
+    // completion, so growing replies do not dispose interactive children.
     final useIncrementalBlocks =
-        widget.streaming && sanitizedText.length >= 512;
+        widget.streaming || _incrementalDocument.blocks.isNotEmpty;
     final sourceBlocks = useIncrementalBlocks
-        ? _incrementalDocument.update(sanitizedText)
+        ? _incrementalDocument.update(
+            sanitizedText,
+            appendOnly: _metadataAppended,
+          )
         : const <IncrementalMarkdownBlock>[];
+    final sourceAppended = _incrementalDocument.lastUpdateAppended;
+    final wholeFence = useIncrementalBlocks
+        ? null
+        : _codeFenceParser.update(sanitizedText.trimRight());
     final normalized = useIncrementalBlocks
         ? null
+        : wholeFence != null
+        ? sanitizedText
         : normalize(sanitizedText, streaming: widget.streaming);
     // Base text style (can be overridden by caller)
     final inkColor = _markdownInkColor(context);
@@ -337,11 +411,15 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
     // this signature (theme colors, math flags, fonts, font metrics, streaming
     // mode), otherwise a theme/settings change would keep stale rendering.
     final documentRevision =
-        '${_imageRevision(imageUrls)}\u0002${_citationRevision(sanitizedText, widget.citationIndexResolver)}';
+        '${_imageRevision(imageUrls)}\u0002${_citationRevision(_documentCitationIds, widget.citationIndexResolver)}';
     final themeSignature =
         '${Theme.of(context).brightness.index}-${cs.surface.toARGB32()}-${inkColor.toARGB32()}-${cs.primary.toARGB32()}-${cs.outlineVariant.toARGB32()}-${settings.enableMathRendering}-${settings.enableDollarLatex}-${widget.streaming}-${baseTextStyle?.fontSize}-${baseTextStyle?.height}-${baseTextStyle?.letterSpacing}-${baseTextStyle?.fontFamily}-$codeFontFamily-$appFontFamily-$documentRevision';
 
-    Widget buildMarkdown(String markdown, Key key) {
+    Widget buildMarkdown(
+      String markdown,
+      Key key, {
+      StreamingCodeFence? fence,
+    }) {
       final detailsRegistry = MarkdownDetailsRegistry(
         enableMath: settings.enableMathRendering,
       );
@@ -358,8 +436,32 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
         // Disable built-in $...$ LaTeX so our custom scrollable handlers take over
         useDollarSignsForLatex: false,
         onLinkTap: (url, title) => _handleLinkTap(context, url),
-        preprocessBlocks: preprocessBlocks,
+        preprocessBlocks: _sourceScan.hasHtml ? preprocessBlocks : null,
+        newlinesNormalized: !_sourceScan.hasCarriageReturns,
         generation: themeSignature,
+        textBuilder: (text) => StreamingRichText(text: text),
+        streaming: widget.streaming,
+        spanBuilder: fence == null
+            ? null
+            : (ctx, config) => [
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.baseline,
+                  baseline: TextBaseline.alphabetic,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: _buildFencedContent(
+                          fence.language,
+                          _unmaskHtmlTagStartsInsideFencedCode(fence.code),
+                          widget.streaming && !fence.closed,
+                          fence.closed,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
         components: [
           DetailsHtmlMd(detailsRegistry),
           SafeHtmlBlockMd(htmlRegistry),
@@ -367,6 +469,14 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
         ],
         inlineComponents: inlineComponents,
         imageBuilder: (ctx, url, width, height) {
+          if (KelivoLink.tryParse(url) != null) {
+            return _KelivoMarkdownImage(
+              url: url,
+              width: width,
+              height: height,
+              conversationId: widget.conversationId,
+            );
+          }
           final imgs = imageUrls.isNotEmpty ? imageUrls : <String>[url];
           final idx = imgs.indexOf(url);
           final initial = idx >= 0 ? idx : 0;
@@ -617,10 +727,12 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
         codeBuilder: (ctx, name, code, closed) {
           final lang = name.trim();
           final restoredCode = _unmaskHtmlTagStartsInsideFencedCode(code);
-          if (lang.toLowerCase() == 'mermaid') {
-            return _MermaidBlock(
+          if (lang.toLowerCase() == 'mermaid' ||
+              isSvgCodeBlock(lang, restoredCode)) {
+            return _DiagramBlock(
               code: restoredCode,
               streaming: widget.streaming && !closed,
+              isSvg: lang.toLowerCase() != 'mermaid',
             );
           } else if (lang.toLowerCase() == 'plantuml') {
             return PlantUMLBlock(code: restoredCode);
@@ -635,47 +747,75 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
       );
     }
 
-    final blockContents = useIncrementalBlocks
-        ? [
-            for (final block in sourceBlocks)
-              normalize(
-                block.text,
-                streaming: widget.streaming && !block.stable,
-              ),
-          ]
-        : const <String>[];
+    bool swallowsSeparator(IncrementalMarkdownBlock block) {
+      final cached = _separatorCache[block];
+      if (cached != null &&
+          cached.$1 == settings.enableMathRendering &&
+          cached.$2 == settings.enableDollarLatex) {
+        return cached.$3;
+      }
+      final result = _swallowsTrailingBlankLine(
+        normalize(block.text, streaming: widget.streaming && !block.stable),
+        mathEnabled: settings.enableMathRendering,
+      );
+      _separatorCache[block] = (
+        settings.enableMathRendering,
+        settings.enableDollarLatex,
+        result,
+      );
+      return result;
+    }
+
     final markdownWidget = useIncrementalBlocks
-        ? _MarkdownBlockColumn(
-            children: [
-              for (var i = 0; i < blockContents.length; i++) ...[
-                // Rendering the document as one string keeps the blank run
-                // between two blocks as a real line box. Rendering block by
-                // block drops it, so a long reply is laid out tighter while it
-                // streams and then grows the moment it finishes and switches to
-                // the whole-document render. Put the line back so both paths
-                // agree — unless the block before it ends in something whose own
-                // renderer eats the run.
-                if (i > 0 &&
-                    !_swallowsTrailingBlankLine(
-                      blockContents[i - 1],
-                      mathEnabled: settings.enableMathRendering,
-                    ))
-                  _MarkdownBlockSeparator(style: baseTextStyle),
-                _CachedMarkdownBlock(
-                  key: ValueKey(
-                    'markdown-source-block-${sourceBlocks[i].start}',
+        ? MarkdownBlockList(
+            blocks: sourceBlocks,
+            signature: themeSignature,
+            itemBuilder: (_, i) {
+              final block = sourceBlocks[i];
+              final fence = _codeFenceParser.update(
+                block.text.trimRight(),
+                sourceStart: block.start,
+                appendOnly: sourceAppended,
+              );
+              if (fence != null) {
+                _separatorCache[block] = (
+                  settings.enableMathRendering,
+                  settings.enableDollarLatex,
+                  false,
+                );
+              }
+              final content = fence != null
+                  ? block.text
+                  : normalize(
+                      block.text,
+                      streaming: widget.streaming && !block.stable,
+                    );
+              final previous = i > 0 ? sourceBlocks[i - 1] : null;
+              return Column(
+                key: ValueKey('markdown-source-block-${block.start}'),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (previous != null && !swallowsSeparator(previous))
+                    _MarkdownBlockSeparator(style: baseTextStyle),
+                  _CachedMarkdownBlock(
+                    source: block.text,
+                    content: content,
+                    signature: themeSignature,
+                    appendOnly: sourceAppended,
+                    builder: (markdown, key) =>
+                        buildMarkdown(markdown, key, fence: fence),
                   ),
-                  content: blockContents[i],
-                  signature: themeSignature,
-                  builder: buildMarkdown,
-                ),
-              ],
-            ],
+                ],
+              );
+            },
           )
         : _CachedMarkdownBlock(
+            source: sanitizedText,
             content: normalized!,
             signature: themeSignature,
-            builder: buildMarkdown,
+            builder: (markdown, key) =>
+                buildMarkdown(markdown, key, fence: wholeFence),
           );
 
     final result = appFontFamily.isEmpty
@@ -688,6 +828,15 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   }
 
   Future<void> _handleLinkTap(BuildContext context, String url) async {
+    final kelivo = KelivoLink.tryParse(_stripFormatChars(url));
+    if (kelivo != null) {
+      await openWorkspaceLinkedFile(
+        context,
+        _stripFormatChars(url),
+        conversationId: widget.conversationId,
+      );
+      return;
+    }
     Uri uri;
     try {
       uri = _normalizeUrl(url);
@@ -720,19 +869,137 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   }
 }
 
+class _KelivoMarkdownImage extends StatefulWidget {
+  const _KelivoMarkdownImage({
+    required this.url,
+    this.width,
+    this.height,
+    this.conversationId,
+  });
+
+  final String url;
+  final double? width;
+  final double? height;
+  final String? conversationId;
+
+  @override
+  State<_KelivoMarkdownImage> createState() => _KelivoMarkdownImageState();
+}
+
+class _KelivoMarkdownImageState extends State<_KelivoMarkdownImage> {
+  Future<File?>? _future;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _future ??= _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _KelivoMarkdownImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url ||
+        oldWidget.conversationId != widget.conversationId) {
+      _future = _resolve();
+    }
+  }
+
+  Future<File?> _resolve() async {
+    final link = KelivoLink.tryParse(widget.url);
+    if (link == null) return null;
+    return resolveWorkspaceLinkedFile(
+      context,
+      widget.url,
+      conversationId: widget.conversationId,
+    );
+  }
+
+  Widget _broken(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: widget.width ?? 36,
+      height: widget.height ?? 36,
+      child: Center(
+        child: Icon(
+          Lucide.ImageOff,
+          size: 22,
+          color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<File?>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return SizedBox(
+            width: widget.width ?? 36,
+            height: widget.height ?? 36,
+            child: const Center(
+              child: SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        final file = snapshot.data;
+        if (file == null) return _broken(context);
+        return GestureDetector(
+          onTap: () {
+            Navigator.of(context).push(
+              PageRouteBuilder<void>(
+                pageBuilder: (_, __, ___) =>
+                    ImageViewerPage(images: [file.path]),
+                transitionDuration: const Duration(milliseconds: 360),
+                reverseTransitionDuration: const Duration(milliseconds: 280),
+                transitionsBuilder: (context, anim, sec, child) {
+                  final curved = CurvedAnimation(
+                    parent: anim,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  );
+                  return FadeTransition(opacity: curved, child: child);
+                },
+              ),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              file,
+              width: widget.width,
+              height: widget.height,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stack) => _broken(context),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 typedef _MarkdownBlockBuilder = Widget Function(String content, Key key);
 
 class _CachedMarkdownBlock extends StatefulWidget {
   const _CachedMarkdownBlock({
-    super.key,
+    required this.source,
     required this.content,
     required this.signature,
     required this.builder,
+    this.appendOnly = false,
   });
 
+  final String source;
   final String content;
   final String signature;
   final _MarkdownBlockBuilder builder;
+  final bool appendOnly;
 
   @override
   State<_CachedMarkdownBlock> createState() => _CachedMarkdownBlockState();
@@ -746,7 +1013,8 @@ class _CachedMarkdownBlockState extends State<_CachedMarkdownBlock> {
   @override
   void didUpdateWidget(covariant _CachedMarkdownBlock oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.content != widget.content ||
+    if (oldWidget.source != widget.source ||
+        oldWidget.content != widget.content ||
         oldWidget.signature != widget.signature) {
       _rendered = null;
     }
@@ -755,6 +1023,7 @@ class _CachedMarkdownBlockState extends State<_CachedMarkdownBlock> {
   Key _parseIdentity(String content) {
     final previous = _identityContent;
     if (previous != null &&
+        !widget.appendOnly &&
         (content.length < previous.length || !content.startsWith(previous))) {
       _identityEpoch++;
     }
@@ -766,7 +1035,10 @@ class _CachedMarkdownBlockState extends State<_CachedMarkdownBlock> {
   Widget build(BuildContext context) {
     return _rendered ??= widget.builder(
       widget.content,
-      _parseIdentity(widget.content),
+      // Synthetic table cells and math delimiters change as tokens arrive;
+      // only a replacement of the source should reset interactive state.
+      // The splitter removes trailing newlines when a block becomes stable.
+      _parseIdentity(widget.source.trimRight()),
     );
   }
 }
@@ -867,42 +1139,19 @@ class _MarkdownBlockSeparator extends StatelessWidget {
     // The paragraph carries the `NewLines` style, and its one run is a space:
     // the style has to sit on the paragraph because a line box is measured from
     // the paragraph style when there is no run, and that path rounds
-    // differently from a line that has one. A space is invisible, and the
-    // separator stays out of selection so it cannot be copied.
-    return SelectionContainer.disabled(
-      child: Text.rich(
-        const TextSpan(text: ' '),
-        style: (style ?? const TextStyle()).copyWith(
-          fontSize: style?.fontSize ?? _fallbackFontSize,
-          height: _newLinesHeight,
+    // differently from a line that has one. Copy the paragraph break instead
+    // of the invisible space used to measure it.
+    return SelectableAdapter(
+      selectedText: '\n\n',
+      child: SelectionContainer.disabled(
+        child: Text.rich(
+          const TextSpan(text: ' '),
+          style: (style ?? const TextStyle()).copyWith(
+            fontSize: style?.fontSize ?? _fallbackFontSize,
+            height: _newLinesHeight,
+          ),
         ),
       ),
-    );
-  }
-}
-
-class _MarkdownBlockColumn extends StatelessWidget {
-  const _MarkdownBlockColumn({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final column = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: children,
-    );
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (!constraints.hasBoundedHeight) return column;
-        return OverflowBox(
-          alignment: Alignment.topCenter,
-          minHeight: 0,
-          maxHeight: double.infinity,
-          child: SizedBox(width: constraints.maxWidth, child: column),
-        );
-      },
     );
   }
 }
@@ -992,6 +1241,10 @@ String _preprocessFences(
   required bool enableDollarLatex,
   bool streaming = false,
 }) {
+  // None of the rewrites below can start without one of these markers. Plain
+  // prose, including bold/italic text, should not make dozens of full scans on
+  // every streamed character. Citation rewrites all begin with '['.
+  if (!_preprocessMarker.hasMatch(input)) return input;
   // Normalize newlines the same way GptMarkdown does before it parses.
   var out = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   out = _maskBlockquoteFenceMarkers(out);
@@ -1180,7 +1433,10 @@ String _preprocessFences(
   return out;
 }
 
+final _preprocessMarker = RegExp(r'[`~$\\<\r#\[\]\-|>]');
+
 String _maskHtmlTagStartsInsideFencedCode(String input) {
+  if (!input.contains('<')) return input;
   return input.replaceAllMapped(
     RegExp(r'</?(?:details|summary)\b', caseSensitive: false),
     (match) => '$_fencedHtmlTagStartMask${match[0]!.substring(1)}',
@@ -1272,10 +1528,12 @@ class _CitationRef {
 }
 
 String _maskBlockquoteFenceMarkers(String input) {
+  if (!input.contains('>')) return input;
   final lines = input.split('\n');
   var inTopLevelFence = false;
   String? topLevelFence;
   String? topLevelFenceMarker;
+  RegExp? topLevelClose;
 
   for (var i = 0; i < lines.length; i++) {
     final line = lines[i];
@@ -1284,9 +1542,7 @@ String _maskBlockquoteFenceMarkers(String input) {
       final closeMarker = topLevelFenceMarker;
       if (closeFence != null &&
           closeMarker != null &&
-          RegExp(
-            '^[ \\t]*${RegExp.escape(closeFence)}${RegExp.escape(closeMarker)}*[ \\t]*\$',
-          ).hasMatch(line)) {
+          topLevelClose!.hasMatch(line)) {
         inTopLevelFence = false;
         topLevelFence = null;
         topLevelFenceMarker = null;
@@ -1301,6 +1557,9 @@ String _maskBlockquoteFenceMarkers(String input) {
       inTopLevelFence = true;
       topLevelFence = topLevelOpen.group(1)!;
       topLevelFenceMarker = topLevelOpen.group(2)!;
+      topLevelClose = RegExp(
+        '^[ \\t]*${RegExp.escape(topLevelFence)}${RegExp.escape(topLevelFenceMarker)}*[ \\t]*\$',
+      );
       continue;
     }
 
@@ -2255,18 +2514,46 @@ int _findMatchingOpenBracket(String tex, int close) {
   return -1;
 }
 
+String _stripFormatChars(String input) {
+  return input.replaceAll(RegExp(r'[\u200B\u200C\u200D\uFEFF]'), '');
+}
+
+String _softBreakLongTableTokens(String input) {
+  return input.replaceAllMapped(
+    RegExp(r'[^\s/\\-_]{22,}'),
+    (match) => _insertSoftBreaks(match.group(0)!, every: 18),
+  );
+}
+
 String _softBreakInline(String input) {
   // Insert zero-width break for inline code segments with long tokens.
   if (input.length < 60) return input;
-  final buf = StringBuffer();
-  for (int i = 0; i < input.length; i++) {
-    buf.write(input[i]);
-    if ((i + 1) % 24 == 0) buf.write('\u200B');
+  return _insertSoftBreaks(input, every: 24);
+}
+
+/// Inserts U+200B after every [every] UTF-16 code units, never between the
+/// two halves of a surrogate pair (which would make the string ill-formed and
+/// throw inside `Paragraph.addText`).
+@visibleForTesting
+String insertMarkdownSoftBreaksForTesting(String value, {required int every}) =>
+    _insertSoftBreaks(value, every: every);
+
+String _insertSoftBreaks(String value, {required int every}) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < value.length; i++) {
+    final unit = value.codeUnitAt(i);
+    buffer.writeCharCode(unit);
+    final isHighSurrogate = unit >= 0xD800 && unit <= 0xDBFF;
+    if (isHighSurrogate) continue;
+    if ((i + 1) % every == 0 && i != value.length - 1) {
+      buffer.write('\u200B');
+    }
   }
-  return buf.toString();
+  return buffer.toString();
 }
 
 List<String> _extractImageUrls(String md) {
+  if (!_imageStart.hasMatch(md)) return const [];
   final re = RegExp(r"!\[[^\]]*\]\(([^)\s]+)\)");
   return re
       .allMatches(md)
@@ -2283,8 +2570,7 @@ int _imageRevision(List<String> urls) =>
 /// Citation cache key from the actual `(id, resolvedIndex)` pairs. Callback
 /// identity is ignored: a new closure over the same map must not rebuild,
 /// and a map update through a stable closure must.
-int _citationRevision(String md, String? Function(String id)? resolver) {
-  final ids = _citationIds(md);
+int _citationRevision(List<String> ids, String? Function(String id)? resolver) {
   var hash = ids.length;
   for (final id in ids) {
     hash = Object.hash(hash, id, resolver?.call(id));
@@ -2293,6 +2579,9 @@ int _citationRevision(String md, String? Function(String id)? resolver) {
 }
 
 List<String> _citationIds(String md) {
+  // Single-character searches use the VM's fast string search. A one-character
+  // RegExp instead walks CJK strings in the regexp interpreter.
+  if (!md.contains('[')) return const [];
   final ids = <String>[];
   void addId(String id) {
     if (id.isNotEmpty) ids.add(id);
@@ -2325,6 +2614,7 @@ List<String> _citationIds(String md) {
 }
 
 String _sanitizeImageLinks(String input) {
+  if (!_imageStart.hasMatch(input)) return input;
   final re = RegExp(r'!\[([^\]]*)\]\(([^)]+)\)', multiLine: true);
   return input.replaceAllMapped(re, (m) {
     final alt = m.group(1) ?? '';
@@ -2368,6 +2658,10 @@ String _sanitizeImageLinks(String input) {
     return '![$alt]($safeUrl)';
   });
 }
+
+// String.indexOf(String) tries every position in Dart on two-byte strings.
+// The regex engine's literal search avoids that hot loop on long CJK replies.
+final _imageStart = RegExp(r'!\[');
 
 ImageProvider? _imageProviderFor(String src) {
   if (src.startsWith('http://') || src.startsWith('https://')) {
@@ -2889,18 +3183,21 @@ class _VirtualizedCodeView extends StatefulWidget {
 
 class _VirtualizedCodeViewState extends State<_VirtualizedCodeView> {
   static const int _linesPerChunk = 200;
-  late List<String> _chunks;
+  static final _lineBreak = RegExp(r'\r\n|\r|\n');
+  final _chunks = <String>[];
+  String _chunkSource = '';
+  int _lastChunkStart = 0;
 
   @override
   void initState() {
     super.initState();
-    _chunks = _chunkLines(widget.code);
+    _updateChunks(widget.code);
   }
 
   @override
   void didUpdateWidget(covariant _VirtualizedCodeView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.code != widget.code) _chunks = _chunkLines(widget.code);
+    if (oldWidget.code != widget.code) _updateChunks(widget.code);
   }
 
   @override
@@ -2930,12 +3227,38 @@ class _VirtualizedCodeViewState extends State<_VirtualizedCodeView> {
     );
   }
 
-  static List<String> _chunkLines(String code) {
-    final lines = code.split(RegExp(r'\r\n|\r|\n'));
-    return [
-      for (var start = 0; start < lines.length; start += _linesPerChunk)
-        lines.skip(start).take(_linesPerChunk).join('\n'),
-    ];
+  void _updateChunks(String code) {
+    var start = 0;
+    if (_chunks.isNotEmpty && code.startsWith(_chunkSource)) {
+      start = _lastChunkStart;
+      _chunks.removeLast();
+      if (start == _chunkSource.length &&
+          _chunkSource.endsWith('\r') &&
+          code.length > start &&
+          code.codeUnitAt(start) == 0x0a) {
+        start++;
+      }
+    } else {
+      _chunks.clear();
+    }
+    String slice(int end) {
+      final value = code.substring(start, end);
+      return value.contains('\r')
+          ? value.replaceAll('\r\n', '\n').replaceAll('\r', '\n')
+          : value;
+    }
+
+    var lines = 0;
+    for (final match in _lineBreak.allMatches(code, start)) {
+      if (++lines == _linesPerChunk) {
+        _chunks.add(slice(match.start));
+        start = match.end;
+        lines = 0;
+      }
+    }
+    _chunks.add(slice(code.length));
+    _lastChunkStart = start;
+    _chunkSource = code;
   }
 }
 
@@ -2981,22 +3304,21 @@ Color _codeBlockBorderColor(ColorScheme cs, bool isDark) {
 
 String _codeBlockStateKey(String language, String code) {
   final normalizedLanguage = language.trim().toLowerCase();
-  final normalizedCode = code.trimLeft().replaceAll(RegExp(r'\s+'), ' ');
-  final anchor = normalizedCode.length <= 16
-      ? normalizedCode
-      : normalizedCode.substring(0, 16);
+  final source = code.trimLeft();
+  final prefix = StringBuffer();
+  var whitespace = false;
+  for (var i = 0; i < source.length && prefix.length < 16; i++) {
+    final unit = source.codeUnitAt(i);
+    if (_isWhitespace(unit)) {
+      if (!whitespace) prefix.write(' ');
+      whitespace = true;
+    } else {
+      prefix.writeCharCode(unit);
+      whitespace = false;
+    }
+  }
+  final anchor = prefix.toString();
   return '$normalizedLanguage|$anchor';
-}
-
-String _mermaidCacheKey(
-  String code,
-  bool isDark,
-  Map<String, String> themeVars,
-) {
-  final entries = themeVars.entries.toList()
-    ..sort((a, b) => a.key.compareTo(b.key));
-  final themeSig = entries.map((e) => '${e.key}=${e.value}').join('&');
-  return '${isDark ? 'dark' : 'light'}|$themeSig|$code';
 }
 
 enum MermaidBitmapRenderStatus { success, failed, unsupported }
@@ -4091,17 +4413,22 @@ class _MarkdownTableCell extends StatelessWidget {
   }
 
   String _softBreakTableCellText(String input) {
-    return input.replaceAllMapped(RegExp(r'[^\s/\\-]{22,}'), (match) {
-      final value = match.group(0)!;
-      final buffer = StringBuffer();
-      for (var i = 0; i < value.length; i++) {
-        buffer.write(value[i]);
-        if ((i + 1) % 18 == 0 && i != value.length - 1) {
-          buffer.write('\u200B');
-        }
-      }
-      return buffer.toString();
-    });
+    // Keep markdown links intact. Inserting ZWSP into `[label](kelivo://…)`
+    // (long snake_case names are one token because `_` is not a wrap point)
+    // corrupts the scheme so KelivoLink.tryParse fails and launchUrl opens
+    // the system browser.
+    final link = RegExp(r'\[[^\]]*\]\([^)]*\)');
+    final buffer = StringBuffer();
+    var start = 0;
+    for (final match in link.allMatches(input)) {
+      buffer.write(
+        _softBreakLongTableTokens(input.substring(start, match.start)),
+      );
+      buffer.write(match.group(0));
+      start = match.end;
+    }
+    buffer.write(_softBreakLongTableTokens(input.substring(start)));
+    return buffer.toString();
   }
 }
 
@@ -4337,18 +4664,23 @@ String _csvCell(String value) {
   return '"${value.replaceAll('"', '""')}"';
 }
 
-class _MermaidBlock extends StatefulWidget {
+class _DiagramBlock extends StatefulWidget {
   final String code;
   final bool streaming;
-  const _MermaidBlock({required this.code, required this.streaming});
+  final bool isSvg;
+  const _DiagramBlock({
+    required this.code,
+    required this.streaming,
+    this.isSvg = false,
+  });
 
   @override
-  State<_MermaidBlock> createState() => _MermaidBlockState();
+  State<_DiagramBlock> createState() => _DiagramBlockState();
 }
 
 enum _MermaidTab { image, code }
 
-class _MermaidBlockState extends State<_MermaidBlock> {
+class _DiagramBlockState extends State<_DiagramBlock> {
   static const Duration _streamingBitmapRenderDelay = Duration(
     milliseconds: 360,
   );
@@ -4367,6 +4699,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
   bool _suppressBitmapLoading = false;
   final Set<String> _failedBitmapRenderKeys = <String>{};
 
+  String _cacheKey(String code, bool dark, Map<String, String> vars) =>
+      diagramImageCacheKey(code, dark, vars, isSvg: widget.isSvg);
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -4375,56 +4710,15 @@ class _MermaidBlockState extends State<_MermaidBlock> {
 
     final mermaidColors = _MermaidBlockColors.resolve(isDark);
 
-    // Build theme variables mapping for Mermaid from Material ColorScheme
-    String hex(Color c) {
-      final v = c.toARGB32();
-      final r = (v >> 16) & 0xFF;
-      final g = (v >> 8) & 0xFF;
-      final b = v & 0xFF;
-      return '#'
-              '${r.toRadixString(16).padLeft(2, '0')}'
-              '${g.toRadixString(16).padLeft(2, '0')}'
-              '${b.toRadixString(16).padLeft(2, '0')}'
-          .toUpperCase();
-    }
-
-    final themeVars = <String, String>{
-      'primaryColor': hex(cs.primary),
-      'primaryTextColor': hex(cs.onPrimary),
-      'primaryBorderColor': hex(cs.primary),
-      'secondaryColor': hex(cs.secondary),
-      'secondaryTextColor': hex(cs.onSecondary),
-      'secondaryBorderColor': hex(cs.secondary),
-      'tertiaryColor': hex(cs.tertiary),
-      'tertiaryTextColor': hex(cs.onTertiary),
-      'tertiaryBorderColor': hex(cs.tertiary),
-      'background': hex(cs.surface),
-      'mainBkg': hex(cs.primaryContainer),
-      'secondBkg': hex(cs.secondaryContainer),
-      'lineColor': hex(cs.onSurface),
-      'textColor': hex(cs.onSurface),
-      'nodeBkg': hex(cs.surface),
-      'nodeBorder': hex(cs.primary),
-      'clusterBkg': hex(cs.surface),
-      'clusterBorder': hex(cs.primary),
-      'actorBorder': hex(cs.primary),
-      'actorBkg': hex(cs.surface),
-      'actorTextColor': hex(cs.onSurface),
-      'actorLineColor': hex(cs.primary),
-      'taskBorderColor': hex(cs.primary),
-      'taskBkgColor': hex(cs.primary),
-      'taskTextLightColor': hex(cs.onPrimary),
-      'taskTextDarkColor': hex(cs.onSurface),
-      'labelColor': hex(cs.onSurface),
-      'errorBkgColor': hex(cs.error),
-      'errorTextColor': hex(cs.onError),
-    };
+    final themeVars = buildThemeVarsFromColorScheme(cs);
 
     final exporting = ExportCaptureScope.of(context);
-    final cacheKey = _mermaidCacheKey(widget.code, isDark, themeVars);
+    final cacheKey = _cacheKey(widget.code, isDark, themeVars);
     final themedCachedBytes = MermaidImageCache.get(cacheKey);
-    final legacyCachedBytes = MermaidImageCache.get(widget.code);
-    final prefixCachedBytes = widget.streaming
+    final legacyCachedBytes = widget.isSvg
+        ? null
+        : MermaidImageCache.get(widget.code);
+    final prefixCachedBytes = widget.streaming && !widget.isSvg
         ? _findCachedStreamingMermaidPrefix(
             widget.code,
             isDark: isDark,
@@ -4660,7 +4954,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
   Widget _buildMermaidCodeView(BuildContext context, bool isDark) {
     final codeView = SelectableHighlightView(
       widget.code,
-      language: 'plaintext',
+      language: widget.isSvg ? 'xml' : 'plaintext',
       theme: _transparentBgTheme(
         isDark ? atomOneDarkReasonableTheme : githubTheme,
       ),
@@ -4704,7 +4998,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
   }
 
   @override
-  void didUpdateWidget(covariant _MermaidBlock oldWidget) {
+  void didUpdateWidget(covariant _DiagramBlock oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.code != widget.code ||
         oldWidget.streaming != widget.streaming) {
@@ -4753,7 +5047,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     required Map<String, String> themeVars,
   }) async {
     final code = widget.code;
-    final cacheKey = _mermaidCacheKey(code, isDark, themeVars);
+    final cacheKey = _cacheKey(code, isDark, themeVars);
     if (MermaidImageCache.get(cacheKey) != null) return;
     final renderOverride = debugMermaidBitmapRenderOverride;
     final overlay = renderOverride == null ? Overlay.maybeOf(context) : null;
@@ -4820,6 +5114,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
       isDark,
       themeVars: themeVars,
       viewKey: renderKey,
+      isSvg: widget.isSvg,
     );
     if (handle == null) return MermaidBitmapRenderResult.unsupported();
 
@@ -4862,7 +5157,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
       final candidate = lines.take(end).join('\n').trimRight();
       if (candidate.isEmpty) continue;
       final themed = MermaidImageCache.get(
-        _mermaidCacheKey(candidate, isDark, themeVars),
+        _cacheKey(candidate, isDark, themeVars),
       );
       final legacy = MermaidImageCache.get(candidate);
       final bytes = themed ?? legacy;
@@ -4964,7 +5259,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
   Future<bool> _saveCachedMermaidPng(Uint8List bytes) async {
     try {
       final l10n = AppLocalizations.of(context)!;
-      final suggested = 'mermaid_${DateTime.now().millisecondsSinceEpoch}.png';
+      final prefix = widget.isSvg ? 'svg' : 'mermaid';
+      final suggested =
+          '${prefix}_${DateTime.now().millisecondsSinceEpoch}.png';
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         final savePath = await FilePicker.platform.saveFile(
           dialogTitle: l10n.backupPageExportToFile,
@@ -4980,7 +5277,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
       final result = await ImageGallerySaverPlus.saveImage(
         bytes,
         quality: 100,
-        name: 'kelivo-mermaid-${DateTime.now().millisecondsSinceEpoch}',
+        name: 'kelivo-$prefix-${DateTime.now().millisecondsSinceEpoch}',
       );
       if (result is Map) {
         final isSuccess =
@@ -5294,20 +5591,33 @@ class FencedCodeBlockMd extends BlockMd {
       m.group(4) ?? m.group(5) ?? '',
     );
     final closed = m.group(4) != null;
-    final langLower = lang.toLowerCase();
     final isStreamingFence = streaming && !closed;
-    if (langLower == 'mermaid') {
-      return _MermaidBlock(code: code, streaming: isStreamingFence);
-    } else if (langLower == 'plantuml') {
-      return PlantUMLBlock(code: code);
-    }
-    return _CollapsibleCodeBlock(
-      language: lang,
+    return _buildFencedContent(lang, code, isStreamingFence, closed);
+  }
+}
+
+Widget _buildFencedContent(
+  String lang,
+  String code,
+  bool isStreamingFence,
+  bool closed,
+) {
+  final langLower = lang.toLowerCase();
+  if (langLower == 'mermaid' || isSvgCodeBlock(lang, code)) {
+    return _DiagramBlock(
       code: code,
       streaming: isStreamingFence,
-      closed: closed,
+      isSvg: langLower != 'mermaid',
     );
+  } else if (langLower == 'plantuml') {
+    return PlantUMLBlock(code: code);
   }
+  return _CollapsibleCodeBlock(
+    language: lang,
+    code: code,
+    streaming: isStreamingFence,
+    closed: closed,
+  );
 }
 
 /// Scrollable LaTeX block to prevent overflow when equations are very wide
@@ -6361,6 +6671,8 @@ class _SelectableHighlightViewState extends State<SelectableHighlightView> {
 
   late List<TextSpan> _codeTextSpans;
   bool _iosTranslationAvailable = false;
+  Widget? _selectable;
+  String _selectedCode = '';
 
   @override
   void initState() {
@@ -6382,6 +6694,7 @@ class _SelectableHighlightViewState extends State<SelectableHighlightView> {
       return;
     }
     _codeTextSpans = _highlightSource();
+    _selectable = null;
   }
 
   List<TextSpan> _highlightSource() {
@@ -6497,14 +6810,53 @@ class _SelectableHighlightViewState extends State<SelectableHighlightView> {
 
   @override
   Widget build(BuildContext context) {
-    return SelectableText.rich(
-      TextSpan(
-        style: widget.textStyle,
-        children: _codeTextSpans.isEmpty
-            ? [TextSpan(text: widget.source)]
-            : _codeTextSpans,
-      ),
-      contextMenuBuilder: _buildSelectionContextMenu,
+    final span = TextSpan(
+      style: widget.textStyle,
+      children: _codeTextSpans.isEmpty
+          ? [TextSpan(text: widget.source)]
+          : _codeTextSpans,
+    );
+    return _selectable ??= widget.source.length > 2048
+        ? SelectionArea(
+            onSelectionChanged: (selection) =>
+                _selectedCode = selection?.plainText ?? '',
+            contextMenuBuilder: _buildChunkSelectionContextMenu,
+            // SelectableText reserves its 2px cursor plus RenderEditable's 1px
+            // caret gap, even when read-only. Keep the same wrapping and width.
+            child: Padding(
+              padding: const EdgeInsets.only(right: 3),
+              child: StreamingRichText(text: Text.rich(span)),
+            ),
+          )
+        : SelectableText.rich(
+            span,
+            contextMenuBuilder: _buildSelectionContextMenu,
+          );
+  }
+
+  Widget _buildChunkSelectionContextMenu(
+    BuildContext context,
+    SelectableRegionState region,
+  ) {
+    final anchors = region.contextMenuAnchors;
+    final selectedText = _selectedCode;
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: anchors,
+      buttonItems: [
+        ...region.contextMenuButtonItems,
+        if (_iosTranslationAvailable && selectedText.trim().isNotEmpty)
+          ContextMenuButtonItem(
+            label: AppLocalizations.of(
+              context,
+            )!.chatMessageWidgetTranslateTooltip,
+            onPressed: () {
+              region.hideToolbar();
+              unawaited(
+                _presentIosTranslation(selectedText, anchors.primaryAnchor),
+              );
+            },
+          ),
+      ],
     );
   }
 }

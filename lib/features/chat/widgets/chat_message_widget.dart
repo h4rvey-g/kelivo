@@ -25,6 +25,7 @@ import '../../../core/providers/assistant_provider.dart';
 import 'package:intl/intl.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../../../utils/safe_resize_image.dart';
+import '../../../utils/utf16_safe_cut.dart';
 import '../../../utils/avatar_cache.dart';
 import '../../../utils/assistant_regex.dart';
 import '../../../core/models/assistant.dart';
@@ -35,9 +36,7 @@ import '../../../shared/widgets/snackbar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../theme/chat_bubble_style.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
-import 'frosted/frosted_surface.dart';
 import '../../../core/providers/model_provider.dart';
 import '../../../core/models/assistant_regex.dart';
 import '../../../shared/widgets/custom_bottom_sheet.dart';
@@ -56,11 +55,16 @@ import '../utils/thinking_tag_parser.dart';
 import 'timeline_projection.dart';
 import 'timeline_visibility.dart';
 import 'citation_sources_sheet.dart';
+import 'chat_surface.dart';
+import 'collapsible_user_text.dart';
 import 'chat_suggestion_bubbles.dart';
 import 'token_display_widget.dart';
 import 'screen_time_tool_ui.dart';
 import 'weather_tool_ui.dart';
 import 'tool_detail_text_section.dart';
+import 'produced_files_row.dart';
+import 'workspace_tool_detail.dart';
+import 'workspace_tool_ui.dart';
 import '../../../theme/app_font_weights.dart';
 import '../../../shared/utils/markdown_html_clipboard.dart';
 import '../../home/controllers/streaming_content_notifier.dart';
@@ -426,6 +430,9 @@ void _openAssistantImageViewer(
 IconData _toolIconFor(String name, [Map<String, dynamic> args = const {}]) {
   final localIcon = _localToolIconFor(name, args);
   if (localIcon != null) return localIcon;
+  if (isWorkspaceToolName(name)) {
+    return workspaceToolIcon(name);
+  }
   switch (name) {
     case 'memory_read':
     case 'memory_update':
@@ -611,6 +618,9 @@ String _toolTitleFor(
   }
   final localToolTitle = _localToolTitleFor(l10n, name, args);
   if (localToolTitle != null) return localToolTitle;
+  if (isWorkspaceToolName(name)) {
+    return workspaceToolTitle(l10n, name);
+  }
   switch (name) {
     case 'memory_read':
       return l10n.chatMessageWidgetMemoryRead;
@@ -1057,6 +1067,9 @@ class ChatMessageWidget extends StatefulWidget {
   final bool? showToolCards;
   final void Function(String imageKey, double aspectRatio)? onInlineImageAspect;
 
+  /// Off for exports, which must render the whole user message.
+  final bool collapseLongUserText;
+
   const ChatMessageWidget({
     super.key,
     required this.message,
@@ -1104,6 +1117,7 @@ class ChatMessageWidget extends StatefulWidget {
     this.showThinkingCards,
     this.showToolCards,
     this.onInlineImageAspect,
+    this.collapseLongUserText = true,
   });
 
   @override
@@ -1729,6 +1743,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
             bool showName,
             bool showTimestamp,
             bool enableMarkdown,
+            int collapseChars,
           })
         >(
           (s) => (
@@ -1736,6 +1751,9 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
             showName: s.showUserName,
             showTimestamp: s.showUserTimestamp,
             enableMarkdown: s.enableUserMarkdown,
+            collapseChars: s.collapseLongUserMessages
+                ? s.collapseLongUserMessageChars
+                : 0,
           ),
         );
     // Attachments come from structured parts only. Literal marker-like text
@@ -1764,6 +1782,9 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                 context,
                 visualText,
                 userMessageSettings.enableMarkdown,
+                widget.collapseLongUserText
+                    ? userMessageSettings.collapseChars
+                    : 0,
               ),
             ),
           )
@@ -2041,10 +2062,14 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     } catch (_) {}
   }
 
+  /// Number of text lines kept visible when a long user message is collapsed.
+  static const int _collapsedUserTextLines = 9;
+
   Widget _buildUserTextContent(
     BuildContext context,
     String visualText,
     bool enableUserMarkdown,
+    int collapseChars,
   ) {
     final bool isDesktop =
         defaultTargetPlatform == TargetPlatform.macOS ||
@@ -2059,6 +2084,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         child: MarkdownWithCodeHighlight(
           text: visualText,
           baseStyle: TextStyle(fontSize: baseUser, height: 1.45),
+          conversationId: widget.message.conversationId,
         ),
       );
     } else {
@@ -2067,12 +2093,12 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         style: TextStyle(
           fontSize: baseUser,
           height: 1.4,
-          color: _chatSurfacePlainTextColor(context, isUser: true),
+          color: chatSurfacePlainTextColor(context, isUser: true),
         ),
       );
     }
 
-    return RepaintBoundary(
+    content = RepaintBoundary(
       child: _MarkdownSelectionArea(
         areaKey: ValueKey('user_${widget.message.id}'),
         markdownSource: visualText,
@@ -2080,6 +2106,18 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         child: content,
       ),
     );
+
+    if (collapseChars > 0 && visualText.length > collapseChars) {
+      final lineHeight =
+          MediaQuery.textScalerOf(context).scale(baseUser) * 1.45;
+      content = CollapsibleUserText(
+        key: ValueKey('user-collapse:${widget.message.id}'),
+        collapsedHeight: lineHeight * _collapsedUserTextLines,
+        child: content,
+      );
+    }
+
+    return content;
   }
 
   /// Attachment previews in [parts] ordinal order (not images-then-files).
@@ -2396,7 +2434,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     BorderRadius radius = BorderRadius.circular(16);
-    return _buildSharedChatSurface(
+    return buildSharedChatSurface(
       context,
       borderRadius: radius,
       padding: const EdgeInsets.all(12),
@@ -2441,6 +2479,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
             _resolveCitationIndex(id, citationIndexLookup),
         baseStyle: TextStyle(fontSize: baseAssistant, height: 1.5),
         streaming: widget.message.isStreaming,
+        conversationId: widget.message.conversationId,
       );
     } else {
       assistantContent = Text(
@@ -2448,7 +2487,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         style: TextStyle(
           fontSize: baseAssistant,
           height: 1.5,
-          color: _chatSurfacePlainTextColor(context),
+          color: chatSurfacePlainTextColor(context),
         ),
       );
     }
@@ -2492,6 +2531,24 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     );
     if (!fitContent) return SizedBox(width: double.infinity, child: child);
     return Align(alignment: Alignment.centerLeft, child: child);
+  }
+
+  /// The trailing streaming indicator, plus the auto-retry countdown while a
+  /// round is waiting to be retried. Rounds after the first keep their earlier
+  /// output on screen, so the countdown has to ride along with this indicator
+  /// instead of only the empty waiting bubble.
+  Widget _streamingIndicator() {
+    if (widget.hideStreamingIndicator) return const SizedBox(height: 16);
+    final retryStatus = widget.retryStatus;
+    if (retryStatus == null) return const LoadingIndicator();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const LoadingIndicator(),
+        const SizedBox(width: 8),
+        _RetryCountdownHint(status: retryStatus),
+      ],
+    );
   }
 
   /// Same 8pt gap [addVisible] applies between sibling assistant bubbles.
@@ -2617,6 +2674,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         scope: AssistantRegexScope.assistant,
       ),
       partsArrivalOrdered: widget.message.isStreaming,
+      parseInlineThinking: _legacyInlineThinkingFor(widget).hasThinking,
     );
   }
 
@@ -2721,7 +2779,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
 
   Widget _buildAssistantMessage() {
     final cs = Theme.of(context).colorScheme;
-    final fg = _computeChatSurfaceForegroundPalette(context);
+    final fg = computeChatSurfaceForegroundPalette(context);
     final l10n = AppLocalizations.of(context)!;
     final showModelName = context.select<SettingsProvider, bool>(
       (s) => s.showModelName,
@@ -2737,6 +2795,9 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     );
     final showToolCardsSetting = context.select<SettingsProvider, bool>(
       (s) => s.showToolCards,
+    );
+    final showProducedFiles = context.select<SettingsProvider, bool>(
+      (s) => s.showProducedFiles,
     );
     final modelDisplayName = context.select<SettingsProvider, String>(
       _resolveModelDisplayName,
@@ -2785,7 +2846,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
       alignEnd: false,
     );
 
-    return _ChatSurfaceTheme(
+    return ChatSurfaceTheme(
       palette: fg,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -2915,20 +2976,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                                   widget.retryStatus!.attempt,
                                   widget.retryStatus!.maxRetries,
                                 ),
-                          child: widget.hideStreamingIndicator
-                              ? const SizedBox(height: 16)
-                              : Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const LoadingIndicator(),
-                                    if (widget.retryStatus != null) ...[
-                                      const SizedBox(width: 8),
-                                      _RetryCountdownHint(
-                                        status: widget.retryStatus!,
-                                      ),
-                                    ],
-                                  ],
-                                ),
+                          child: _streamingIndicator(),
                         ),
                       ),
                     ),
@@ -2952,9 +3000,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                   if (widget.message.isStreaming && visualContent.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(left: 4, top: 4),
-                      child: widget.hideStreamingIndicator
-                          ? const SizedBox(height: 16)
-                          : const LoadingIndicator(),
+                      child: _streamingIndicator(),
                     ),
                 ];
               }
@@ -3019,23 +3065,32 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                 );
               }
 
-              if (widget.message.isStreaming && visualContent.isNotEmpty) {
+              // A round that only called tools leaves no visible text, but a
+              // pending retry still has to say so somewhere.
+              if (widget.message.isStreaming &&
+                  (visualContent.isNotEmpty || widget.retryStatus != null)) {
                 widgets.add(
                   Padding(
                     padding: const EdgeInsets.only(left: 4, top: 4),
-                    child: widget.hideStreamingIndicator
-                        ? const SizedBox(height: 16)
-                        : const LoadingIndicator(),
+                    child: _streamingIndicator(),
                   ),
                 );
               }
               return widgets;
             }(),
+            if (showProducedFiles &&
+                _producedWorkspaceParts(widget.toolParts).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ProducedFilesRow(
+                parts: _producedWorkspaceParts(widget.toolParts),
+                conversationId: widget.message.conversationId,
+              ),
+            ],
             if (hasTranslation) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                child: _buildSharedChatSurface(
+                child: buildSharedChatSurface(
                   context,
                   borderRadius: BorderRadius.circular(16),
                   padding: const EdgeInsets.symmetric(
@@ -3157,6 +3212,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                                                 fontSize: baseTranslation,
                                                 height: 1.4,
                                               ),
+                                              conversationId:
+                                                  widget.message.conversationId,
                                             );
                                       } else {
                                         translationContent = Text(
@@ -3164,7 +3221,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                                           style: TextStyle(
                                             fontSize: baseTranslation,
                                             height: 1.4,
-                                            color: _chatSurfacePlainTextColor(
+                                            color: chatSurfacePlainTextColor(
                                               context,
                                             ),
                                           ),
@@ -3711,7 +3768,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
   @override
   Widget build(BuildContext context) {
     final isUser = widget.message.role == 'user';
-    final palette = _computeChatSurfaceForegroundPalette(
+    final palette = computeChatSurfaceForegroundPalette(
       context,
       isUser: isUser,
     );
@@ -3720,7 +3777,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         : widget.message.role == 'tool'
         ? _buildToolMessage()
         : _buildAssistantMessage();
-    return _ChatSurfaceTheme(palette: palette, child: child);
+    return ChatSurfaceTheme(palette: palette, child: child);
   }
 }
 
@@ -3755,192 +3812,6 @@ class _AnimatedPopupState extends State<_AnimatedPopup> {
       child: widget.child,
     );
   }
-}
-
-({ChatMessageBackgroundStyle style, ChatBubbleStyleOverrides overrides})
-_chatSurfaceStyleSelection(BuildContext context, {bool isUser = false}) {
-  return context.select<
-    SettingsProvider,
-    ({ChatMessageBackgroundStyle style, ChatBubbleStyleOverrides overrides})
-  >(
-    (s) => (
-      style: s.chatMessageBackgroundStyle,
-      overrides: s.chatBubbleStyleOverridesFor(isUser: isUser),
-    ),
-  );
-}
-
-Color _chatSurfacePlainTextColor(BuildContext context, {bool isUser = false}) {
-  final theme = Theme.of(context);
-  final cs = theme.colorScheme;
-  final selection = _chatSurfaceStyleSelection(context, isUser: isUser);
-  if (selection.style == ChatMessageBackgroundStyle.defaultStyle) {
-    return cs.onSurface;
-  }
-  return resolveBubbleStyle(
-    cs,
-    theme.brightness,
-    selection.style,
-    selection.overrides,
-  ).text;
-}
-
-Widget _buildSharedChatSurface(
-  BuildContext context, {
-  required Widget child,
-  required BorderRadius borderRadius,
-  required EdgeInsetsGeometry padding,
-  Color? defaultColor,
-  bool bareOnDefault = false,
-  bool isUser = false,
-}) {
-  final theme = Theme.of(context);
-  final cs = theme.colorScheme;
-  final selection = _chatSurfaceStyleSelection(context, isUser: isUser);
-  final style = selection.style;
-  final overrides = selection.overrides;
-  final resolved = resolveBubbleStyle(cs, theme.brightness, style, overrides);
-  Widget paddedChild = Padding(padding: padding, child: child);
-  if (style != ChatMessageBackgroundStyle.defaultStyle &&
-      overrides.hasTextOverride(theme.brightness)) {
-    paddedChild = DefaultTextStyle.merge(
-      style: TextStyle(color: resolved.text),
-      child: paddedChild,
-    );
-  }
-
-  switch (style) {
-    case ChatMessageBackgroundStyle.frosted:
-      final radius = BorderRadius.circular(resolved.radius);
-      return FrostedSurface(
-        style: resolved,
-        borderRadius: radius,
-        isUser: isUser,
-        child: paddedChild,
-      );
-    case ChatMessageBackgroundStyle.solid:
-      final radius = BorderRadius.circular(resolved.radius);
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: resolved.background,
-          borderRadius: radius,
-          border: Border.all(
-            color: resolved.border,
-            width: resolved.borderWidth,
-          ),
-        ),
-        child: paddedChild,
-      );
-    case ChatMessageBackgroundStyle.defaultStyle:
-      if (bareOnDefault) {
-        return child;
-      }
-      if (defaultColor == null) {
-        return paddedChild;
-      }
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: defaultColor,
-          borderRadius: borderRadius,
-        ),
-        child: paddedChild,
-      );
-  }
-}
-
-class _ChatSurfaceForegroundPalette {
-  const _ChatSurfaceForegroundPalette({
-    required this.strong,
-    required this.medium,
-    required this.muted,
-    required this.body,
-    required this.divider,
-    required this.accent,
-  });
-
-  final Color strong;
-  final Color medium;
-  final Color muted;
-  final Color body;
-  final Color divider;
-  final Color accent;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _ChatSurfaceForegroundPalette &&
-      other.strong == strong &&
-      other.medium == medium &&
-      other.muted == muted &&
-      other.body == body &&
-      other.divider == divider &&
-      other.accent == accent;
-
-  @override
-  int get hashCode => Object.hash(strong, medium, muted, body, divider, accent);
-}
-
-class _ChatSurfaceTheme extends InheritedWidget {
-  const _ChatSurfaceTheme({required this.palette, required super.child});
-
-  final _ChatSurfaceForegroundPalette palette;
-
-  static _ChatSurfaceForegroundPalette? maybeOf(BuildContext context) {
-    return context
-        .dependOnInheritedWidgetOfExactType<_ChatSurfaceTheme>()
-        ?.palette;
-  }
-
-  @override
-  bool updateShouldNotify(_ChatSurfaceTheme oldWidget) =>
-      palette != oldWidget.palette;
-}
-
-_ChatSurfaceForegroundPalette _chatSurfaceForegroundPalette(
-  BuildContext context, {
-  bool isUser = false,
-}) {
-  if (!isUser) {
-    final inherited = _ChatSurfaceTheme.maybeOf(context);
-    if (inherited != null) return inherited;
-  }
-  return _computeChatSurfaceForegroundPalette(context, isUser: isUser);
-}
-
-_ChatSurfaceForegroundPalette _computeChatSurfaceForegroundPalette(
-  BuildContext context, {
-  bool isUser = false,
-}) {
-  final theme = Theme.of(context);
-  final cs = theme.colorScheme;
-  final selection = _chatSurfaceStyleSelection(context, isUser: isUser);
-  if (selection.style == ChatMessageBackgroundStyle.defaultStyle) {
-    return _ChatSurfaceForegroundPalette(
-      strong: cs.secondary,
-      medium: cs.secondary.withValues(alpha: 0.9),
-      muted: cs.onSurface.withValues(alpha: 0.5),
-      body: cs.onSurface.withValues(alpha: 0.7),
-      divider: theme.brightness == Brightness.dark
-          ? cs.onSurface.withValues(alpha: 0.24)
-          : cs.outline.withValues(alpha: 0.15),
-      accent: cs.primary,
-    );
-  }
-
-  final base = resolveBubbleStyle(
-    cs,
-    theme.brightness,
-    selection.style,
-    selection.overrides,
-  ).text;
-  final bool isDark = theme.brightness == Brightness.dark;
-  return _ChatSurfaceForegroundPalette(
-    strong: base.withValues(alpha: isDark ? 0.88 : 0.78),
-    medium: base.withValues(alpha: isDark ? 0.76 : 0.66),
-    muted: base.withValues(alpha: isDark ? 0.56 : 0.46),
-    body: base.withValues(alpha: isDark ? 0.72 : 0.6),
-    divider: base.withValues(alpha: isDark ? 0.16 : 0.14),
-    accent: base.withValues(alpha: isDark ? 0.84 : 0.74),
-  );
 }
 
 class _MenuItem extends StatelessWidget {
@@ -4211,7 +4082,7 @@ class _LoadingDotsPainter extends CustomPainter {
 /// Goals:
 /// - Make streaming output feel less "chunky" by smoothing size growth.
 /// - Respect reduce-motion settings.
-class _StreamingAssistantMessageMotion extends StatelessWidget {
+class _StreamingAssistantMessageMotion extends StatefulWidget {
   const _StreamingAssistantMessageMotion({
     required this.enabled,
     required this.child,
@@ -4221,8 +4092,20 @@ class _StreamingAssistantMessageMotion extends StatelessWidget {
   final Widget child;
 
   @override
+  State<_StreamingAssistantMessageMotion> createState() =>
+      _StreamingAssistantMessageMotionState();
+}
+
+class _StreamingAssistantMessageMotionState
+    extends State<_StreamingAssistantMessageMotion> {
+  final _contentKey = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
-    if (!enabled) return child;
+    // Reparent the same content when motion stops, retaining table gestures
+    // and offsets without leaving an AnimatedSize on completed messages.
+    final child = KeyedSubtree(key: _contentKey, child: widget.child);
+    if (!widget.enabled) return child;
 
     return AnimatedSize(
       key: const ValueKey('streaming-assistant-message-motion'),
@@ -4285,6 +4168,25 @@ class ToolUIPart {
   });
 
   int get cacheToken => memoToken ?? identityHashCode(this);
+}
+
+WorkspaceToolPart _workspacePartFromUi(ToolUIPart part) {
+  return WorkspaceToolPart(
+    id: part.id,
+    toolName: part.toolName,
+    arguments: part.arguments,
+    content: part.content,
+    metadata: part.metadata,
+    loading: part.loading,
+  );
+}
+
+List<WorkspaceToolPart> _producedWorkspaceParts(List<ToolUIPart>? parts) {
+  if (parts == null || parts.isEmpty) return const <WorkspaceToolPart>[];
+  return [
+    for (final part in parts)
+      if (isWorkspaceToolName(part.toolName)) _workspacePartFromUi(part),
+  ];
 }
 
 // Data for a reasoning segment (for mixed display)
@@ -4560,15 +4462,15 @@ class _ChainOfThoughtCardState extends State<_ChainOfThoughtCard> {
     required ReasoningSegment step,
     required bool isFirst,
     required bool isLast,
-    required _ChatSurfaceForegroundPalette fg,
+    required ChatSurfaceForegroundPalette fg,
     required Brightness brightness,
     required bool enableReasoningMarkdown,
     required double textScale,
     required bool hasToggle,
   }) {
-    return Object.hash(
+    return (
       'reasoning',
-      identityHashCode(step.text),
+      step.text,
       step.expanded,
       step.loading,
       step.startAt,
@@ -4588,7 +4490,7 @@ class _ChainOfThoughtCardState extends State<_ChainOfThoughtCard> {
     required ToolUIPart part,
     required bool isFirst,
     required bool isLast,
-    required _ChatSurfaceForegroundPalette fg,
+    required ChatSurfaceForegroundPalette fg,
     required Brightness brightness,
     required bool showToolResultSummary,
     required bool hideToolResultImages,
@@ -4614,7 +4516,7 @@ class _ChainOfThoughtCardState extends State<_ChainOfThoughtCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final collapseThinkingSteps = context.select<SettingsProvider, bool>(
       (s) => s.collapseThinkingSteps,
     );
@@ -4673,7 +4575,7 @@ class _ChainOfThoughtCardState extends State<_ChainOfThoughtCard> {
               ((step.reasoning?.expanded ?? false) || step.loading),
         );
 
-    final card = _buildSharedChatSurface(
+    final card = buildSharedChatSurface(
       context,
       borderRadius: BorderRadius.circular(16),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -4843,7 +4745,7 @@ class _TimelineStepShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final headerContent = Padding(
       padding: const EdgeInsets.symmetric(vertical: _timelineStepPaddingV),
       child: Row(
@@ -5032,14 +4934,22 @@ class _ChainOfThoughtReasoningStepState
   Timer? _elapsedTimer;
   final ScrollController _scroll = ScrollController();
   bool _hasOverflow = false;
+  bool? _localExpanded;
 
   _ReasoningStepState get _stepState {
+    // Persisted parts can outnumber the timing/interaction metadata (for
+    // example after a background tool round). The content still needs a toggle.
+    final expanded =
+        (_ChainOfThoughtActions.toggleOf(context, widget.sourceIndex) == null
+            ? _localExpanded
+            : null) ??
+        widget.step.expanded;
     if (widget.step.loading) {
-      return widget.step.expanded
+      return expanded
           ? _ReasoningStepState.expanded
           : _ReasoningStepState.preview;
     }
-    return widget.step.expanded
+    return expanded
         ? _ReasoningStepState.expanded
         : _ReasoningStepState.collapsed;
   }
@@ -5113,7 +5023,7 @@ class _ChainOfThoughtReasoningStepState
 
   @override
   Widget build(BuildContext context) {
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final l10n = AppLocalizations.of(context)!;
     final enableReasoningMarkdown = context.select<SettingsProvider, bool>(
       (s) => s.enableReasoningMarkdown,
@@ -5225,28 +5135,31 @@ class _ChainOfThoughtReasoningStepState
       content = AutoScrollSelectionArea(child: reasoningContent(display));
     }
 
-    final hasToggle =
-        _ChainOfThoughtActions.toggleOf(context, widget.sourceIndex) != null;
     return _TimelineStepShell(
       icon: icon,
       label: label,
       isFirst: widget.isFirst,
       isLast: widget.isLast,
-      onTap: hasToggle
-          ? () => _ChainOfThoughtActions.toggleOf(
-              context,
-              widget.sourceIndex,
-            )?.call()
-          : null,
-      indicator: hasToggle
-          ? Icon(
-              state == _ReasoningStepState.expanded
-                  ? Lucide.ChevronUp
-                  : Lucide.ChevronDown,
-              size: 16,
-              color: fg.muted,
-            )
-          : null,
+      onTap: () {
+        final toggle = _ChainOfThoughtActions.toggleOf(
+          context,
+          widget.sourceIndex,
+        );
+        if (toggle != null) {
+          toggle();
+        } else {
+          setState(() {
+            _localExpanded = !(_localExpanded ?? widget.step.expanded);
+          });
+        }
+      },
+      indicator: Icon(
+        state == _ReasoningStepState.expanded
+            ? Lucide.ChevronUp
+            : Lucide.ChevronDown,
+        size: 16,
+        color: fg.muted,
+      ),
       content: content,
       contentVisible: state != _ReasoningStepState.collapsed,
       expectContent: true,
@@ -5337,7 +5250,7 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
     final entries = args.entries.take(2).map((entry) {
       final value = entry.value?.toString() ?? '';
       final truncated = value.length > 40
-          ? '${value.substring(0, 40)}...'
+          ? '${truncateHeadUtf16Safe(value, 40)}...'
           : value;
       return '${entry.key}: $truncated';
     });
@@ -5345,55 +5258,24 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
     return entries.join(', ') + suffix;
   }
 
-  void _showDenyDialog(
-    BuildContext context,
-    ToolApprovalService approvalService,
-    String toolCallId, {
-    String? conversationId,
-  }) {
-    final l10n = AppLocalizations.of(context)!;
-    final reasonCtrl = TextEditingController();
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.toolApprovalDenyTitle),
-        content: TextField(
-          controller: reasonCtrl,
-          decoration: InputDecoration(hintText: l10n.toolApprovalDenyHint),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(MaterialLocalizations.of(ctx).cancelButtonLabel),
-          ),
-          TextButton(
-            onPressed: () {
-              final reason = reasonCtrl.text.trim().isEmpty
-                  ? null
-                  : reasonCtrl.text.trim();
-              approvalService.deny(
-                toolCallId,
-                reason: reason,
-                conversationId: conversationId,
-              );
-              Navigator.of(ctx).pop();
-            },
-            child: Text(l10n.toolApprovalDeny),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showDetail(BuildContext context) {
+    if (shouldUseWorkspaceToolUi(_workspacePartFromUi(widget.part))) {
+      unawaited(
+        showWorkspaceToolDetail(
+          context,
+          _workspacePartFromUi(widget.part),
+          conversationId: widget.conversationId,
+        ),
+      );
+      return;
+    }
     _showToolDetail(context, widget.part);
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final showToolResultSummary = context.select<SettingsProvider, bool>(
       (s) => s.showToolResultSummary,
     );
@@ -5411,7 +5293,15 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
         );
     final isPendingApproval = pendingRequest != null;
     final approvalRequest = pendingRequest;
+    final workspacePart = _workspacePartFromUi(widget.part);
+    final isWorkspace = shouldUseWorkspaceToolUi(workspacePart);
 
+    final Widget loadingIcon = LoadingIndicator(
+      height: 12,
+      dotSize: 3,
+      spacing: 2,
+      color: fg.strong,
+    );
     final icon = _isAskUser
         ? Icon(
             _iconFor(widget.part.toolName, widget.part.arguments),
@@ -5419,7 +5309,12 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
             color: fg.strong,
           )
         : widget.part.loading && !isPendingApproval
-        ? LoadingIndicator(height: 12, dotSize: 3, spacing: 2, color: fg.strong)
+        ? (isWorkspace
+              ? KeyedSubtree(
+                  key: WorkspaceStatusBadge.runningKey,
+                  child: loadingIcon,
+                )
+              : loadingIcon)
         : Icon(
             _iconFor(widget.part.toolName, widget.part.arguments),
             size: 16,
@@ -5471,6 +5366,11 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
         : '';
     final Widget? summaryContent = _isAskUser
         ? _AskUserInlineBody(part: widget.part, compact: true)
+        : isWorkspace
+        ? WorkspaceToolCardBody(
+            part: workspacePart,
+            conversationId: widget.conversationId,
+          )
         : ttsText.isNotEmpty
         ? _buildTextToSpeechReplayRow(
             context,
@@ -5550,7 +5450,7 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
                 color: cs.error,
                 semanticLabel: AppLocalizations.of(context)!.toolApprovalDeny,
                 builder: (color) => Icon(Lucide.X, size: 14, color: color),
-                onTap: () => _showDenyDialog(
+                onTap: () => showToolApprovalDenyDialog(
                   context,
                   approvalService,
                   approvalRequest.toolCallId,
@@ -5572,6 +5472,11 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
                 ),
               ),
             ],
+          )
+        : isWorkspace
+        ? WorkspaceToolStatusText(
+            part: workspacePart,
+            conversationId: widget.conversationId,
           )
         : null;
 
@@ -5597,7 +5502,9 @@ class _ChainOfThoughtToolStepState extends State<_ChainOfThoughtToolStep> {
           widget.part.loading ||
           isPendingApproval ||
           _isAskUser ||
-          content != null,
+          content != null ||
+          (isWorkspace &&
+              (widget.part.loading || isPendingApproval || content != null)),
     );
   }
 }
@@ -5677,7 +5584,9 @@ class _ToolCallItemState extends State<_ToolCallItem> {
     // Show first 1-2 key=value pairs, truncated
     final entries = args.entries.take(2).map((e) {
       final v = e.value?.toString() ?? '';
-      final truncated = v.length > 40 ? '${v.substring(0, 40)}...' : v;
+      final truncated = v.length > 40
+          ? '${truncateHeadUtf16Safe(v, 40)}...'
+          : v;
       return '${e.key}: $truncated';
     });
     final suffix = args.length > 2 ? ' ...' : '';
@@ -5688,7 +5597,7 @@ class _ToolCallItemState extends State<_ToolCallItem> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final hideToolResultImages = context.select<SettingsProvider, bool>(
       (s) => s.hideToolResultImages,
     );
@@ -5701,6 +5610,9 @@ class _ToolCallItemState extends State<_ToolCallItem> {
     if (widget.part.toolName == LocalToolNames.askUser) {
       return _AskUserToolCard(part: widget.part);
     }
+
+    final workspacePart = _workspacePartFromUi(widget.part);
+    final isWorkspace = shouldUseWorkspaceToolUi(workspacePart);
 
     // Check if this tool call is pending approval
     final approvalService = context.watch<ToolApprovalService>();
@@ -5721,7 +5633,7 @@ class _ToolCallItemState extends State<_ToolCallItem> {
       duration: const Duration(milliseconds: 260),
       onTap: isPendingApproval ? null : () => _showDetail(context),
       padding: EdgeInsets.zero,
-      child: _buildSharedChatSurface(
+      child: buildSharedChatSurface(
         context,
         borderRadius: BorderRadius.circular(16),
         padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
@@ -5735,7 +5647,7 @@ class _ToolCallItemState extends State<_ToolCallItem> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Icon — approval pending / loading spinner / result icon
-                if (isPendingApproval)
+                if (isPendingApproval && !isWorkspace)
                   SizedBox(
                     width: 18,
                     height: 18,
@@ -5743,15 +5655,29 @@ class _ToolCallItemState extends State<_ToolCallItem> {
                       child: Icon(Lucide.Shield, size: 18, color: fg.accent),
                     ),
                   )
-                else if (widget.part.loading)
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(fg.accent),
-                    ),
-                  )
+                else if (widget.part.loading && !isPendingApproval)
+                  isWorkspace
+                      ? SizedBox(
+                          key: WorkspaceStatusBadge.runningKey,
+                          width: 18,
+                          height: 18,
+                          child: LoadingIndicator(
+                            height: 12,
+                            dotSize: 3,
+                            spacing: 2,
+                            color: fg.accent,
+                          ),
+                        )
+                      : SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              fg.accent,
+                            ),
+                          ),
+                        )
                 else
                   SizedBox(
                     width: 18,
@@ -5789,7 +5715,7 @@ class _ToolCallItemState extends State<_ToolCallItem> {
                         ),
                       ),
                       // "Waiting for approval" subtitle
-                      if (isPendingApproval) ...[
+                      if (isPendingApproval && !isWorkspace) ...[
                         const SizedBox(height: 2),
                         Text(
                           l10n.toolApprovalPending,
@@ -5803,8 +5729,51 @@ class _ToolCallItemState extends State<_ToolCallItem> {
                     ],
                   ),
                 ),
+                if (isWorkspace && isPendingApproval) ...[
+                  IosIconButton(
+                    size: 14,
+                    padding: const EdgeInsets.all(7),
+                    color: cs.error,
+                    semanticLabel: l10n.toolApprovalDeny,
+                    builder: (color) => Icon(Lucide.X, size: 14, color: color),
+                    onTap: pendingToolCallId == null
+                        ? null
+                        : () => showToolApprovalDenyDialog(
+                            context,
+                            approvalService,
+                            pendingToolCallId,
+                            conversationId: pendingRequest.conversationId,
+                          ),
+                  ),
+                  const SizedBox(width: 6),
+                  IosIconButton(
+                    size: 14,
+                    padding: const EdgeInsets.all(7),
+                    color: fg.accent,
+                    semanticLabel: l10n.toolApprovalApprove,
+                    builder: (color) =>
+                        Icon(Lucide.Check, size: 14, color: color),
+                    onTap: pendingToolCallId == null
+                        ? null
+                        : () => approvalService.approve(
+                            pendingToolCallId,
+                            conversationId: pendingRequest.conversationId,
+                          ),
+                  ),
+                ] else if (isWorkspace)
+                  WorkspaceToolStatusText(
+                    part: workspacePart,
+                    conversationId: widget.conversationId,
+                  ),
               ],
             ),
+            if (isWorkspace) ...[
+              const SizedBox(height: 8),
+              WorkspaceToolCardBody(
+                part: workspacePart,
+                conversationId: widget.conversationId,
+              ),
+            ],
             if (ttsText.isNotEmpty) ...[
               const SizedBox(height: 8),
               _buildTextToSpeechReplayRow(
@@ -5860,7 +5829,9 @@ class _ToolCallItemState extends State<_ToolCallItem> {
               ),
             ],
             // Argument summary so users know what the tool is about to do
-            if (isPendingApproval && widget.part.arguments.isNotEmpty) ...[
+            if (!isWorkspace &&
+                isPendingApproval &&
+                widget.part.arguments.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
@@ -5885,12 +5856,14 @@ class _ToolCallItemState extends State<_ToolCallItem> {
               ),
             ],
             // Approval action buttons
-            if (isPendingApproval && pendingToolCallId != null) ...[
+            if (!isWorkspace &&
+                isPendingApproval &&
+                pendingToolCallId != null) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: _ApprovalButton(
+                    child: ToolApprovalButton(
                       label: l10n.toolApprovalDeny,
                       color: cs.error,
                       filled: false,
@@ -5904,7 +5877,7 @@ class _ToolCallItemState extends State<_ToolCallItem> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: _ApprovalButton(
+                    child: ToolApprovalButton(
                       label: l10n.toolApprovalApprove,
                       color: fg.accent,
                       filled: true,
@@ -5990,6 +5963,16 @@ class _ToolCallItemState extends State<_ToolCallItem> {
   }
 
   void _showDetail(BuildContext context) {
+    if (shouldUseWorkspaceToolUi(_workspacePartFromUi(widget.part))) {
+      unawaited(
+        showWorkspaceToolDetail(
+          context,
+          _workspacePartFromUi(widget.part),
+          conversationId: widget.conversationId,
+        ),
+      );
+      return;
+    }
     _showToolDetail(context, widget.part);
   }
 
@@ -6054,10 +6037,10 @@ class _AskUserToolCardState extends State<_AskUserToolCard> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final l10n = AppLocalizations.of(context)!;
     final expanded = _expanded ?? true;
-    return _buildSharedChatSurface(
+    return buildSharedChatSurface(
       context,
       borderRadius: BorderRadius.circular(16),
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
@@ -6281,7 +6264,7 @@ class _AskUserInlineBodyState extends State<_AskUserInlineBody> {
 
   @override
   Widget build(BuildContext context) {
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final askUserService = context.watch<AskUserInteractionService>();
@@ -6415,7 +6398,7 @@ class _AskUserQuestionView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final isMulti = question.kind == AskUserQuestionKind.multi;
     final questionText = Text(
       question.question,
@@ -6476,7 +6459,7 @@ class _AskUserAnsweredQuestion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final displayAnswer = answer.trim().isEmpty
         ? AppLocalizations.of(context)!.askUserCardSkipped
         : answer.trim();
@@ -6530,7 +6513,7 @@ class _AskUserOptionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final bg = selected
         ? cs.primary.withValues(alpha: 0.09)
         : Colors.transparent;
@@ -6602,7 +6585,7 @@ class _AskUserOtherRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final l10n = AppLocalizations.of(context)!;
     final effectiveSelected = selected;
     final bg = effectiveSelected
@@ -6664,7 +6647,7 @@ class _AskUserIndexBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: 24,
@@ -6702,7 +6685,7 @@ class _AskUserSkipPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final l10n = AppLocalizations.of(context)!;
     return IosCardPress(
       borderRadius: BorderRadius.circular(7),
@@ -6774,54 +6757,6 @@ class _AskUserSubmitButton extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Tactile button for tool approval actions (approve / deny).
-class _ApprovalButton extends StatelessWidget {
-  const _ApprovalButton({
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.filled = false,
-  });
-
-  final String label;
-  final Color color;
-  final VoidCallback? onTap;
-
-  /// When true, uses a solid fill background; when false, outline style.
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final enabled = onTap != null;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: filled
-              ? color.withValues(alpha: isDark ? 0.25 : 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: color.withValues(alpha: filled ? 0.5 : 0.35),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: AppFontWeights.semibold,
-            color: enabled ? color : color.withValues(alpha: 0.45),
-          ),
         ),
       ),
     );
@@ -7084,7 +7019,7 @@ class _ReasoningSectionState extends State<_ReasoningSection> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fg = _chatSurfaceForegroundPalette(context);
+    final fg = chatSurfaceForegroundPalette(context);
     final l10n = AppLocalizations.of(context)!;
     final enableReasoningMarkdown = context.select<SettingsProvider, bool>(
       (s) => s.enableReasoningMarkdown,
@@ -7259,7 +7194,7 @@ class _ReasoningSectionState extends State<_ReasoningSection> {
       alignment: Alignment.topLeft,
       child: SizedBox(
         width: double.infinity,
-        child: _buildSharedChatSurface(
+        child: buildSharedChatSurface(
           context,
           borderRadius: BorderRadius.circular(16),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

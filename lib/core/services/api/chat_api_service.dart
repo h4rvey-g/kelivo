@@ -15,6 +15,7 @@ import 'stream/stream_chunk_handler.dart';
 
 import '../../models/auto_retry_options.dart';
 import 'chat_api_helpers.dart';
+import 'provider_request_headers.dart';
 import 'providers/claude_official.dart';
 import 'providers/google_gemini.dart';
 import 'providers/google_vertex.dart';
@@ -24,7 +25,9 @@ import 'providers/openai_images.dart';
 import 'providers/openai_responses.dart';
 import 'providers/zhipu_layout_parsing.dart';
 import 'retry_policy.dart';
+import 'tool_call_cancellation.dart';
 import 'stream/retrying_stream.dart';
+import 'stream/stream_chunk_emit.dart';
 
 export 'chat_api_helpers.dart' show ToolCallHandler;
 export 'generation/text_generation_result.dart';
@@ -156,6 +159,7 @@ class ChatApiService {
     Map<String, dynamic>? extraBody,
     bool stream = true,
     String? requestId,
+    String? conversationId,
     bool allowImagesApiRouting = true,
     bool ocrActive = false,
     bool builtInSearchOnly = false,
@@ -164,11 +168,20 @@ class ChatApiService {
     AutoRetryOptions? retryOverride,
   }) async* {
     final options = retryOverride ?? AutoRetryConfig.current;
+    final sessionHeaders = providerSessionHeaders(
+      config,
+      conversationId: conversationId,
+      extraHeaders: extraHeaders,
+    );
     final kind = ProviderConfig.classify(
       config.id,
       explicitType: config.providerType,
     );
     final sessionToken = CancelToken();
+    final toolCancellation = ToolCallCancellation(
+      isCancelled: () => sessionToken.isCancelled,
+      cancelled: _whenCancelled(sessionToken),
+    );
     final rid = (requestId ?? '').trim();
     if (rid.isNotEmpty) {
       final prev = _activeCancelTokens.remove(rid);
@@ -223,7 +236,7 @@ class ChatApiService {
               )
             : null,
         attemptStartEvent: emitRetryUi ? () => const RetryAttemptStart() : null,
-        attempt: (_) => sendRound(),
+        attempt: (_) => carrySplitSurrogates(sendRound()),
       );
     }
 
@@ -239,8 +252,12 @@ class ChatApiService {
           topP: topP,
           maxTokens: maxTokens,
           tools: tools,
-          onToolCall: onToolCall,
-          extraHeaders: extraHeaders,
+          onToolCall: onToolCall == null
+              ? null
+              : (name, args, {toolCallId}) => toolCancellation.run(
+                  () => onToolCall(name, args, toolCallId: toolCallId),
+                ),
+          extraHeaders: sessionHeaders,
           extraBody: extraBody,
           stream: stream,
           builtInSearchOnly: builtInSearchOnly,
@@ -488,6 +505,7 @@ class ChatApiService {
     Map<String, String>? extraHeaders,
     Map<String, dynamic>? extraBody,
     String? requestId,
+    String? conversationId,
     bool allowImagesApiRouting = true,
     bool ocrActive = false,
     bool builtInSearchOnly = false,
@@ -514,6 +532,7 @@ class ChatApiService {
       extraBody: extraBody,
       stream: false,
       requestId: requestId,
+      conversationId: conversationId,
       allowImagesApiRouting: allowImagesApiRouting,
       ocrActive: ocrActive,
       builtInSearchOnly: builtInSearchOnly,
@@ -534,6 +553,7 @@ class ChatApiService {
     required ProviderConfig config,
     required String modelId,
     required String prompt,
+    String? conversationId,
     Map<String, String>? extraHeaders,
     Map<String, dynamic>? extraBody,
     int? thinkingBudget,
@@ -542,6 +562,7 @@ class ChatApiService {
     final result = await generateMessage(
       config: config,
       modelId: modelId,
+      conversationId: conversationId,
       messages: [
         {'role': 'user', 'content': prompt},
       ],

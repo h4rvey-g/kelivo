@@ -28,8 +28,11 @@ import '../migration/legacy_record_sanitizer.dart';
 import '../../utils/multimodal_input_utils.dart';
 import '../../../utils/app_directories.dart';
 import '../../../utils/sandbox_path_resolver.dart';
+import '../../database/backup_portability.dart';
 import 'backup_settings_validator.dart';
 import 'restore_bundle_preparation.dart';
+import 'restore_workspace_lock.dart';
+import 'restore_business_lease.dart';
 import 'temporary_restore_file.dart';
 import 'backup_cancel_token.dart';
 import 'backup_isolate_runner.dart';
@@ -269,6 +272,23 @@ class DataSync {
   static const _minimumReadableFormatVersion = 2;
   static const _manifestEntryName = 'manifest.json';
   static const _databaseEntryName = 'database/kelivo.db';
+
+  /// Declared file roots copied when `includeFiles` is true.
+  ///
+  /// Adding a name here is additive: an older bundle that omitted the
+  /// directory still restores. Staging materializes an empty root, matching
+  /// an empty `upload/` in a current bundle. `environment/` is omitted on
+  /// purpose — the Linux rootfs is hundreds of megabytes and is not backup
+  /// data.
+  static const _assetRootNames = [
+    'upload',
+    'images',
+    'avatars',
+    'fonts',
+    'skills',
+    'workspaces',
+    'sessions',
+  ];
   // A 16 MiB metadata cap keeps manifest parsing and entry metadata bounded.
   static const _maxManifestBytes = 16 * 1024 * 1024;
   // Settings are parsed as one JSON object, so keep their decoded input bound.
@@ -320,6 +340,100 @@ class DataSync {
     onProgress: onProgress,
     cancelToken: cancelToken,
   );
+
+  /// Prepares a local snapshot without opening the live database or providers.
+  /// The normal startup gate installs the durable candidate on restart, keeping
+  /// the previous data for rollback. The source archive is never modified.
+  static Future<void> prepareStartupSnapshotRestore({
+    required Directory appDataDirectory,
+    required File snapshot,
+    RestoreBusinessLease? businessLease,
+    BackupProgressSink? onProgress,
+  }) async {
+    final ownedLease = businessLease == null
+        ? await RestoreBusinessLease.acquire(appDataDirectory: appDataDirectory)
+        : null;
+    final lease = businessLease ?? ownedLease!;
+    Directory? extractDir;
+    Object? restoreError;
+    try {
+      final expectedLeasePath = p.join(
+        appDataDirectory.absolute.path,
+        RestoreBusinessLease.leaseDirectoryName,
+        RestoreBusinessLease.lockFileName,
+      );
+      if (lease.isClosed ||
+          !p.equals(lease.lockFile.absolute.path, expectedLeasePath)) {
+        throw StateError('restore_startup_business_lease');
+      }
+      extractDir = await Directory.systemTemp.createTemp(
+        'kelivo-startup-snapshot-',
+      );
+      registerLiveTempPath(extractDir.path);
+      await runBackupIsolate<void, _BackupExtractArgs>(
+        body: _extractZipInIsolate,
+        payload: _BackupExtractArgs(
+          zipPath: snapshot.path,
+          extractDirPath: extractDir.path,
+        ),
+        onProgress: onProgress,
+      );
+      final info =
+          await runBackupIsolate<_VersionedBackupInfo, _BackupPreflightArgs>(
+            body: _preflightVersionedBackupInIsolate,
+            payload: _BackupPreflightArgs(
+              manifestPath: p.join(extractDir.path, _manifestEntryName),
+              extractDirPath: extractDir.path,
+              allowUnverifiedForwardCompatible: false,
+            ),
+            onProgress: onProgress,
+          );
+      if (!info.includeChats) {
+        throw const FormatException('restore_preparation_database_required');
+      }
+      final settings = await runBackupIsolate<Map<String, dynamic>, String>(
+        body: _readSettingsJsonInIsolate,
+        payload: p.join(extractDir.path, 'settings.json'),
+        onProgress: onProgress,
+      );
+      BackupSettingsValidator.normalizeAndValidate(settings);
+      final workspaceLock = RestoreWorkspaceLock(
+        appDataDirectory: appDataDirectory,
+      );
+      await workspaceLock.synchronized(
+        workspaceLock.beginSnapshotRecoveryWhileLocked,
+      );
+      await RestoreBundlePreparation.prepare(
+        appDataDirectory: appDataDirectory,
+        extractedDirectory: extractDir,
+        sourceManifestSha256: info.normalizedManifestSha256,
+        bundleIncludesChats: info.includeChats,
+        bundleIncludesFiles: info.includeFiles,
+        restoreChats: true,
+        restoreFiles: false,
+        useExistingLocalAttachments: true,
+        validatedSettings: settings,
+        onProgress: onProgress,
+      );
+      await workspaceLock.synchronized(
+        workspaceLock.finishSnapshotRecoveryWhileLocked,
+      );
+    } catch (error) {
+      restoreError = error;
+      rethrow;
+    } finally {
+      try {
+        if (extractDir != null) {
+          await deleteTempDirectoryWhenIsolateSafe(
+            extractDir,
+            error: restoreError,
+          );
+        }
+      } finally {
+        await ownedLease?.close();
+      }
+    }
+  }
 
   // ===== WebDAV helpers =====
   Uri _collectionUri(WebDavConfig cfg) {
@@ -551,6 +665,7 @@ class DataSync {
           ),
         );
         snapshotInfo = await snapshotDatabase(databaseFile);
+        await _sanitizeBackupDatabase(databaseFile);
       }
 
       final packageInfo = await PackageInfo.fromPlatform();
@@ -560,11 +675,13 @@ class DataSync {
       final manifestFile = File(p.join(workDir.path, '_bk_manifest.json'));
       manifestTmp = manifestFile;
 
-      // Resolve directory paths (need AppDirectories on main isolate)
-      final uploadDirPath = (await _getUploadDir()).path;
-      final avatarsDirPath = (await _getAvatarsDir()).path;
-      final imagesDirPath = (await _getImagesDir()).path;
-      final fontsDirPath = (await _getFontsDir()).path;
+      // Resolve directory paths (need AppDirectories on main isolate).
+      // Join against the app-data root instead of the ensure-creating
+      // helpers so a backup does not mkdir empty live roots.
+      final appData = await AppDirectories.getAppDataDirectory();
+      final assetRootPaths = {
+        for (final name in _assetRootNames) name: p.join(appData.path, name),
+      };
       final manifestPath = manifestFile.path;
       final settingsPath = settingsFile.path;
       final databasePath = databaseTmp?.path;
@@ -582,10 +699,7 @@ class DataSync {
           includeFiles: includeFiles,
           appVersion: appVersion,
           businessEntityRowIds: businessExport.entityRowIds,
-          uploadDirPath: uploadDirPath,
-          avatarsDirPath: avatarsDirPath,
-          imagesDirPath: imagesDirPath,
-          fontsDirPath: fontsDirPath,
+          assetRootPaths: assetRootPaths,
         ),
         cancelToken: cancelToken,
         onProgress: onProgress,
@@ -874,10 +988,7 @@ class DataSync {
       includeFiles: args.includeFiles,
       appVersion: args.appVersion,
       businessEntityRowIds: args.businessEntityRowIds,
-      uploadDirPath: args.uploadDirPath,
-      avatarsDirPath: args.avatarsDirPath,
-      imagesDirPath: args.imagesDirPath,
-      fontsDirPath: args.fontsDirPath,
+      assetRootPaths: args.assetRootPaths,
       ctx: ctx,
     );
     _verifyPackedBackupSync(
@@ -912,35 +1023,28 @@ class DataSync {
     required bool includeFiles,
     required String appVersion,
     required Map<String, List<String>> businessEntityRowIds,
-    required String uploadDirPath,
-    required String avatarsDirPath,
-    required String imagesDirPath,
-    required String fontsDirPath,
+    required Map<String, String> assetRootPaths,
     BackupIsolateContext? ctx,
   }) {
     if (includeChats != (databasePath != null && snapshotInfo != null)) {
       throw StateError('backup_database_component');
     }
-    final uploadFiles = includeFiles
-        ? _listFilesSync(uploadDirPath)
-        : const <File>[];
-    final avatarFiles = includeFiles
-        ? _listFilesSync(avatarsDirPath)
-        : const <File>[];
-    final imageFiles = includeFiles
-        ? _listFilesSync(imagesDirPath)
-        : const <File>[];
-    final fontFiles = includeFiles
-        ? _listFilesSync(fontsDirPath)
-        : const <File>[];
+    if (includeFiles &&
+        (assetRootPaths.length != _assetRootNames.length ||
+            !_assetRootNames.every(assetRootPaths.containsKey))) {
+      throw StateError('backup_asset_roots');
+    }
+    final assetFiles = includeFiles
+        ? {
+            for (final name in _assetRootNames)
+              name: _listFilesSync(assetRootPaths[name]!),
+          }
+        : const <String, List<File>>{};
     var totalBytes = _fileSizeSync(settingsPath) + _fileSizeSync(databasePath);
-    for (final file in [
-      ...uploadFiles,
-      ...avatarFiles,
-      ...imageFiles,
-      ...fontFiles,
-    ]) {
-      totalBytes += file.lengthSync();
+    for (final files in assetFiles.values) {
+      for (final file in files) {
+        totalBytes += file.lengthSync();
+      }
     }
     final meter = _BackupByteMeter(
       ctx: ctx,
@@ -971,38 +1075,16 @@ class DataSync {
       }
 
       if (includeFiles) {
-        _addDirectoryToZip(
-          writer,
-          uploadDirPath,
-          'upload',
-          entries,
-          collisionKeys,
-          files: uploadFiles,
-        );
-        _addDirectoryToZip(
-          writer,
-          avatarsDirPath,
-          'avatars',
-          entries,
-          collisionKeys,
-          files: avatarFiles,
-        );
-        _addDirectoryToZip(
-          writer,
-          imagesDirPath,
-          'images',
-          entries,
-          collisionKeys,
-          files: imageFiles,
-        );
-        _addDirectoryToZip(
-          writer,
-          fontsDirPath,
-          'fonts',
-          entries,
-          collisionKeys,
-          files: fontFiles,
-        );
+        for (final name in _assetRootNames) {
+          _addDirectoryToZip(
+            writer,
+            assetRootPaths[name]!,
+            name,
+            entries,
+            collisionKeys,
+            files: assetFiles[name],
+          );
+        }
       }
 
       final manifestJson = _buildBackupManifestJson(
@@ -2063,11 +2145,9 @@ class DataSync {
     // whether an unrecognised entry is fatal on its own.
     final unknownEntryNames = <String>[];
     for (final name in entries.keys) {
-      final isFileEntry =
-          name.startsWith('upload/') ||
-          name.startsWith('avatars/') ||
-          name.startsWith('images/') ||
-          name.startsWith('fonts/');
+      final isFileEntry = _assetRootNames.any(
+        (root) => name.startsWith('$root/'),
+      );
       final knownEntry =
           name == 'settings.json' || name == _databaseEntryName || isFileEntry;
       if (!knownEntry) {
@@ -2309,20 +2389,12 @@ class DataSync {
     return digest.toString();
   }
 
-  Future<Directory> _getUploadDir() async {
-    return await AppDirectories.getUploadDirectory();
-  }
-
-  Future<Directory> _getImagesDir() async {
-    return await AppDirectories.getImagesDirectory();
-  }
-
-  Future<Directory> _getAvatarsDir() async {
-    return await AppDirectories.getAvatarsDirectory();
-  }
-
-  Future<Directory> _getFontsDir() async {
-    return await AppDirectories.getFontsDirectory();
+  Future<Directory> _liveAssetRoot(String name) async {
+    if (!_assetRootNames.contains(name)) {
+      throw StateError('unknown_asset_root:$name');
+    }
+    final appData = await AppDirectories.getAppDataDirectory();
+    return Directory(p.join(appData.path, name));
   }
 
   Future<void> _copyRestoredFile(File source, File target) async {
@@ -2336,30 +2408,28 @@ class DataSync {
     }
   }
 
-  /// Copies the backup's asset payload directories (upload/images/avatars/
-  /// fonts) into the live directories without deleting anything already
-  /// present, so files referenced by an untouched chat database survive.
+  /// Copies the backup's asset payload directories into the live directories
+  /// without deleting anything already present, so files referenced by an
+  /// untouched chat database survive.
   Future<void> _restoreAssetDirectoriesAdditive(
-    Directory payloadDirectory,
-  ) async {
-    final targets =
-        <({String entryName, Future<Directory> Function() resolveTarget})>[
-          (entryName: 'upload', resolveTarget: _getUploadDir),
-          (entryName: 'images', resolveTarget: _getImagesDir),
-          (entryName: 'avatars', resolveTarget: _getAvatarsDir),
-          (entryName: 'fonts', resolveTarget: _getFontsDir),
-        ];
-    for (final target in targets) {
-      final src = Directory(p.join(payloadDirectory.path, target.entryName));
+    Directory payloadDirectory, {
+    Map<String, String> remappedConversationIds = const {},
+  }) async {
+    for (final name in _assetRootNames) {
+      final src = Directory(p.join(payloadDirectory.path, name));
       if (!await src.exists()) continue;
-      final dst = await target.resolveTarget();
+      final dst = await _liveAssetRoot(name);
       if (!await dst.exists()) {
         await dst.create(recursive: true);
       }
       for (final ent in src.listSync(recursive: true)) {
         if (ent is File) {
           final rel = p.relative(ent.path, from: src.path);
-          final targetFile = File(p.join(dst.path, rel));
+          final segments = p.split(rel);
+          if (name == 'sessions' && segments.length > 1) {
+            segments[0] = remappedConversationIds[segments[0]] ?? segments[0];
+          }
+          final targetFile = File(p.joinAll([dst.path, ...segments]));
           if (!await targetFile.exists()) {
             await _copyRestoredFile(ent, targetFile);
           }
@@ -2440,12 +2510,14 @@ class DataSync {
       }
       geminiThoughtSigs[entry.key.toString()] = entry.value as String;
     }
-    final conversations = (chats['conversations'] as List)
-        .map(
-          (entry) =>
-              Conversation.fromJson((entry as Map).cast<String, dynamic>()),
-        )
-        .toList();
+    final conversations = (chats['conversations'] as List).map((entry) {
+      final conversation = Conversation.fromJson(
+        (entry as Map).cast<String, dynamic>(),
+      );
+      return conversation.copyWith(
+        extras: {...conversation.extras}..remove('workspace.allowAll'),
+      );
+    }).toList();
 
     // Import boundary for legacy chats.json: promote marker-bearing content
     // into structured parts only when the raw JSON lacks a `parts` list.
@@ -2860,7 +2932,7 @@ class DataSync {
   static Future<({String settingsJson, Map<String, List<String>> entityRowIds})>
   exportBusinessSettingsFrom(BusinessRepository repository) async {
     final exported = BusinessSettingsRouter.exportSnapshotWithRowIds(
-      await repository.readSnapshot(),
+      BackupPortability.portable(await repository.readSnapshot()),
     );
     final settings = Map<String, Object>.from(exported.settings);
     settings.removeWhere((key, _) => BackupSettingsValidator.shouldIgnore(key));
@@ -2869,6 +2941,16 @@ class DataSync {
       settingsJson: jsonEncode(settings),
       entityRowIds: exported.entityRowIds,
     );
+  }
+
+  static Future<void> _sanitizeBackupDatabase(File file) async {
+    final database = AppDatabase.open(file: file);
+    try {
+      await BackupPortability.sanitizeDatabase(database);
+    } finally {
+      await database.close();
+    }
+    await ChatDatabaseRepository.normalizeSnapshotJournal(file);
   }
 
   /// Reads a backup file's manifest and reports what restoring it would mean.
@@ -3059,6 +3141,9 @@ class DataSync {
           return;
         }
         if (restoreChats) {
+          await _sanitizeBackupDatabase(
+            File(p.join(extractDir.path, _databaseEntryName)),
+          );
           beginNonCancellableCommit();
           _lastMergeReport = await chatService.mergeDatabaseSnapshot(
             File(p.join(extractDir.path, _databaseEntryName)),
@@ -3149,77 +3234,17 @@ class DataSync {
       if (cfg.includeFiles) {
         beginNonCancellableCommit();
         if (mode == RestoreMode.overwrite) {
-          // Overwrite mode: Delete existing directories and copy all
-          // Restore upload directory
-          final uploadSrc = Directory(
-            p.join(restorePayloadDirectory.path, 'upload'),
-          );
-          if (await uploadSrc.exists()) {
-            final dst = await _getUploadDir();
+          for (final name in _assetRootNames) {
+            final src = Directory(p.join(restorePayloadDirectory.path, name));
+            if (!await src.exists()) continue;
+            final dst = await _liveAssetRoot(name);
             if (await dst.exists()) {
               await dst.delete(recursive: true);
             }
             await dst.create(recursive: true);
-            for (final ent in uploadSrc.listSync(recursive: true)) {
+            for (final ent in src.listSync(recursive: true)) {
               if (ent is File) {
-                final rel = p.relative(ent.path, from: uploadSrc.path);
-                final target = File(p.join(dst.path, rel));
-                await _copyRestoredFile(ent, target);
-              }
-            }
-          }
-
-          // Restore images directory
-          final imagesSrc = Directory(
-            p.join(restorePayloadDirectory.path, 'images'),
-          );
-          if (await imagesSrc.exists()) {
-            final dst = await _getImagesDir();
-            if (await dst.exists()) {
-              await dst.delete(recursive: true);
-            }
-            await dst.create(recursive: true);
-            for (final ent in imagesSrc.listSync(recursive: true)) {
-              if (ent is File) {
-                final rel = p.relative(ent.path, from: imagesSrc.path);
-                final target = File(p.join(dst.path, rel));
-                await _copyRestoredFile(ent, target);
-              }
-            }
-          }
-
-          // Restore avatars directory
-          final avatarsSrc = Directory(
-            p.join(restorePayloadDirectory.path, 'avatars'),
-          );
-          if (await avatarsSrc.exists()) {
-            final dst = await _getAvatarsDir();
-            if (await dst.exists()) {
-              await dst.delete(recursive: true);
-            }
-            await dst.create(recursive: true);
-            for (final ent in avatarsSrc.listSync(recursive: true)) {
-              if (ent is File) {
-                final rel = p.relative(ent.path, from: avatarsSrc.path);
-                final target = File(p.join(dst.path, rel));
-                await _copyRestoredFile(ent, target);
-              }
-            }
-          }
-
-          // Restore managed local fonts directory
-          final fontsSrc = Directory(
-            p.join(restorePayloadDirectory.path, 'fonts'),
-          );
-          if (await fontsSrc.exists()) {
-            final dst = await _getFontsDir();
-            if (await dst.exists()) {
-              await dst.delete(recursive: true);
-            }
-            await dst.create(recursive: true);
-            for (final ent in fontsSrc.listSync(recursive: true)) {
-              if (ent is File) {
-                final rel = p.relative(ent.path, from: fontsSrc.path);
+                final rel = p.relative(ent.path, from: src.path);
                 final target = File(p.join(dst.path, rel));
                 await _copyRestoredFile(ent, target);
               }
@@ -3227,7 +3252,11 @@ class DataSync {
           }
         } else {
           // Merge mode: Only copy non-existing files
-          await _restoreAssetDirectoriesAdditive(restorePayloadDirectory);
+          await _restoreAssetDirectoriesAdditive(
+            restorePayloadDirectory,
+            remappedConversationIds:
+                _lastMergeReport?.remappedConversationIds ?? const {},
+          );
         }
       }
       // Legacy chats.json decodes before assets exist. After files land,
@@ -3479,10 +3508,7 @@ class _BackupPackArgs {
     required this.includeFiles,
     required this.appVersion,
     required this.businessEntityRowIds,
-    required this.uploadDirPath,
-    required this.avatarsDirPath,
-    required this.imagesDirPath,
-    required this.fontsDirPath,
+    required this.assetRootPaths,
   });
 
   final String outPath;
@@ -3494,10 +3520,7 @@ class _BackupPackArgs {
   final bool includeFiles;
   final String appVersion;
   final Map<String, List<String>> businessEntityRowIds;
-  final String uploadDirPath;
-  final String avatarsDirPath;
-  final String imagesDirPath;
-  final String fontsDirPath;
+  final Map<String, String> assetRootPaths;
 }
 
 class _BackupByteMeter {

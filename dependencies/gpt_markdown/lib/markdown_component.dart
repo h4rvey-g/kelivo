@@ -5,6 +5,7 @@ abstract class MarkdownComponent {
   /// Visual indentation applied for each nested list level.
   static const double listIndentEm = 2;
 
+  static final _patterns = <String, _MarkdownPatterns>{};
   static List<MarkdownComponent> get globalComponents => [
     CodeBlockMd(),
     LatexMathMultiLine(),
@@ -39,12 +40,24 @@ abstract class MarkdownComponent {
     BuildContext context,
     String text,
     final GptMarkdownConfig config,
-    bool includeGlobalComponents,
-  ) {
+    bool includeGlobalComponents, {
+    void Function(
+      InlineSpan span,
+      int start,
+      int end,
+      MarkdownComponent? component,
+      bool block,
+    )?
+    onSpan,
+  }) {
     if (includeGlobalComponents) {
       final preprocess = config.preprocessBlocks;
       if (preprocess != null) {
-        text = preprocess(text);
+        final rewritten = preprocess(text);
+        // Rewritten offsets belong to another source, so cannot be retained by
+        // the append parser. Normal rendering still uses the rewritten text.
+        if (rewritten != text) onSpan = null;
+        text = rewritten;
       }
     }
     var components =
@@ -54,48 +67,81 @@ abstract class MarkdownComponent {
     List<InlineSpan> spans = [];
     final listDepths =
         includeGlobalComponents ? _listDepths(text) : const <int, int>{};
-    Iterable<String> regexes = components.map<String>((e) => e.exp.pattern);
-    final combinedRegex = RegExp(
-      regexes.join("|"),
-      multiLine: true,
-      dotAll: true,
+    final expressions = [for (final component in components) component.exp];
+    final patternKey =
+        expressions
+            .map(
+              (exp) =>
+                  '${exp.isMultiLine}:${exp.isDotAll}:${exp.pattern.length}:${exp.pattern}',
+            )
+            .join();
+    final patterns = _patterns.putIfAbsent(
+      patternKey,
+      () => _MarkdownPatterns(expressions),
     );
+    if (_patterns.length > 64) _patterns.remove(_patterns.keys.first);
+    var offset = 0;
     text.splitMapJoin(
-      combinedRegex,
+      patterns.combined,
       onMatch: (p0) {
         String element = p0[0] ?? "";
-        for (var each in components) {
-          var p = each.exp.pattern;
-          var exp = RegExp(
-            '^$p\$',
-            multiLine: each.exp.isMultiLine,
-            dotAll: each.exp.isDotAll,
+        final index = patterns.componentIndex(element);
+        if (index >= 0) {
+          final component = components[index];
+          final listDepth =
+              component is UnOrderedList || component is OrderedList
+                  ? listDepths[p0.start]
+                  : null;
+          final span =
+              component is BlockMd
+                  ? component.spanWithListDepth(
+                    context,
+                    element,
+                    config,
+                    listDepth,
+                  )
+                  : component.span(context, element, config);
+          spans.add(span);
+          onSpan?.call(
+            span,
+            p0.start,
+            p0.end,
+            components[index],
+            includeGlobalComponents,
           );
-          if (exp.hasMatch(element)) {
-            final listDepth =
-                each is UnOrderedList || each is OrderedList
-                    ? listDepths[p0.start]
-                    : null;
-            spans.add(
-              each is BlockMd
-                  ? each.spanWithListDepth(context, element, config, listDepth)
-                  : each.span(context, element, config),
-            );
-            return "";
-          }
         }
+        offset = p0.end;
         return "";
       },
       onNonMatch: (p0) {
+        final start = offset;
+        offset += p0.length;
         if (p0.isEmpty) {
           return "";
         }
         if (includeGlobalComponents) {
-          var newSpans = generate(context, p0, config.copyWith(), false);
+          var newSpans = generate(
+            context,
+            p0,
+            config.copyWith(),
+            false,
+            onSpan:
+                onSpan == null
+                    ? null
+                    : (span, from, to, matched, block) => onSpan?.call(
+                      span,
+                      start + from,
+                      start + to,
+                      matched,
+                      block,
+                    ),
+          );
           spans.addAll(newSpans);
           return "";
         }
-        spans.add(TextSpan(text: p0, style: config.style));
+        final span = TextSpan(text: p0, style: config.style);
+        spans.add(span);
+        onSpan?.call(span, start, offset, null, false);
         return "";
       },
     );
@@ -151,6 +197,42 @@ abstract class MarkdownComponent {
 
   RegExp get exp;
   bool get inline;
+}
+
+// Matching depends on the patterns and source alone, not on widget state or
+// theme. Cache only classification; builders still run with the current config.
+class _MarkdownPatterns {
+  _MarkdownPatterns(List<RegExp> expressions)
+    : combined = RegExp(
+        expressions.map((e) => e.pattern).join('|'),
+        multiLine: true,
+        dotAll: true,
+      ),
+      anchored = [
+        for (final exp in expressions)
+          RegExp(
+            '^${exp.pattern}\$',
+            multiLine: exp.isMultiLine,
+            dotAll: exp.isDotAll,
+          ),
+      ];
+
+  final RegExp combined;
+  final List<RegExp> anchored;
+  final _indices = <String, int>{};
+
+  int componentIndex(String source) {
+    if (source.length <= 512) {
+      final cached = _indices[source];
+      if (cached != null) return cached;
+    }
+    final index = anchored.indexWhere((exp) => exp.hasMatch(source));
+    if (source.length <= 512) {
+      if (_indices.length >= 128) _indices.remove(_indices.keys.first);
+      _indices[source] = index;
+    }
+    return index;
+  }
 }
 
 /// Inline component

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:Kelivo/shared/widgets/ios_time_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -307,6 +308,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
               // Backup management (applies to WebDAV and local import/export)
               SliverToBoxAdapter(
                 child: SectionCard(
+                  padding: const EdgeInsets.all(12),
+                  radius: 18,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
@@ -373,6 +377,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
               // WebDAV settings card with left label right input, realtime save
               SliverToBoxAdapter(
                 child: SectionCard(
+                  padding: const EdgeInsets.all(12),
+                  radius: 18,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
@@ -600,6 +607,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
               // S3 settings card with left label right input, realtime save
               SliverToBoxAdapter(
                 child: SectionCard(
+                  padding: const EdgeInsets.all(12),
+                  radius: 18,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
@@ -897,6 +907,9 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
   ) {
     return SliverToBoxAdapter(
       child: SectionCard(
+        padding: const EdgeInsets.all(12),
+        radius: 18,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
@@ -1147,6 +1160,9 @@ class _LocalSnapshotDesktopSection extends StatelessWidget {
     final vm = context.watch<LocalSnapshotProvider>();
 
     return SectionCard(
+      padding: const EdgeInsets.all(12),
+      radius: 18,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
@@ -1203,6 +1219,9 @@ class _BackupReminderDesktopSection extends StatelessWidget {
     final reminder = context.watch<BackupReminderProvider>();
 
     return SectionCard(
+      padding: const EdgeInsets.all(12),
+      radius: 18,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
@@ -1222,8 +1241,9 @@ class _BackupReminderDesktopSection extends StatelessWidget {
                 await provider.setEnabled(false);
                 return;
               }
-              final minutes = await showBackupReminderTimePicker(
+              final minutes = await showIosTimePicker(
                 context,
+                title: AppLocalizations.of(context)!.backupReminderTimeTitle,
                 initialMinutes: provider.reminderMinutesOfDay,
               );
               if (minutes == null) return;
@@ -1253,8 +1273,9 @@ class _BackupReminderDesktopSection extends StatelessWidget {
               dense: true,
               onTap: () async {
                 final provider = context.read<BackupReminderProvider>();
-                final minutes = await showBackupReminderTimePicker(
+                final minutes = await showIosTimePicker(
                   context,
+                  title: AppLocalizations.of(context)!.backupReminderTimeTitle,
                   initialMinutes: provider.reminderMinutesOfDay,
                 );
                 if (minutes == null) return;
@@ -1325,7 +1346,10 @@ class _FrequencyDropdown extends StatelessWidget {
         if (!context.mounted) return;
         if (days == null) return;
         var minutes = provider.reminderMinutesOfDay;
-        minutes ??= await showBackupReminderTimePicker(context);
+        minutes ??= await showIosTimePicker(
+          context,
+          title: AppLocalizations.of(context)!.backupReminderTimeTitle,
+        );
         if (!context.mounted) return;
         if (minutes == null) return;
         await provider.saveSchedule(
@@ -1993,7 +2017,6 @@ class _DeskIosButtonState extends State<_DeskIosButton> {
               vertical: widget.dense ? 8 : 12,
               horizontal: 12,
             ),
-            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: bg,
               borderRadius: BorderRadius.circular(12),
@@ -2001,6 +2024,7 @@ class _DeskIosButtonState extends State<_DeskIosButton> {
             ),
             child: Text(
               widget.label,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 color: textColor,
                 fontWeight: AppFontWeights.semibold,

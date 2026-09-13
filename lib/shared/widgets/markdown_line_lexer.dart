@@ -654,6 +654,13 @@ final class MarkdownDetailsRegistry {
   }
 
   String rewrite(String text) {
+    if (!text.contains('<') || !MarkdownDetailsWalker.open.hasMatch(text)) {
+      // A nested fragment cannot introduce a tag absent from its parent.
+      // Still reserve literal tokens from a root without details, so later
+      // fragments can never alias a user-authored placeholder.
+      if (_rootSource == null && text.contains('\uE010')) _bindRoot(text);
+      return text;
+    }
     return _rewritten.putIfAbsent(text, () {
       _bindRoot(text);
       final segments = markdownExtractTopLevelDetails(
@@ -1013,10 +1020,13 @@ final class MarkdownDisplayMathScanner {
     _frozenFenceCloseAt = 0;
   }
 
+  /// [appendOnly] skips a second prefix comparison when the owning document
+  /// already validated the append and calls [reset] before every replacement.
   MarkdownDisplayMathScan synchronize(
     String text, {
     int? end,
     bool enableMath = true,
+    bool appendOnly = false,
   }) {
     final limit = end ?? text.length;
     if (!enableMath || limit <= 0) {
@@ -1026,9 +1036,10 @@ final class MarkdownDisplayMathScanner {
     if (_text.isNotEmpty &&
         (_scannedTo > limit ||
             _scannedTo > text.length ||
-            !text.startsWith(
-              _text.substring(0, _scannedTo.clamp(0, _text.length)),
-            ))) {
+            (!appendOnly &&
+                !text.startsWith(
+                  _text.substring(0, _scannedTo.clamp(0, _text.length)),
+                )))) {
       reset();
     }
     _text = text;

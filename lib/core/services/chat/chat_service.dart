@@ -23,6 +23,7 @@ import '../api/providers/claude/claude_history.dart';
 import '../api/providers/google_gemini.dart';
 import '../../models/message_part.dart';
 import '../../models/conversation.dart';
+import '../../models/workspace_binding.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../../../utils/app_directories.dart';
 
@@ -194,6 +195,32 @@ class ChatService extends ChangeNotifier {
 
   // Localized default title for new conversations; set by UI on startup.
   String _defaultConversationTitle = 'New Chat';
+
+  /// Optional extras merged into brand-new conversations (not restores).
+  Map<String, dynamic> Function(String? assistantId)? newConversationExtras;
+
+  Map<String, dynamic> _extrasForNewConversation(String? assistantId) {
+    final extras = newConversationExtras?.call(assistantId);
+    if (extras == null || extras.isEmpty) {
+      return const <String, dynamic>{};
+    }
+    return Map<String, dynamic>.from(extras);
+  }
+
+  Future<void> _copyWorkspaceBindingFrom(
+    String conversationId,
+    Map<String, dynamic> sourceExtras,
+  ) {
+    return updateConversationExtras(conversationId, (_) {
+      final source = WorkspaceBinding.fromExtras(sourceExtras);
+      return WorkspaceBinding(
+        workspaceId: source.workspaceId,
+        cwd: source.cwd,
+        allowAll: source.allowAll,
+      ).applyTo({});
+    });
+  }
+
   void setDefaultConversationTitle(String title) {
     if (title.trim().isEmpty) return;
     _defaultConversationTitle = title.trim();
@@ -1746,6 +1773,7 @@ class ChatService extends ChangeNotifier {
     String conversationId, {
     required int start,
     required int limit,
+    bool cacheInTimeline = true,
   }) async {
     if (!_initialized || limit <= 0) return const <ChatMessage>[];
 
@@ -1770,8 +1798,10 @@ class ChatService extends ChangeNotifier {
       start: start,
       limit: limit,
     );
-    _cacheLoadedMessages(conversationId, messages);
-    await _cacheMessageArtifacts(messages);
+    if (cacheInTimeline) {
+      _cacheLoadedMessages(conversationId, messages);
+      await _cacheMessageArtifacts(messages);
+    }
     return messages;
   }
 
@@ -1856,17 +1886,19 @@ class ChatService extends ChangeNotifier {
   Future<Conversation> createConversation({
     String? title,
     String? assistantId,
+    bool activate = true,
   }) async {
     if (!_initialized) await init();
-    _discardTemporaryConversation(_currentConversationId);
+    if (activate) _discardTemporaryConversation(_currentConversationId);
 
     final conversation = Conversation(
       title: title ?? _defaultConversationTitle,
       assistantId: assistantId,
+      extras: _extrasForNewConversation(assistantId),
     );
 
     await _saveConversation(conversation);
-    _currentConversationId = conversation.id;
+    if (activate) _currentConversationId = conversation.id;
     _enforceMessageCacheLimits();
     _bumpConversationListRevision();
     notifyListeners();
@@ -1903,6 +1935,7 @@ class ChatService extends ChangeNotifier {
     final conversation = Conversation(
       title: title ?? _defaultConversationTitle,
       assistantId: assistantId,
+      extras: _extrasForNewConversation(assistantId),
     );
     _draftConversations[conversation.id] = conversation;
     if (temporary) {
@@ -2394,6 +2427,7 @@ class ChatService extends ChangeNotifier {
       lastMemoryExtractedOrder: conversation.lastMemoryExtractedOrder,
       chatModelProvider: conversation.chatModelProvider,
       chatModelId: conversation.chatModelId,
+      extras: conversation.extras,
     );
     await _repo.putMigrationBatch(
       conversations: [restored],
@@ -2720,6 +2754,25 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Reads extras, applies [update], writes the result, and refreshes the cache.
+  Future<void> updateConversationExtras(
+    String conversationId,
+    Map<String, dynamic> Function(Map<String, dynamic> current) update,
+  ) async {
+    final draft = _draftConversations[conversationId];
+    if (draft != null) {
+      _draftConversations[conversationId] = draft.copyWith(
+        extras: update(Map<String, dynamic>.from(draft.extras)),
+      );
+      notifyListeners();
+      return;
+    }
+    if (!_initialized) return;
+    await _repo.updateConversationExtras(conversationId, update);
+    await _refreshConversation(conversationId);
+    notifyListeners();
+  }
+
   Future<void> updateConversationSuggestions(
     String conversationId,
     List<String> suggestions,
@@ -2844,6 +2897,7 @@ class ChatService extends ChangeNotifier {
         conversation = Conversation(
           id: conversationId,
           title: _defaultConversationTitle,
+          extras: _extrasForNewConversation(null),
         );
         if (temporary) {
           _draftConversations[conversationId] = conversation;
@@ -3556,17 +3610,19 @@ class ChatService extends ChangeNotifier {
     final sourceMessages = await _repo.getMessagesByIds([
       for (final slot in window.slots.take(targetIndex + 1)) slot.revisionId,
     ]);
+    final sourceExtras = Map<String, dynamic>.from(source.extras);
     final persisted = await createConversation(
       title: source.title,
       assistantId: source.assistantId,
     );
+    await _copyWorkspaceBindingFrom(persisted.id, sourceExtras);
     _messagesCache[persisted.id] = <ChatMessage>[];
     _messageOrderIds[persisted.id] = <String>[];
     _messageCounts[persisted.id] = 0;
     await _cloneMessagesInto(persisted.id, sourceMessages);
     _currentConversationId = persisted.id;
     notifyListeners();
-    return persisted;
+    return getConversation(persisted.id) ?? persisted;
   }
 
   Future<Conversation> forkConversationFromMessages({
@@ -3575,17 +3631,26 @@ class ChatService extends ChangeNotifier {
     required List<ChatMessage> sourceMessages,
   }) async {
     if (!_initialized) await init();
+    Map<String, dynamic> sourceExtras = const <String, dynamic>{};
+    for (final message in sourceMessages) {
+      final existing = getConversation(message.conversationId);
+      if (existing != null) {
+        sourceExtras = Map<String, dynamic>.from(existing.extras);
+        break;
+      }
+    }
     final persisted = await createConversation(
       title: title,
       assistantId: assistantId,
     );
+    await _copyWorkspaceBindingFrom(persisted.id, sourceExtras);
     _messagesCache[persisted.id] = <ChatMessage>[];
     _messageOrderIds[persisted.id] = <String>[];
     _messageCounts[persisted.id] = 0;
     await _cloneMessagesInto(persisted.id, sourceMessages);
     _currentConversationId = persisted.id;
     notifyListeners();
-    return persisted;
+    return getConversation(persisted.id) ?? persisted;
   }
 
   Future<void> _cloneMessagesInto(

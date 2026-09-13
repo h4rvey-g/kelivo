@@ -1,5 +1,6 @@
 import "../../support/business_test_harness.dart";
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:Kelivo/core/database/business_preferences.dart';
@@ -388,6 +389,155 @@ Widget _settingsHarness({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('source hints follow late syntax and rewritten image prefixes', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('markdown-stream-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/a b.png');
+    file.writeAsBytesSync(_transparentPngBytes);
+    final source = ValueNotifier('Paragraph **bold**');
+    addTearDown(source.dispose);
+    await tester.pumpWidget(_streamingMarkdownHarness(source, width: 360));
+    await tester.pumpAndSettle();
+    source.value += '\r\n\r\nNext ![alt](${file.path}';
+    await tester.pumpAndSettle();
+    source.value += ')';
+    await tester.pumpAndSettle();
+    final markdown = tester
+        .widgetList<GptMarkdown>(find.byType(GptMarkdown))
+        .map((widget) => widget.data)
+        .join('\n\n');
+    expect(markdown, isNot(contains('\r')));
+    expect(markdown, contains('![alt](${Uri.file(file.path)})'));
+    expect(find.byType(Image), findsOneWidget);
+    source.value += '\n\n<details><summary>更多</summary>隐藏</details>';
+    await tester.pumpAndSettle();
+    expect(find.text('更多'), findsOneWidget);
+    source.value = 'Replacement **bold**';
+    await tester.pumpAndSettle();
+    expect(find.byType(Image), findsNothing);
+    expect(find.text('更多'), findsNothing);
+    expect(
+      _paragraphContaining('Replacement').text.toPlainText(),
+      'Replacement bold',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('root fence parsing preserves the renderer whitespace contract', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_markdownHarness('```text\n', streaming: true));
+    expect(find.byType(SelectableHighlightView), findsNothing);
+    await tester.pumpWidget(
+      _markdownHarness('```text\nx \n\n', streaming: true),
+    );
+    expect(
+      tester
+          .widget<SelectableHighlightView>(find.byType(SelectableHighlightView))
+          .source,
+      'x',
+    );
+    await tester.pumpWidget(
+      _markdownHarness('```text\nx \n\n```', streaming: true),
+    );
+    expect(
+      tester
+          .widget<SelectableHighlightView>(find.byType(SelectableHighlightView))
+          .source,
+      'x ',
+    );
+  });
+
+  for (final language in ['SVG', 'xml']) {
+    for (final streaming in [false, true]) {
+      testWidgets(
+        '$language displays an inline image and switches to source ($streaming)',
+        (tester) async {
+          MermaidImageCache.clear();
+          addTearDown(MermaidImageCache.clear);
+          addTearDown(() => debugMermaidBitmapRenderOverride = null);
+          const source = '<svg viewBox="0 0 20 20"><circle r="5" /></svg>';
+          String? rendered;
+          debugMermaidBitmapRenderOverride = (code, dark, vars) async {
+            rendered = code;
+            return MermaidBitmapRenderResult.success(
+              Uint8List.fromList(_transparentPngBytes),
+            );
+          };
+          await tester.pumpWidget(
+            _markdownHarness(
+              '```$language\n$source\n```',
+              width: 320,
+              streaming: streaming,
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+          final context = tester.element(
+            find.byType(MarkdownWithCodeHighlight),
+          );
+          final l10n = AppLocalizations.of(context)!;
+          expect(rendered?.trim(), source);
+          expect(find.byType(Image), findsOneWidget);
+          expect(find.byTooltip(l10n.codeBlockPreviewButton), findsNothing);
+          await tester.tap(find.text(l10n.mermaidCodeTab));
+          await tester.pumpAndSettle();
+          final code = tester.widget<SelectableHighlightView>(
+            find.byType(SelectableHighlightView),
+          );
+          expect(code.source.trim(), source);
+          expect(code.language, 'xml');
+          await tester.tap(find.text(l10n.mermaidImageTab));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byType(Image));
+          await tester.pumpAndSettle();
+          expect(find.byType(ImageViewerPage), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets('ordinary XML keeps its source without a graphical preview', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _markdownHarness('```xml\n<config><name>Kelivo</name></config>\n```'),
+    );
+    await tester.pump();
+    expect(find.byType(SelectableHighlightView), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
+    final context = tester.element(find.byType(MarkdownWithCodeHighlight));
+    expect(
+      find.byTooltip(AppLocalizations.of(context)!.codeBlockPreviewButton),
+      findsNothing,
+    );
+  });
+
+  test('soft breaks never split a surrogate pair', () {
+    // 17 ASCII units followed by an emoji: the 18th code unit is the high
+    // surrogate, so a naive break would land inside the pair.
+    final value = '${'a' * 17}\u{1F600}${'b' * 20}';
+    final softened = insertMarkdownSoftBreaksForTesting(value, every: 18);
+
+    expect(softened.replaceAll('\u200B', ''), value);
+    expect(softened.contains('\u200B'), isTrue);
+    for (var i = 0; i < softened.length; i++) {
+      final unit = softened.codeUnitAt(i);
+      if (unit >= 0xD800 && unit <= 0xDBFF) {
+        final next = softened.codeUnitAt(i + 1);
+        expect(next >= 0xDC00 && next <= 0xDFFF, isTrue);
+      }
+    }
+    // Building a paragraph is what threw before the fix.
+    expect(
+      () => (ui.ParagraphBuilder(ui.ParagraphStyle())..addText(softened)),
+      returnsNormally,
+    );
+  });
 
   test('markdown table CSV export escapes boundary cell values', () {
     final csv = markdownTableRowsToCsvForTesting([
@@ -1093,6 +1243,230 @@ Inline ***strong emphasis*** text.
         expect(pixels[i], 255);
       }
     });
+  });
+
+  testWidgets(
+    'paragraph selection keeps line breaks through streaming',
+    (tester) async {
+      const text = 'First paragraph.\n\nSecond paragraph.';
+      final streaming = ValueNotifier(true);
+      addTearDown(streaming.dispose);
+      String? selected;
+      await tester.pumpWidget(
+        _settingsHarness(
+          onSettingsReady: (_) {},
+          child: SelectionArea(
+            onSelectionChanged: (content) => selected = content?.plainText,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: streaming,
+                builder: (_, value, _) =>
+                    MarkdownWithCodeHighlight(text: text, streaming: value),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final value in [true, false]) {
+        streaming.value = value;
+        await tester.pumpAndSettle();
+        final region = tester.state<SelectableRegionState>(
+          find.byType(SelectableRegion),
+        );
+        region.selectAll(SelectionChangedCause.keyboard);
+        await tester.pumpAndSettle();
+        expect(selected, text, reason: 'streaming=$value');
+        region.clearSelection();
+        await tester.pump();
+
+        // A drag across the gap must include the same break as Select All.
+        final first = _paragraphContaining('First paragraph.');
+        final second = _paragraphContaining('Second paragraph.');
+        final start = first.localToGlobal(const Offset(1, 8));
+        final end = second.localToGlobal(Offset(second.size.width - 1, 8));
+        for (final reverse in [true, false]) {
+          // Separate the gestures so reversing at the previous endpoint does
+          // not become a double click and select a word instead of a range.
+          await tester.pump(const Duration(milliseconds: 400));
+          final gesture = await tester.startGesture(
+            reverse ? end : start,
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          await tester.pump();
+          await gesture.moveTo(reverse ? start : end);
+          await tester.pump();
+          await gesture.up();
+          await gesture.removePointer();
+          await tester.pumpAndSettle();
+          expect(selected, text, reason: 'streaming=$value reverse=$reverse');
+          region.clearSelection();
+          await tester.pump();
+        }
+      }
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
+  for (final longReply in [false, true]) {
+    testWidgets(
+      'streaming table preserves its offset and active drag (long=$longReply)',
+      (tester) async {
+        _overrideMarkdownTablePlatform(TargetPlatform.iOS);
+        await tester.binding.setSurfaceSize(const Size(800, 1600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final prefix = longReply ? '${'Intro text. ' * 50}\n\n' : '';
+        final text = ValueNotifier(
+          '$prefix| A | B | C | D | E |\n'
+          '| --- | --- | --- | --- | --- |\n| apple',
+        );
+        addTearDown(text.dispose);
+        await tester.pumpWidget(_streamingMarkdownHarness(text, width: 320));
+        await tester.pump();
+        final viewport = find.byKey(
+          const ValueKey('markdown-table-horizontal-scroll'),
+        );
+        final scroll = find.descendant(
+          of: viewport,
+          matching: find.byType(Scrollable),
+        );
+        final state = tester.state<ScrollableState>(scroll);
+        await tester.drag(viewport, const Offset(-100, 0));
+        await tester.pumpAndSettle();
+        final offset = state.position.pixels;
+        expect(offset, greaterThan(50));
+
+        text.value += ' banana';
+        await tester.pump();
+        expect(tester.state<ScrollableState>(scroll), same(state));
+        expect(state.position.pixels, offset);
+        expect(
+          find.textContaining('apple banana', findRichText: true),
+          findsWidgets,
+        );
+
+        final gesture = await tester.startGesture(tester.getCenter(viewport));
+        await gesture.moveBy(const Offset(-40, 0));
+        await tester.pump();
+        final duringDrag = state.position.pixels;
+        text.value += ' cherry';
+        await tester.pump();
+        expect(tester.state<ScrollableState>(scroll), same(state));
+        expect(state.position.pixels, duringDrag);
+        await gesture.moveBy(const Offset(-40, 0));
+        await tester.pump();
+        expect(state.position.pixels, greaterThan(duringDrag));
+        await gesture.up();
+        await tester.pumpAndSettle();
+      },
+    );
+  }
+
+  testWidgets(
+    'table offset survives stream growth, block close and completion',
+    (tester) async {
+      _overrideMarkdownTablePlatform(TargetPlatform.iOS);
+      var text =
+          '| A | B | C | D | E |\n'
+          '| --- | --- | --- | --- | --- |\n| apple';
+      Future<void> render({bool streaming = true}) async {
+        await tester.pumpWidget(
+          _markdownHarness(text, width: 320, streaming: streaming),
+        );
+        await tester.pump();
+      }
+
+      await render();
+      final viewport = find.byKey(
+        const ValueKey('markdown-table-horizontal-scroll'),
+      );
+      final scroll = find.descendant(
+        of: viewport,
+        matching: find.byType(Scrollable),
+      );
+      final state = tester.state<ScrollableState>(scroll);
+      await tester.drag(viewport, const Offset(-100, 0));
+      await tester.pumpAndSettle();
+      final offset = state.position.pixels;
+      expect(offset, greaterThan(50));
+
+      // Cross the old whole-document / incremental rendering threshold.
+      text += ' | ${'wide ' * 100} | C | D | E |';
+      expect(text.length, greaterThan(512));
+      await render();
+      expect(tester.state<ScrollableState>(scroll), same(state));
+      expect(state.position.pixels, offset);
+      for (final suffix in ['\n', '\nFollowing paragraph']) {
+        text += suffix;
+        await render();
+        expect(tester.state<ScrollableState>(scroll), same(state));
+        expect(state.position.pixels, offset);
+      }
+      await render(streaming: false);
+      expect(tester.state<ScrollableState>(scroll), same(state));
+      expect(state.position.pixels, offset);
+      expect(
+        find.textContaining('Following paragraph', findRichText: true),
+        findsWidgets,
+      );
+
+      text = text.replaceFirst('apple', 'replacement');
+      await render(streaming: false);
+      expect(tester.state<ScrollableState>(scroll).position.pixels, 0);
+      expect(
+        find.textContaining('replacement', findRichText: true),
+        findsWidgets,
+      );
+    },
+  );
+
+  testWidgets('appending to a table reuses the earlier table and its offset', (
+    tester,
+  ) async {
+    _overrideMarkdownTablePlatform(TargetPlatform.iOS);
+    const header =
+        '| A | B | C | D | E |\n'
+        '| --- | --- | --- | --- | --- |\n';
+    final text = ValueNotifier(
+      '$header| apple | B | C | D | E |\n\n$header| banana',
+    );
+    addTearDown(text.dispose);
+    await tester.pumpWidget(_streamingMarkdownHarness(text, width: 320));
+    await tester.pump();
+    final viewports = find.byKey(
+      const ValueKey('markdown-table-horizontal-scroll'),
+    );
+    expect(viewports, findsNWidgets(2));
+    final states = <ScrollableState>[];
+    for (var i = 0; i < 2; i++) {
+      states.add(
+        tester.state<ScrollableState>(
+          find.descendant(
+            of: viewports.at(i),
+            matching: find.byType(Scrollable),
+          ),
+        ),
+      );
+      await tester.drag(viewports.at(i), Offset(-80.0 * (i + 1), 0));
+      await tester.pumpAndSettle();
+    }
+    final offsets = states.map((state) => state.position.pixels).toList();
+    expect(offsets.first, greaterThan(0));
+    expect(offsets.last, greaterThan(offsets.first));
+    final cached = tester.widget<GptMarkdown>(find.byType(GptMarkdown).first);
+
+    text.value += ' cherry';
+    await tester.pump();
+    expect(tester.widget(find.byType(GptMarkdown).first), same(cached));
+    for (var i = 0; i < 2; i++) {
+      final state = tester.state<ScrollableState>(
+        find.descendant(of: viewports.at(i), matching: find.byType(Scrollable)),
+      );
+      expect(state, same(states[i]));
+      expect(state.position.pixels, offsets[i]);
+    }
   });
 
   testWidgets('MarkdownWithCodeHighlight scrolls only overflowing table', (
@@ -4916,9 +5290,9 @@ void main() {
 
       expect(
         find.byWidgetPredicate(
-          (widget) => widget.runtimeType.toString() == '_MarkdownBlockColumn',
+          (widget) => widget.runtimeType.toString() == 'MarkdownBlockList',
         ),
-        findsOneWidget,
+        findsWidgets,
       );
       expect(
         find.byWidgetPredicate(

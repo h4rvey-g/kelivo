@@ -172,8 +172,8 @@ class HomeViewModel extends ChangeNotifier {
   /// Called when streaming finishes (UI may show notification).
   void Function(String conversationId)? onStreamFinished;
 
-  /// Called when a successful assistant reply is finalized.
-  void Function(ChatMessage message)? onAssistantMessageFinished;
+  /// Completes once downstream work has taken over background execution.
+  FutureOr<void> Function(ChatMessage message)? onAssistantMessageFinished;
 
   /// Called to schedule inline image sanitization.
   void Function(String messageId, String content, {bool immediate})?
@@ -311,8 +311,8 @@ class HomeViewModel extends ChangeNotifier {
     onStreamFinished?.call(conversationId);
   }
 
-  void _onAssistantMessageFinished(ChatMessage message) {
-    onAssistantMessageFinished?.call(message);
+  Future<void> _onAssistantMessageFinished(ChatMessage message) async {
+    await onAssistantMessageFinished?.call(message);
     _onMaybeOrganizeMemory(message.conversationId);
   }
 
@@ -360,6 +360,49 @@ class HomeViewModel extends ChangeNotifier {
   // ============================================================================
 
   /// Send a new message or queue it if the current conversation is busy.
+  Future<ChatActionResult> sendScheduledMessage({
+    required ChatInputData input,
+    required Conversation conversation,
+    required Assistant assistant,
+    ({String providerKey, String modelId})? modelOverride,
+    ValueChanged<String>? onGenerationStarted,
+  }) {
+    if (_chatController.isConversationLoading(conversation.id) ||
+        _chatActions.activeStreamingMessageId(conversation.id) != null) {
+      return Future.value(ChatActionResult.inFlight());
+    }
+    return _chatActions.sendMessage(
+      input: input,
+      conversation: conversation,
+      assistantOverride: assistant,
+      scheduled: true,
+      modelOverride: modelOverride,
+      onGenerationStarted: onGenerationStarted,
+    );
+  }
+
+  Future<ChatActionResult> regenerateScheduledMessage({
+    required ChatMessage message,
+    required Conversation conversation,
+    required Assistant assistant,
+    ({String providerKey, String modelId})? modelOverride,
+    ValueChanged<String>? onGenerationStarted,
+  }) {
+    if (_chatController.isConversationLoading(conversation.id) ||
+        _chatActions.activeStreamingMessageId(conversation.id) != null) {
+      return Future.value(ChatActionResult.inFlight());
+    }
+    return _chatActions.regenerateAtMessage(
+      message: message,
+      conversation: conversation,
+      assistantOverride: assistant,
+      scheduled: true,
+      modelOverride: modelOverride,
+      preserveFollowingMessages: true,
+      onGenerationStarted: onGenerationStarted,
+    );
+  }
+
   Future<ChatInputSubmissionResult> sendMessage(ChatInputData input) async {
     final content = input.text.trim();
     if (content.isEmpty &&
@@ -1246,6 +1289,7 @@ class HomeViewModel extends ChangeNotifier {
               .replaceAll('{content}', text)
               .replaceAll('{locale}', locale);
           return (await ChatApiService.generateText(
+            conversationId: convo.id,
             config: cfg,
             modelId: mdlId,
             prompt: prompt,
@@ -1484,11 +1528,12 @@ class HomeViewModel extends ChangeNotifier {
     return _chatController.groupMessagesByGroup();
   }
 
-  /// Get clear context label based on current state.
-  String getClearContextLabel(
-    String Function(String, String) withCountFormatter,
-    String defaultLabel,
-  ) {
+  /// Messages currently in the conversation context.
+  ///
+  /// [actual] counts the messages after the context boundary, capped by the
+  /// assistant's limit when one is set. [configured] is that limit, or null
+  /// when context messages are unlimited.
+  ({int actual, int? configured}) getContextMessageCount() {
     final assistant = _contextProvider
         .read<AssistantProvider>()
         .currentAssistant;
@@ -1503,10 +1548,12 @@ class HomeViewModel extends ChangeNotifier {
           : _chatService.getContextStartIndex(currentConversation!.id),
     );
     if (configured > 0) {
-      final actual = remaining > configured ? configured : remaining;
-      return withCountFormatter(actual.toString(), configured.toString());
+      return (
+        actual: remaining > configured ? configured : remaining,
+        configured: configured,
+      );
     }
-    return defaultLabel;
+    return (actual: remaining, configured: null);
   }
 
   /// Test entry for [_maybeGenerateSummaryFor].
@@ -1583,6 +1630,7 @@ class HomeViewModel extends ChangeNotifier {
 
     try {
       final title = (await ChatApiService.generateText(
+        conversationId: convo.id,
         config: cfg,
         modelId: mdlId,
         prompt: prompt,
@@ -1724,6 +1772,7 @@ class HomeViewModel extends ChangeNotifier {
 
     try {
       final summary = (await ChatApiService.generateText(
+        conversationId: convo.id,
         config: cfg,
         modelId: mdlId,
         prompt: prompt,
@@ -1855,6 +1904,7 @@ class HomeViewModel extends ChangeNotifier {
     try {
       await _chatService.clearConversationSuggestions(conversationId);
       final suggestions = await _suggestionService.generate(
+        conversationId: conversationId,
         settings: settings,
         providerKey: provKey,
         modelId: mdlId,

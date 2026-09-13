@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:provider/provider.dart';
 import '../../../l10n/app_localizations.dart';
@@ -22,17 +23,22 @@ import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/compress_context_options.dart';
 import '../../../core/services/android_process_text.dart';
+import '../../../core/services/incoming_share_service.dart';
 import '../../../core/services/logging/flutter_logger.dart';
 import '../../../utils/platform_utils.dart';
 import '../../../desktop/search_provider_popover.dart';
 import '../../../desktop/reasoning_budget_popover.dart';
-import '../../../desktop/mcp_servers_popover.dart';
+import '../../../desktop/tools_popover.dart';
+import '../../../desktop/workspace_dialog.dart';
+import '../../../desktop/skills_popover.dart';
 import '../../../desktop/mini_map_popover.dart';
 import '../../../desktop/quick_phrase_popover.dart';
 import '../../../desktop/instruction_injection_popover.dart';
 import '../../../desktop/world_book_popover.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../chat/widgets/bottom_tools_sheet.dart';
+import '../../chat/widgets/chat_tools_sheet.dart';
+import '../../chat/utils/ensure_conversation.dart';
 import '../../chat/widgets/context_management_sheet.dart';
 import '../../chat/widgets/reasoning_budget_sheet.dart';
 import '../../search/widgets/search_settings_sheet.dart';
@@ -40,7 +46,6 @@ import '../../chat/widgets/frosted/chat_frosted_backdrop.dart';
 import '../../chat/widgets/chat_assistant_background.dart';
 import '../../model/widgets/model_select_sheet.dart';
 import '../../mcp/pages/mcp_page.dart';
-import '../../assistant/widgets/mcp_assistant_sheet.dart';
 import '../../quick_phrase/pages/quick_phrases_page.dart';
 import '../../quick_phrase/widgets/quick_phrase_menu.dart';
 import '../widgets/chat_input_bar.dart';
@@ -699,6 +704,10 @@ class _HomePageState extends State<HomePage>
   bool _scrollNavHovering = false;
   double _lastViewInsetBottom = 0;
   StreamSubscription<String>? _processTextSub;
+  IncomingShareService? _incomingShares;
+  late final Future<void> _chatReady;
+  bool _readingIncomingShares = false;
+  bool _incomingShareChanged = false;
 
   // ============================================================================
   // Page Controller (manages all business logic and state)
@@ -728,11 +737,13 @@ class _HomePageState extends State<HomePage>
       scrollController: _scrollController,
     );
 
+    _controller.onRevealConversation = () => _drawerController.jumpTo(0);
     _controller.addListener(_onControllerChanged);
     _drawerController.addListener(_onDrawerValueChanged);
 
-    _controller.initChat();
+    _chatReady = _controller.initChat();
     _initProcessText();
+    _initIncomingShares();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -756,6 +767,7 @@ class _HomePageState extends State<HomePage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _controller.onAppLifecycleStateChanged(state);
+    if (state == AppLifecycleState.resumed) _readIncomingShares();
   }
 
   @override
@@ -784,6 +796,7 @@ class _HomePageState extends State<HomePage>
       WidgetsBinding.instance.removeObserver(this);
     } catch (_) {}
     _processTextSub?.cancel();
+    _incomingShares?.dispose();
     _controller.removeListener(_onControllerChanged);
     _drawerController.removeListener(_onDrawerValueChanged);
     _inputFocus.dispose();
@@ -827,6 +840,84 @@ class _HomePageState extends State<HomePage>
         _handleProcessText(text);
       }
     });
+  }
+
+  void _initIncomingShares() {
+    if (!PlatformUtils.isMobile) return;
+    _incomingShares = IncomingShareService()
+      ..listen(
+        onChanged: _readIncomingShares,
+        onFailed: _showIncomingShareFailure,
+      );
+    _incomingShares!.progress.addListener(() {
+      _mediaController.shareImport.value = _incomingShares!.progress.value;
+    });
+    _mediaController.cancelShareImport = () =>
+        unawaited(_incomingShares!.cancelImport());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _readIncomingShares());
+  }
+
+  void _showIncomingShareFailure() {
+    if (!mounted) return;
+    showAppSnackBar(
+      context,
+      message: AppLocalizations.of(context)!.incomingShareFailed,
+      type: NotificationType.error,
+    );
+  }
+
+  Future<void> _readIncomingShares() async {
+    final service = _incomingShares;
+    if (service == null || !mounted) return;
+    _incomingShareChanged = true;
+    if (_readingIncomingShares) return;
+    _readingIncomingShares = true;
+    try {
+      await _chatReady;
+      while (mounted && _incomingShareChanged) {
+        _incomingShareChanged = false;
+        final shares = await service.pending();
+        if (!mounted || shares.isEmpty) continue;
+        final hasContent = shares.any(
+          (share) => share.text.trim().isNotEmpty || share.files.isNotEmpty,
+        );
+        if (hasContent) {
+          final homeRoute = ModalRoute.of(context);
+          Navigator.of(
+            context,
+          ).popUntil((route) => route == homeRoute || route.isFirst);
+          _drawerController.close();
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted) return;
+          final ChatInputData input;
+          try {
+            input = await service.prepare(shares);
+          } on ShareImportCancelled {
+            await service.acknowledge(shares);
+            continue;
+          }
+          var accepted = false;
+          try {
+            if (!mounted) return;
+            // Check the current draft at delivery time: preparing a large
+            // attachment may take long enough for the user to keep typing.
+            accepted = await _controller.acceptIncomingShareDraft(input);
+          } finally {
+            if (!accepted) await service.discardPrepared(input);
+          }
+        }
+        if (shares.any((share) => share.failedFiles > 0)) {
+          _showIncomingShareFailure();
+        }
+        await service.acknowledge(shares);
+      }
+    } on MissingPluginException {
+      // The desktop/test host does not have a mobile incoming-share inbox.
+    } catch (_) {
+      _showIncomingShareFailure();
+    } finally {
+      _readingIncomingShares = false;
+    }
   }
 
   void _handleProcessText(String text) {
@@ -979,7 +1070,7 @@ class _HomePageState extends State<HomePage>
       // (MobileBackgroundLayer); painting it again inside the body would only
       // duplicate it in a box that shrinks with the keyboard.
       topBackground: backgroundImageActive
-          ? const ChatAssistantBackground(expand: false)
+          ? const ChatAssistantBackground(expand: false, pinnedToBackdrop: true)
           : null,
       backgroundImageActive: backgroundImageActive,
       content: Builder(
@@ -1171,7 +1262,12 @@ class _HomePageState extends State<HomePage>
     return ChatInputOverlayLayout(
       topInset: _chatTopOverlayInset(context),
       topBackground: backgroundImageActive
-          ? _buildAssistantBackground(context)
+          ? const ChatAssistantBackground(
+              desktop: true,
+              includeSurfaceFill: true,
+              applyMaskStrength: false,
+              pinnedToBackdrop: true,
+            )
           : null,
       backgroundImageActive: backgroundImageActive,
       content: FadeTransition(
@@ -1302,6 +1398,7 @@ class _HomePageState extends State<HomePage>
       collapseThinkingSteps: settings.collapseThinkingSteps,
       showThinkingCards: settings.showThinkingCards,
       showToolCards: settings.showToolCards,
+      showProducedFiles: settings.showProducedFiles,
       showToolResultSummary: settings.showToolResultSummary,
       hideToolResultImages: settings.hideToolResultImages,
       collapsedCodeLines: settings.autoCollapseCodeBlock
@@ -1392,21 +1489,53 @@ class _HomePageState extends State<HomePage>
       onLongPressModel: (slot) {
         unawaited(_configureQuickModel(slot));
       },
-      onOpenMcp: () {
+      onOpenWorkspace: () {
         final a = context.read<AssistantProvider>().currentAssistant;
-        if (a != null) {
-          if (PlatformUtils.isDesktop) {
-            showDesktopMcpServersPopover(
-              context,
-              anchorKey: _inputBarKey,
-              assistantId: a.id,
-            );
-          } else {
-            showAssistantMcpSheet(context, assistantId: a.id);
-          }
+        if (PlatformUtils.isDesktop) {
+          showDesktopWorkspaceDialog(
+            context,
+            conversationListenable: _controller,
+            conversationId: () => _controller.currentConversation?.id,
+            assistantId: a?.id,
+          );
+        } else {
+          _toggleTools();
         }
       },
-      onLongPressMcp: () {
+      onOpenSkills: () async {
+        final assistant = context.read<AssistantProvider>().currentAssistant;
+        final id = await ensureConversationId(
+          context,
+          conversationId: _controller.currentConversation?.id,
+          assistantId: assistant?.id,
+        );
+        if (id == null || !context.mounted) return;
+        await showDesktopSkillsPopover(
+          context,
+          anchorKey: _inputBarKey,
+          conversationId: id,
+          assistant: assistant,
+        );
+      },
+      onOpenTools: () {
+        final a = context.read<AssistantProvider>().currentAssistant;
+        if (a == null) return;
+        if (PlatformUtils.isDesktop) {
+          showDesktopToolsPopover(
+            context,
+            anchorKey: _inputBarKey,
+            assistantId: a.id,
+          );
+        } else {
+          _controller.dismissKeyboard();
+          showChatToolsSheet(
+            context,
+            assistantId: a.id,
+            conversationId: _controller.currentConversation?.id,
+          );
+        }
+      },
+      onLongPressTools: () {
         Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => const McpPage()));
@@ -1416,13 +1545,31 @@ class _HomePageState extends State<HomePage>
         final assistantProvider = context.read<AssistantProvider>();
         final settingsProvider = context.read<SettingsProvider>();
         final assistant = assistantProvider.currentAssistant;
-        if (assistant != null) {
+        if (assistant == null) return;
+        if (PlatformUtils.isDesktop) {
+          // Desktop popover keeps the legacy global-settings sync flow.
           if (assistant.thinkingBudget != null) {
             settingsProvider.setThinkingBudget(assistant.thinkingBudget);
           }
           await _openReasoningSettings();
           if (!mounted) return;
           final chosen = settingsProvider.thinkingBudget;
+          await assistantProvider.updateAssistant(
+            assistant.copyWith(thinkingBudget: chosen),
+          );
+          return;
+        }
+        // Mobile: seed the sheet via initialBudget instead of pre-writing
+        // global settings. setThinkingBudget notifies synchronously and would
+        // rebuild the home page (message list, input bar, drawer) on the
+        // first frames of the sheet's entrance animation, dropping frames.
+        int? chosen;
+        await _openReasoningSettings(
+          initialBudget: assistant.thinkingBudget,
+          onChanged: (v) => chosen = v,
+        );
+        if (!mounted) return;
+        if (chosen != null && chosen != assistant.thinkingBudget) {
           await assistantProvider.updateAssistant(
             assistant.copyWith(thinkingBudget: chosen),
           );
@@ -1755,7 +1902,10 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  Future<void> _openReasoningSettings() async {
+  Future<void> _openReasoningSettings({
+    int? initialBudget,
+    ValueChanged<int>? onChanged,
+  }) async {
     final model = _resolvedChatModel();
     if (PlatformUtils.isDesktop) {
       await showDesktopReasoningBudgetPopover(
@@ -1769,6 +1919,8 @@ class _HomePageState extends State<HomePage>
         context,
         modelProvider: model.providerKey,
         modelId: model.modelId,
+        initialBudget: initialBudget,
+        onChanged: onChanged,
       );
     }
   }
@@ -1830,27 +1982,34 @@ class _HomePageState extends State<HomePage>
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          top: false,
-          child: BottomToolsSheet(
-            onPhotos: () {
-              Navigator.of(ctx).maybePop();
-              _controller.onPickPhotos();
-            },
-            onCamera: () {
-              Navigator.of(ctx).maybePop();
-              _controller.onPickCamera();
-            },
-            onUpload: () {
-              Navigator.of(ctx).maybePop();
-              _controller.onPickFiles();
-            },
-            onClear: () async {
-              await Navigator.of(ctx).maybePop();
-              _showContextManagementSheet();
-            },
-            assistantId: assistantId,
-          ),
+        return ListenableBuilder(
+          listenable: _controller,
+          builder: (context, _) {
+            return SafeArea(
+              top: false,
+              child: BottomToolsSheet(
+                onPhotos: () {
+                  Navigator.of(ctx).maybePop();
+                  _controller.onPickPhotos();
+                },
+                onCamera: () {
+                  Navigator.of(ctx).maybePop();
+                  _controller.onPickCamera();
+                },
+                onUpload: () {
+                  Navigator.of(ctx).maybePop();
+                  _controller.onPickFiles();
+                },
+                onClear: () async {
+                  await Navigator.of(ctx).maybePop();
+                  _showContextManagementSheet();
+                },
+                assistantId: assistantId,
+                conversationId: _controller.currentConversation?.id,
+                onClose: () => Navigator.of(ctx).maybePop(),
+              ),
+            );
+          },
         );
       },
     );
@@ -1868,7 +2027,7 @@ class _HomePageState extends State<HomePage>
         return SafeArea(
           top: false,
           child: ContextManagementSheet(
-            clearLabel: _controller.clearContextLabel(),
+            messageCountLabel: _controller.contextMessageCountLabel(),
             onCompress: () async {
               await Navigator.of(ctx).maybePop();
               if (!mounted) return;

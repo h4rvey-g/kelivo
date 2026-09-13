@@ -10,11 +10,14 @@ class MainFlutterWindow: NSWindow {
   private var transientPasteMonitor: Any?
   private var transientPasteKeyDownPending = false
   private var textInputContextRecovery: TextInputContextRecovery?
+  private let systemPower = DesktopSystemPowerState()
+  private var powerChannel: FlutterMethodChannel?
 
   deinit {
     if let transientPasteMonitor {
       NSEvent.removeMonitor(transientPasteMonitor)
     }
+    powerChannel?.setMethodCallHandler(nil)
   }
 
   private func installTransientPasteMonitor() {
@@ -263,6 +266,16 @@ class MainFlutterWindow: NSWindow {
         self.transientPasteKeyDownPending = false
       }
       result(nil)
+    }
+
+    powerChannel = FlutterMethodChannel(name: "app.desktop_power",
+                                       binaryMessenger: flutterViewController.engine.binaryMessenger)
+    powerChannel?.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "state", let self = self else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      result(self.systemPower.snapshot)
     }
 
     let channel = FlutterMethodChannel(name: "app.clipboard", binaryMessenger: flutterViewController.engine.binaryMessenger)

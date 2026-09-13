@@ -1,15 +1,14 @@
+import 'mobile_background_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:io' show Platform;
-import '../../../core/services/android_background.dart';
-import '../../../core/services/ios_background_generation.dart';
-import '../../../core/services/notification_service.dart';
 import '../../../icons/lucide_adapter.dart';
 import 'package:syncfusion_flutter_sliders/sliders.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import '../../../core/providers/settings_provider.dart';
 import 'auto_retry_page.dart';
+import 'google_fonts_picker_page.dart';
 import 'image_settings_page.dart';
 import 'message_style_settings_page.dart';
 import 'theme_settings_page.dart';
@@ -182,79 +181,19 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
                 ),
               ),
               _iosDivider(context),
-              if (Platform.isAndroid)
-                _iosNavRow(
-                  context,
-                  icon: Lucide.Monitor,
-                  label: l10n.displaySettingsPageAndroidBackgroundChatTitle,
-                  detailBuilder: (ctx) {
-                    final sp = ctx.watch<SettingsProvider>();
-                    switch (sp.androidBackgroundChatMode) {
-                      case AndroidBackgroundChatMode.off:
-                        return Text(
-                          l10n.androidBackgroundStatusOff,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.6),
-                            fontSize: 13,
-                          ),
-                        );
-                      case AndroidBackgroundChatMode.on:
-                        return Text(
-                          l10n.androidBackgroundStatusOn,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.6),
-                            fontSize: 13,
-                          ),
-                        );
-                      case AndroidBackgroundChatMode.onNotify:
-                        return Text(
-                          l10n.androidBackgroundStatusOther,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          style: TextStyle(
-                            color: cs.onSurface.withValues(alpha: 0.6),
-                            fontSize: 13,
-                          ),
-                        );
-                    }
-                  },
-                  onTap: () => _showAndroidBackgroundChatSheet(context),
-                ),
-              if (Platform.isAndroid) _iosDivider(context),
-              if (Platform.isIOS)
+              if (Platform.isAndroid || Platform.isIOS) ...[
                 _iosNavRow(
                   context,
                   icon: Lucide.Activity,
-                  label: l10n.displaySettingsPageIosBackgroundChatTitle,
-                  detailBuilder: (ctx) {
-                    final sp = ctx.watch<SettingsProvider>();
-                    return Text(
-                      sp.iosBackgroundGenerationEnabled
-                          ? l10n.iosBackgroundStatusOn
-                          : l10n.iosBackgroundStatusOff,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: TextStyle(
-                        color: cs.onSurface.withValues(alpha: 0.6),
-                        fontSize: 13,
-                      ),
-                    );
-                  },
+                  label: l10n.backgroundSettingsTitle,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const IosBackgroundSettingsPage(),
+                      builder: (_) => const MobileBackgroundSettingsPage(),
                     ),
                   ),
                 ),
-              if (Platform.isIOS) _iosDivider(context),
+                _iosDivider(context),
+              ],
               _iosNavRow(
                 context,
                 icon: Lucide.Type,
@@ -425,6 +364,12 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
             children: [
               _sheetOption(
                 ctx,
+                label: l10n.googleFontsTitle,
+                onTap: () => Navigator.of(ctx).pop('google'),
+              ),
+              _sheetDividerNoIcon(ctx),
+              _sheetOption(
+                ctx,
                 label: l10n.fontPickerChooseLocalFile,
                 onTap: () => Navigator.of(ctx).pop('local'),
               ),
@@ -443,6 +388,10 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
     if (!context.mounted) return;
 
     final settings = context.read<SettingsProvider>();
+    if (choice == 'google') {
+      await showGoogleFontsPicker(context, forCode: target == _FontTarget.code);
+      return;
+    }
     if (choice == 'local') {
       final res = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -464,83 +413,6 @@ class _DisplaySettingsPageState extends State<DisplaySettingsPage> {
       } else {
         await settings.clearCodeFont();
       }
-    }
-  }
-
-  Future<void> _showAndroidBackgroundChatSheet(BuildContext context) async {
-    final l10n = AppLocalizations.of(context)!;
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: context.overlaySurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _sheetOption(
-                ctx,
-                label: l10n.androidBackgroundOptionOn,
-                onTap: () => Navigator.of(ctx).pop('on'),
-              ),
-              _sheetDividerNoIcon(ctx),
-              _sheetOption(
-                ctx,
-                label: l10n.androidBackgroundOptionOnNotify,
-                onTap: () => Navigator.of(ctx).pop('on_notify'),
-              ),
-              _sheetDividerNoIcon(ctx),
-              _sheetOption(
-                ctx,
-                label: l10n.androidBackgroundOptionOff,
-                onTap: () => Navigator.of(ctx).pop('off'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (choice == null) return;
-    if (!context.mounted) return;
-
-    final sp = context.read<SettingsProvider>();
-    final notificationTitle = l10n.androidBackgroundNotificationTitle;
-    final notificationText = l10n.androidBackgroundNotificationText;
-    switch (choice) {
-      case 'on_notify':
-        await sp.setAndroidBackgroundChatMode(
-          AndroidBackgroundChatMode.onNotify,
-        );
-        try {
-          await AndroidBackgroundManager.ensureInitialized(
-            notificationTitle: notificationTitle,
-            notificationText: notificationText,
-          );
-          await AndroidBackgroundManager.setEnabled(true);
-          await NotificationService.ensureInitialized();
-          await NotificationService.ensureAndroidNotificationsPermission();
-        } catch (_) {}
-        break;
-      case 'on':
-        await sp.setAndroidBackgroundChatMode(AndroidBackgroundChatMode.on);
-        try {
-          await AndroidBackgroundManager.ensureInitialized(
-            notificationTitle: notificationTitle,
-            notificationText: notificationText,
-          );
-          await AndroidBackgroundManager.setEnabled(true);
-          // Prepare notification channel as well to avoid FGS notification issues on some ROMs
-          await NotificationService.ensureInitialized();
-        } catch (_) {}
-        break;
-      default:
-        await sp.setAndroidBackgroundChatMode(AndroidBackgroundChatMode.off);
-        try {
-          await AndroidBackgroundManager.setEnabled(false);
-        } catch (_) {}
     }
   }
 
@@ -1192,69 +1064,6 @@ Widget _iosDivider(BuildContext context) {
   );
 }
 
-Widget _noticeCard(
-  BuildContext context, {
-  required String title,
-  required String body,
-}) {
-  final cs = Theme.of(context).colorScheme;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  return Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: cs.primaryContainer.withValues(alpha: isDark ? 0.20 : 0.35),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: cs.primary.withValues(alpha: 0.10), width: 0.6),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Lucide.BadgeInfo, size: 18, color: cs.primary),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: cs.onSurface,
-                  fontSize: 13,
-                  fontWeight: AppFontWeights.semibold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                body,
-                style: TextStyle(
-                  color: cs.onSurface.withValues(alpha: 0.72),
-                  fontSize: 12,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _plainFootnote(BuildContext context, String text) {
-  final cs = Theme.of(context).colorScheme;
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12),
-    child: Text(
-      text,
-      style: TextStyle(
-        color: cs.onSurface.withValues(alpha: 0.58),
-        fontSize: 12,
-        height: 1.35,
-      ),
-    ),
-  );
-}
-
 class _AnimatedPressColor extends StatelessWidget {
   const _AnimatedPressColor({
     required this.pressed,
@@ -1755,6 +1564,16 @@ class ChatItemDisplaySettingsPage extends StatelessWidget {
                 onChanged: (v) =>
                     context.read<SettingsProvider>().setShowToolCards(v),
               ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
+                icon: Lucide.FileText,
+                label: l10n.displaySettingsPageShowProducedFilesTitle,
+                tip: l10n.displaySettingsPageShowProducedFilesSubtitle,
+                value: sp.showProducedFiles,
+                onChanged: (v) =>
+                    context.read<SettingsProvider>().setShowProducedFiles(v),
+              ),
             ],
           ),
         ],
@@ -1846,7 +1665,18 @@ class RenderingSettingsPage extends StatelessWidget {
               ),
               if (sp.autoCollapseCodeBlock) ...[
                 _iosDivider(context),
-                const _AutoCollapseCodeBlockLinesRow(),
+                _NumberFieldRow(
+                  icon: Lucide.ListOrdered,
+                  label:
+                      l10n.displaySettingsPageAutoCollapseCodeBlockLinesTitle,
+                  unit: l10n.displaySettingsPageAutoCollapseCodeBlockLinesUnit,
+                  value: sp.autoCollapseCodeBlockLines,
+                  min: 1,
+                  max: 999,
+                  onChanged: (v) => context
+                      .read<SettingsProvider>()
+                      .setAutoCollapseCodeBlockLines(v),
+                ),
               ],
             ],
           ),
@@ -1856,25 +1686,37 @@ class RenderingSettingsPage extends StatelessWidget {
   }
 }
 
-class _AutoCollapseCodeBlockLinesRow extends StatefulWidget {
-  const _AutoCollapseCodeBlockLinesRow();
+class _NumberFieldRow extends StatefulWidget {
+  const _NumberFieldRow({
+    required this.icon,
+    required this.label,
+    required this.unit,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String label;
+  final String unit;
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+
   @override
-  State<_AutoCollapseCodeBlockLinesRow> createState() =>
-      _AutoCollapseCodeBlockLinesRowState();
+  State<_NumberFieldRow> createState() => _NumberFieldRowState();
 }
 
-class _AutoCollapseCodeBlockLinesRowState
-    extends State<_AutoCollapseCodeBlockLinesRow> {
+class _NumberFieldRowState extends State<_NumberFieldRow> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
-    final sp = context.read<SettingsProvider>();
-    _controller = TextEditingController(
-      text: '${sp.autoCollapseCodeBlockLines}',
-    );
+    _controller = TextEditingController(text: '${widget.value}');
     _focusNode = FocusNode()
       ..addListener(() {
         if (!_focusNode.hasFocus) _commit();
@@ -1889,11 +1731,9 @@ class _AutoCollapseCodeBlockLinesRowState
   }
 
   void _commit() {
-    final sp = context.read<SettingsProvider>();
-    final raw = _controller.text.trim();
-    final parsed = int.tryParse(raw) ?? sp.autoCollapseCodeBlockLines;
-    final next = parsed.clamp(1, 999);
-    sp.setAutoCollapseCodeBlockLines(next);
+    final parsed = int.tryParse(_controller.text.trim()) ?? widget.value;
+    final next = parsed.clamp(widget.min, widget.max);
+    widget.onChanged(next);
     final text = '$next';
     if (_controller.text != text) {
       _controller.value = _controller.value.copyWith(
@@ -1905,13 +1745,11 @@ class _AutoCollapseCodeBlockLinesRowState
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
-    final sp = context.watch<SettingsProvider>();
 
     // Keep controller in sync when not editing
     if (!_focusNode.hasFocus) {
-      final t = '${sp.autoCollapseCodeBlockLines}';
+      final t = '${widget.value}';
       if (_controller.text != t) _controller.text = t;
     }
 
@@ -1934,12 +1772,12 @@ class _AutoCollapseCodeBlockLinesRowState
         children: [
           SizedBox(
             width: 36,
-            child: Icon(Lucide.ListOrdered, size: 20, color: baseColor),
+            child: Icon(widget.icon, size: 20, color: baseColor),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              l10n.displaySettingsPageAutoCollapseCodeBlockLinesTitle,
+              widget.label,
               style: TextStyle(fontSize: 15, color: baseColor),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1972,7 +1810,7 @@ class _AutoCollapseCodeBlockLinesRowState
           ),
           const SizedBox(width: 8),
           Text(
-            l10n.displaySettingsPageAutoCollapseCodeBlockLinesUnit,
+            widget.unit,
             style: TextStyle(
               fontSize: 13,
               color: cs.onSurface.withValues(alpha: 0.6),
@@ -2122,6 +1960,33 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
                     .read<SettingsProvider>()
                     .setInsertSuggestionOnTapOnly(v),
               ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
+                icon: Lucide.FoldVertical,
+                label: l10n.displaySettingsPageCollapseLongUserMessagesTitle,
+                tip: l10n.displaySettingsPageCollapseLongUserMessagesSubtitle,
+                value: sp.collapseLongUserMessages,
+                onChanged: (v) => context
+                    .read<SettingsProvider>()
+                    .setCollapseLongUserMessages(v),
+              ),
+              if (sp.collapseLongUserMessages) ...[
+                _iosDivider(context),
+                _NumberFieldRow(
+                  icon: Lucide.ListOrdered,
+                  label: l10n
+                      .displaySettingsPageCollapseLongUserMessagesCharsTitle,
+                  unit:
+                      l10n.displaySettingsPageCollapseLongUserMessagesCharsUnit,
+                  value: sp.collapseLongUserMessageChars,
+                  min: SettingsProvider.minCollapseLongUserMessageChars,
+                  max: SettingsProvider.maxCollapseLongUserMessageChars,
+                  onChanged: (v) => context
+                      .read<SettingsProvider>()
+                      .setCollapseLongUserMessageChars(v),
+                ),
+              ],
               _iosDivider(context),
               _iosSwitchRow(
                 context,
@@ -2432,170 +2297,6 @@ class _LongPasteAsFileThresholdRowState
               color: cs.onSurface.withValues(alpha: 0.6),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class IosBackgroundSettingsPage extends StatefulWidget {
-  const IosBackgroundSettingsPage({super.key});
-
-  @override
-  State<IosBackgroundSettingsPage> createState() =>
-      _IosBackgroundSettingsPageState();
-}
-
-class _IosBackgroundSettingsPageState extends State<IosBackgroundSettingsPage> {
-  late Future<IosBackgroundGenerationStatus> _statusFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _statusFuture = IosBackgroundGenerationService.instance.getStatus();
-  }
-
-  void _refreshStatus() {
-    setState(() {
-      _statusFuture = IosBackgroundGenerationService.instance.getStatus();
-    });
-  }
-
-  Future<void> _setBackgroundNotificationsEnabled(bool enabled) async {
-    final settings = context.read<SettingsProvider>();
-    if (!enabled) {
-      await settings.setIosBackgroundNotificationsEnabled(false);
-      _refreshStatus();
-      return;
-    }
-
-    final granted = await IosBackgroundGenerationService.instance
-        .requestNotificationAuthorization();
-    if (!mounted) return;
-    await settings.setIosBackgroundNotificationsEnabled(granted);
-    _refreshStatus();
-  }
-
-  Future<void> _openAppSettings() async {
-    await IosBackgroundGenerationService.instance.openAppSettings();
-    if (!mounted) return;
-    _refreshStatus();
-  }
-
-  Future<void> _openNotificationSettings() async {
-    await IosBackgroundGenerationService.instance.openNotificationSettings();
-    if (!mounted) return;
-    _refreshStatus();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final l10n = AppLocalizations.of(context)!;
-    final sp = context.watch<SettingsProvider>();
-
-    return Scaffold(
-      appBar: AppBar(
-        leading: Tooltip(
-          message: l10n.settingsPageBackButton,
-          child: _TactileIconButton(
-            icon: Lucide.ArrowLeft,
-            color: cs.onSurface,
-            size: 22,
-            onTap: () => Navigator.of(context).maybePop(),
-          ),
-        ),
-        title: Text(l10n.iosBackgroundSettingsPageTitle),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        children: [
-          _noticeCard(
-            context,
-            title: l10n.iosBackgroundLimitNoticeTitle,
-            body: l10n.iosBackgroundLimitNoticeBody,
-          ),
-          const SizedBox(height: 12),
-          SectionCard(
-            children: [
-              _iosSwitchRow(
-                context,
-                icon: Lucide.Activity,
-                label: l10n.iosBackgroundGenerationEnableTitle,
-                subtitle: l10n.iosBackgroundGenerationEnableSubtitle,
-                value: sp.iosBackgroundGenerationEnabled,
-                onChanged: (v) => context
-                    .read<SettingsProvider>()
-                    .setIosBackgroundGenerationEnabled(v),
-              ),
-              _iosDivider(context),
-              _iosSwitchRow(
-                context,
-                icon: Lucide.RefreshCw,
-                label: l10n.iosBackgroundTaskRefreshTitle,
-                subtitle: l10n.iosBackgroundTaskRefreshSubtitle,
-                value: sp.iosBackgroundTaskRefreshEnabled,
-                onChanged: (v) => context
-                    .read<SettingsProvider>()
-                    .setIosBackgroundTaskRefreshEnabled(v),
-              ),
-              _iosDivider(context),
-              _iosSwitchRow(
-                context,
-                icon: Lucide.Timer,
-                label: l10n.iosLiveActivityTitle,
-                subtitle: l10n.iosLiveActivitySubtitle,
-                value: sp.iosLiveActivityEnabled,
-                onChanged: (v) => context
-                    .read<SettingsProvider>()
-                    .setIosLiveActivityEnabled(v),
-              ),
-              _iosDivider(context),
-              _iosSwitchRow(
-                context,
-                icon: Lucide.MessageCircle,
-                label: l10n.iosBackgroundNotificationsTitle,
-                subtitle: l10n.iosBackgroundNotificationsSubtitle,
-                value: sp.iosBackgroundNotificationsEnabled,
-                onChanged: _setBackgroundNotificationsEnabled,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          FutureBuilder<IosBackgroundGenerationStatus>(
-            future: _statusFuture,
-            builder: (context, snapshot) {
-              final status = snapshot.data;
-              return SectionCard(
-                children: [
-                  _iosNavRow(
-                    context,
-                    icon: Lucide.BadgeInfo,
-                    label: l10n.iosBackgroundNativeStatusTitle,
-                    detailText: status == null
-                        ? l10n.iosBackgroundNativeStatusUnavailable
-                        : status.liveActivitiesEnabled
-                        ? l10n.iosBackgroundLiveActivityAvailable
-                        : l10n.iosBackgroundLiveActivityUnavailable,
-                    onTap: _openAppSettings,
-                  ),
-                  _iosDivider(context),
-                  _iosNavRow(
-                    context,
-                    icon: Lucide.MessageCircle,
-                    label: status?.notificationsAuthorized == true
-                        ? l10n.iosBackgroundNotificationsAuthorized
-                        : l10n.iosBackgroundNotificationsNotAuthorized,
-                    onTap: _openNotificationSettings,
-                  ),
-                ],
-              );
-            },
-          ),
-          if (sp.iosLiveActivityEnabled) ...[
-            const SizedBox(height: 12),
-            _plainFootnote(context, l10n.iosBackgroundUnsupportedLiveActivity),
-          ],
         ],
       ),
     );

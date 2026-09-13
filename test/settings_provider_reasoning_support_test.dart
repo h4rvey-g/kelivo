@@ -133,6 +133,34 @@ void main() {
           settings.supportsMaxReasoning('OpenAI', 'muse-spark-1.1'),
           isFalse,
         );
+        expect(
+          settings.supportsMaxReasoning('OpenAI', 'muse-spark-1.3'),
+          isTrue,
+        );
+        expect(
+          settings.supportsXhighReasoning('OpenAI', 'gpt-6-astra'),
+          isTrue,
+        );
+        expect(settings.supportsMaxReasoning('OpenAI', 'gpt-6-astra'), isTrue);
+        expect(settings.supportsMaxReasoning('OpenAI', 'glm-5.3'), isTrue);
+        expect(
+          settings.supportsXhighReasoning('OpenAI', 'glm-5.3-flash'),
+          isFalse,
+        );
+        expect(settings.supportsXhighReasoning('OpenAI', 'glm-5.2'), isTrue);
+        expect(settings.supportsMaxReasoning('OpenAI', 'glm-5.2'), isTrue);
+        expect(
+          settings.supportsXhighReasoning('OpenAI', 'gpt-5.3-codex'),
+          isTrue,
+        );
+        expect(
+          settings.supportsXhighReasoning('OpenAI', 'gpt-5.1-codex'),
+          isFalse,
+        );
+        expect(
+          settings.supportsXhighReasoning('OpenAI', 'gpt-5.1-codex-max'),
+          isTrue,
+        );
       },
     );
 
@@ -337,6 +365,7 @@ void main() {
             baseUrl: 'https://api.anthropic.com/v1',
             providerType: ProviderKind.claude,
             models: const [
+              'claude-fable-5-1',
               'claude-fable-5',
               'claude-mythos-5',
               'claude-opus-4-8',
@@ -347,6 +376,7 @@ void main() {
         );
 
         for (final model in const [
+          'claude-fable-5-1',
           'claude-fable-5',
           'claude-mythos-5',
           'claude-opus-4-8',
@@ -357,6 +387,7 @@ void main() {
           expect(settings.supportsMaxReasoning('Claude', model), isTrue);
         }
         expect(settings.getProviderConfig('Claude').models, [
+          'claude-fable-5-1',
           'claude-fable-5',
           'claude-mythos-5',
           'claude-opus-4-8',
