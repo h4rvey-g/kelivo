@@ -340,8 +340,15 @@ class MessageBuilderService {
         }
       }
 
-      final content = m.content;
       final mediaRefs = mediaRefsFromParts(m);
+      final imageContext = m.imageGenerationContext;
+      final content =
+          m.content.isEmpty &&
+              m.role == 'assistant' &&
+              mediaRefs.isNotEmpty &&
+              imageContext != null
+          ? imageContext.buildImageDescription()
+          : m.content;
       // Pure-attachment turns have empty text content but still must be sent.
       // Document FileParts are omitted from mediaRefs (they travel via
       // document extraction), so also keep messages that still have a usable

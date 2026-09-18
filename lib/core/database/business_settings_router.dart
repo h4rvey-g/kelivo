@@ -107,6 +107,8 @@ final class BusinessKeyRegistry {
     'ocr_enabled_v1',
     'summary_model_v1',
     'summary_prompt_v1',
+    'image_context_model_v1',
+    'image_context_inheritance_mode_v1',
     'suggestion_model_v1',
     'suggestion_generation_enabled_v1',
     'suggestion_prompt_v1',

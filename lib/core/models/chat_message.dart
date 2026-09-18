@@ -1,6 +1,7 @@
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
+import 'image_generation_context.dart';
 import 'message_part.dart';
 
 part 'chat_message.g.dart';
@@ -84,6 +85,12 @@ class ChatMessage extends HiveObject {
   @HiveField(19)
   final int? durationMs;
 
+  /// Drift-backed feature metadata. Keys are feature-prefixed and versioned.
+  final Map<String, dynamic> extras;
+
+  ImageGenerationContext? get imageGenerationContext =>
+      ImageGenerationContext.fromExtras(extras);
+
   ChatMessage({
     String? id,
     required this.role,
@@ -106,6 +113,7 @@ class ChatMessage extends HiveObject {
     this.completionTokens,
     this.cachedTokens,
     this.durationMs,
+    this.extras = const <String, dynamic>{},
   }) : parts = List<MessagePart>.unmodifiable(
          parts ?? <MessagePart>[TextPart(content ?? '')],
        ),
@@ -270,6 +278,7 @@ class ChatMessage extends HiveObject {
     int? completionTokens,
     int? cachedTokens,
     int? durationMs,
+    Map<String, dynamic>? extras,
   }) {
     final List<MessagePart>? nextParts;
     if (parts != null) {
@@ -301,6 +310,7 @@ class ChatMessage extends HiveObject {
       completionTokens: completionTokens ?? this.completionTokens,
       cachedTokens: cachedTokens ?? this.cachedTokens,
       durationMs: durationMs ?? this.durationMs,
+      extras: extras ?? this.extras,
     );
   }
 
@@ -331,6 +341,7 @@ class ChatMessage extends HiveObject {
       'completionTokens': completionTokens,
       'cachedTokens': cachedTokens,
       'durationMs': durationMs,
+      'extras': extras,
     };
   }
 
@@ -384,6 +395,12 @@ class ChatMessage extends HiveObject {
       completionTokens: json['completionTokens'] as int?,
       cachedTokens: json['cachedTokens'] as int?,
       durationMs: json['durationMs'] as int?,
+      extras: _decodeExtras(json['extras']),
     );
+  }
+
+  static Map<String, dynamic> _decodeExtras(Object? raw) {
+    if (raw is! Map) return const <String, dynamic>{};
+    return raw.map((key, value) => MapEntry(key.toString(), value));
   }
 }

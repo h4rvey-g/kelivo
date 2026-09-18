@@ -21,6 +21,7 @@ import '../services/learning_mode_store.dart';
 import '../models/api_keys.dart';
 import '../models/backup.dart';
 import '../models/compress_context_options.dart';
+import '../models/image_generation_context.dart';
 import '../models/auto_retry_options.dart';
 import '../models/provider_group.dart';
 import '../services/haptics.dart';
@@ -118,6 +119,9 @@ class SettingsProvider extends ChangeNotifier {
   static const String _ocrPromptKey = 'ocr_prompt_v1';
   static const String _summaryModelKey = 'summary_model_v1';
   static const String _summaryPromptKey = 'summary_prompt_v1';
+  static const String _imageContextModelKey = 'image_context_model_v1';
+  static const String _imageContextInheritanceModeKey =
+      'image_context_inheritance_mode_v1';
   static const String _suggestionModelKey = 'suggestion_model_v1';
   static const String _suggestionGenerationEnabledKey =
       'suggestion_generation_enabled_v1';
@@ -952,6 +956,17 @@ class SettingsProvider extends ChangeNotifier {
     _summaryPrompt = (summaryp == null || summaryp.trim().isEmpty)
         ? defaultSummaryPrompt
         : summaryp;
+    final imageContextSel = prefs.getString(_imageContextModelKey);
+    if (imageContextSel != null && imageContextSel.contains('::')) {
+      final parts = imageContextSel.split('::');
+      if (parts.length >= 2) {
+        _imageContextModelProvider = parts[0];
+        _imageContextModelId = parts.sublist(1).join('::');
+      }
+    }
+    _imageContextInheritanceMode = ImageContextInheritanceModeCodec.fromStorage(
+      prefs.getString(_imageContextInheritanceModeKey),
+    );
     // load chat suggestion model
     final suggestionSel = prefs.getString(_suggestionModelKey);
     if (suggestionSel != null && suggestionSel.contains('::')) {
@@ -3375,6 +3390,12 @@ class SettingsProvider extends ChangeNotifier {
       await prefs.remove(_summaryModelKey);
       changed = true;
     }
+    if (_imageContextModelProvider == providerKey) {
+      _imageContextModelProvider = null;
+      _imageContextModelId = null;
+      await prefs.remove(_imageContextModelKey);
+      changed = true;
+    }
     if (_suggestionModelProvider == providerKey) {
       _suggestionModelProvider = null;
       _suggestionModelId = null;
@@ -3444,6 +3465,13 @@ class SettingsProvider extends ChangeNotifier {
       _summaryModelProvider = null;
       _summaryModelId = null;
       await prefs.remove(_summaryModelKey);
+      changed = true;
+    }
+    if (_imageContextModelProvider == providerKey &&
+        _imageContextModelId == modelId) {
+      _imageContextModelProvider = null;
+      _imageContextModelId = null;
+      await prefs.remove(_imageContextModelKey);
       changed = true;
     }
     if (_suggestionModelProvider == providerKey &&
@@ -3521,6 +3549,11 @@ class SettingsProvider extends ChangeNotifier {
       _summaryModelProvider = null;
       _summaryModelId = null;
       await prefs.remove(_summaryModelKey);
+    }
+    if (_imageContextModelProvider == key) {
+      _imageContextModelProvider = null;
+      _imageContextModelId = null;
+      await prefs.remove(_imageContextModelKey);
     }
     if (_suggestionModelProvider == key) {
       _suggestionModelProvider = null;
@@ -4001,6 +4034,50 @@ Generate or update a brief summary of the user's questions and intentions.
 
   Future<void> resetSummaryPrompt() async =>
       setSummaryPrompt(defaultSummaryPrompt);
+
+  // Image-generation context model and inheritance strategy.
+  String? _imageContextModelProvider;
+  String? _imageContextModelId;
+  ImageContextInheritanceMode _imageContextInheritanceMode =
+      ImageContextInheritanceMode.summary;
+
+  String? get imageContextModelProvider => _imageContextModelProvider;
+  String? get imageContextModelId => _imageContextModelId;
+  String? get imageContextModelKey =>
+      (_imageContextModelProvider != null && _imageContextModelId != null)
+      ? '${_imageContextModelProvider!}::${_imageContextModelId!}'
+      : null;
+  ImageContextInheritanceMode get imageContextInheritanceMode =>
+      _imageContextInheritanceMode;
+
+  Future<void> setImageContextModel(String providerKey, String modelId) async {
+    _imageContextModelProvider = providerKey;
+    _imageContextModelId = modelId;
+    notifyListeners();
+    await _preferences.setString(
+      _imageContextModelKey,
+      '$providerKey::$modelId',
+    );
+  }
+
+  Future<void> resetImageContextModel() async {
+    _imageContextModelProvider = null;
+    _imageContextModelId = null;
+    notifyListeners();
+    await _preferences.remove(_imageContextModelKey);
+  }
+
+  Future<void> setImageContextInheritanceMode(
+    ImageContextInheritanceMode mode,
+  ) async {
+    if (_imageContextInheritanceMode == mode) return;
+    _imageContextInheritanceMode = mode;
+    notifyListeners();
+    await _preferences.setString(
+      _imageContextInheritanceModeKey,
+      mode.storageValue,
+    );
+  }
 
   // Chat suggestion model and prompt.
   // A null model follows the current chat when the feature is enabled.
@@ -5864,6 +5941,9 @@ Requirements:
     copy._summaryModelProvider = _summaryModelProvider;
     copy._summaryModelId = _summaryModelId;
     copy._summaryPrompt = _summaryPrompt;
+    copy._imageContextModelProvider = _imageContextModelProvider;
+    copy._imageContextModelId = _imageContextModelId;
+    copy._imageContextInheritanceMode = _imageContextInheritanceMode;
     copy._suggestionModelProvider = _suggestionModelProvider;
     copy._suggestionModelId = _suggestionModelId;
     copy._suggestionGenerationEnabled = _suggestionGenerationEnabled;

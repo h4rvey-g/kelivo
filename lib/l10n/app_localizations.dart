@@ -4690,6 +4690,42 @@ abstract class AppLocalizations {
   /// **'Attachment unavailable'**
   String get chatMessageWidgetAttachmentUnavailable;
 
+  /// No description provided for @chatMessageWidgetInheritedImageContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Inherited context'**
+  String get chatMessageWidgetInheritedImageContext;
+
+  /// No description provided for @chatMessageWidgetImageContextSummaryFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Context summarization failed. A length-limited visible conversation was used instead.'**
+  String get chatMessageWidgetImageContextSummaryFallback;
+
+  /// No description provided for @chatMessageWidgetImageTextOnlyFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'This model cannot edit an input image. This result was regenerated from the inherited text context.'**
+  String get chatMessageWidgetImageTextOnlyFallback;
+
+  /// No description provided for @chatMessageWidgetEditInheritedImageContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit inherited context'**
+  String get chatMessageWidgetEditInheritedImageContext;
+
+  /// No description provided for @chatMessageWidgetImageContextCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get chatMessageWidgetImageContextCancel;
+
+  /// No description provided for @chatMessageWidgetImageContextSaveAndRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Save and retry'**
+  String get chatMessageWidgetImageContextSaveAndRetry;
+
   /// No description provided for @chatMessageWidgetCitationsTitle.
   ///
   /// In en, this message translates to:
@@ -6189,6 +6225,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Used for generating conversation summaries; prefer fast and cheap models'**
   String get defaultModelPageSummaryModelSubtitle;
+
+  /// No description provided for @defaultModelPageImageContextModelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Image Context Model'**
+  String get defaultModelPageImageContextModelTitle;
+
+  /// No description provided for @defaultModelPageImageContextModelSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Summarizes chat history when switching to a dedicated image model. Uses the most recent text model when unset.'**
+  String get defaultModelPageImageContextModelSubtitle;
+
+  /// No description provided for @defaultModelPageImageContextModeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Image Context Inheritance'**
+  String get defaultModelPageImageContextModeTitle;
+
+  /// No description provided for @defaultModelPageImageContextModeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how visible chat history is passed to dedicated image models.'**
+  String get defaultModelPageImageContextModeSubtitle;
+
+  /// No description provided for @defaultModelPageImageContextModeSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Summary'**
+  String get defaultModelPageImageContextModeSummary;
+
+  /// No description provided for @defaultModelPageImageContextModeFullConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Full conversation'**
+  String get defaultModelPageImageContextModeFullConversation;
 
   /// No description provided for @defaultModelPageSuggestionModelTitle.
   ///

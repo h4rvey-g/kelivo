@@ -6,6 +6,7 @@ import '../../../core/database/generation_run.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
+import '../../../core/models/image_generation_context.dart';
 import '../../../core/models/message_part.dart';
 import '../../../utils/app_directories.dart';
 import '../../../utils/sandbox_path_resolver.dart';
@@ -1364,6 +1365,10 @@ class ChatActions {
             processingMessageId: assistantMessage.id,
             requiredAttachmentMessageId: userMessage.id,
           );
+      final generationAssistantMessage = await _persistImageGenerationContext(
+        assistantMessage,
+        prepared.imageGenerationContext,
+      );
 
       // Build user image paths
       final userImagePaths = messageGenerationService.buildUserImagePaths(
@@ -1376,7 +1381,7 @@ class ChatActions {
 
       // Execute generation
       final ctx = messageGenerationService.buildGenerationContext(
-        assistantMessage: assistantMessage,
+        assistantMessage: generationAssistantMessage,
         prepared: prepared,
         userImagePaths: userImagePaths,
         allowImagesApiRouting: input.allowImagesApiRouting,
@@ -1391,7 +1396,7 @@ class ChatActions {
         generationRunId: generationRunId,
       );
 
-      if (!_activeAssistantMessages.isActive(assistantMessage)) {
+      if (!_activeAssistantMessages.isActive(generationAssistantMessage)) {
         return;
       }
       await _executeGeneration(ctx);
@@ -1760,6 +1765,10 @@ class ChatActions {
               askUserService: regenAskUserService,
               processingMessageId: assistantMessage.id,
             );
+        final generationAssistantMessage = await _persistImageGenerationContext(
+          assistantMessage,
+          prepared.imageGenerationContext,
+        );
 
         // Build user image paths
         final userImagePaths = messageGenerationService.buildUserImagePaths(
@@ -1772,7 +1781,7 @@ class ChatActions {
 
         // Execute generation
         final ctx = messageGenerationService.buildGenerationContext(
-          assistantMessage: assistantMessage,
+          assistantMessage: generationAssistantMessage,
           prepared: prepared,
           userImagePaths: userImagePaths,
           allowImagesApiRouting: allowImagesApiRouting,
@@ -1787,7 +1796,7 @@ class ChatActions {
           generationRunId: begin.runId,
         );
 
-        if (!_activeAssistantMessages.isActive(assistantMessage)) {
+        if (!_activeAssistantMessages.isActive(generationAssistantMessage)) {
           return ChatActionResult.success(
             assistantMessage,
             generationRunId: begin.runId,
@@ -1914,7 +1923,12 @@ class ChatActions {
             approvalService: approvalService,
             askUserService: askUserService,
             processingMessageId: streamingMessage.id,
+            imageContextSeed: message.imageGenerationContext,
           );
+      final generationAssistantMessage = await _persistImageGenerationContext(
+        streamingMessage,
+        prepared.imageGenerationContext,
+      );
 
       final userImagePaths = messageGenerationService.buildUserImagePaths(
         input: null,
@@ -1925,7 +1939,7 @@ class ChatActions {
       );
 
       final ctx = messageGenerationService.buildGenerationContext(
-        assistantMessage: streamingMessage,
+        assistantMessage: generationAssistantMessage,
         prepared: prepared,
         userImagePaths: userImagePaths,
         allowImagesApiRouting: allowImagesApiRouting,
@@ -1938,7 +1952,7 @@ class ChatActions {
         generateTitleOnFinish: false,
       );
 
-      if (!_activeAssistantMessages.isActive(streamingMessage)) {
+      if (!_activeAssistantMessages.isActive(generationAssistantMessage)) {
         return ChatActionResult.success(streamingMessage);
       }
       await _executeGeneration(ctx);
@@ -2119,6 +2133,19 @@ class ChatActions {
   // ============================================================================
   // Stream Execution
   // ============================================================================
+
+  Future<ChatMessage> _persistImageGenerationContext(
+    ChatMessage message,
+    ImageGenerationContext? context,
+  ) async {
+    if (context == null) return message;
+    final updated = message.copyWith(
+      extras: context.mergeIntoExtras(message.extras),
+    );
+    await chatService.updateMessage(message.id, extras: updated.extras);
+    _activeAssistantMessages.put(updated);
+    return updated;
+  }
 
   /// Execute generation with the given context.
   Future<void> _executeGeneration(stream_ctrl.GenerationContext ctx) async {

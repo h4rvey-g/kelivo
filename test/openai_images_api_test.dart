@@ -727,25 +727,41 @@ void main() {
       expect(chunks.firstImageUri, 'https://example.com/generated.png');
     });
 
-    test('rejects dall-e-3 edits before sending a request', () async {
-      await expectLater(
-        ChatApiService.sendMessageStream(
-          config: _openAiConfig('http://127.0.0.1:9/v1'),
-          modelId: 'dall-e-3',
-          messages: const [
-            {'role': 'user', 'content': 'edit this image'},
-          ],
-          userImagePaths: const ['/tmp/source.png'],
-          stream: false,
-        ).toList(),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message,
-            'message',
-            contains('does not support image edits'),
-          ),
-        ),
-      );
+    test('regenerates from text when the model cannot edit images', () async {
+      late Uri requestUri;
+      late Map<String, dynamic> requestBody;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => server.close(force: true));
+      server.listen((request) async {
+        requestUri = request.uri;
+        requestBody =
+            jsonDecode(await utf8.decoder.bind(request).join())
+                as Map<String, dynamic>;
+        request.response.statusCode = HttpStatus.ok;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({
+            'data': [
+              {'url': 'https://example.com/regenerated.png'},
+            ],
+          }),
+        );
+        await request.response.close();
+      });
+
+      final chunks = await ChatApiService.sendMessageStream(
+        config: _openAiConfig(_baseUrl(server)),
+        modelId: 'dall-e-3',
+        messages: const [
+          {'role': 'user', 'content': 'edit this image'},
+        ],
+        userImagePaths: const ['/tmp/source.png'],
+        stream: false,
+      ).toList();
+
+      expect(requestUri.path, '/v1/images/generations');
+      expect(requestBody['prompt'], 'edit this image');
+      expect(chunks.firstImageUri, 'https://example.com/regenerated.png');
     });
 
     test('saves base64 image responses with requested output format', () async {

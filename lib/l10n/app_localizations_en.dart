@@ -2505,6 +2505,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatMessageWidgetAttachmentUnavailable => 'Attachment unavailable';
 
   @override
+  String get chatMessageWidgetInheritedImageContext => 'Inherited context';
+
+  @override
+  String get chatMessageWidgetImageContextSummaryFallback =>
+      'Context summarization failed. A length-limited visible conversation was used instead.';
+
+  @override
+  String get chatMessageWidgetImageTextOnlyFallback =>
+      'This model cannot edit an input image. This result was regenerated from the inherited text context.';
+
+  @override
+  String get chatMessageWidgetEditInheritedImageContext =>
+      'Edit inherited context';
+
+  @override
+  String get chatMessageWidgetImageContextCancel => 'Cancel';
+
+  @override
+  String get chatMessageWidgetImageContextSaveAndRetry => 'Save and retry';
+
+  @override
   String chatMessageWidgetCitationsTitle(int count) {
     return 'Citations ($count)';
   }
@@ -3339,6 +3360,28 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get defaultModelPageSummaryModelSubtitle =>
       'Used for generating conversation summaries; prefer fast and cheap models';
+
+  @override
+  String get defaultModelPageImageContextModelTitle => 'Image Context Model';
+
+  @override
+  String get defaultModelPageImageContextModelSubtitle =>
+      'Summarizes chat history when switching to a dedicated image model. Uses the most recent text model when unset.';
+
+  @override
+  String get defaultModelPageImageContextModeTitle =>
+      'Image Context Inheritance';
+
+  @override
+  String get defaultModelPageImageContextModeSubtitle =>
+      'Choose how visible chat history is passed to dedicated image models.';
+
+  @override
+  String get defaultModelPageImageContextModeSummary => 'Summary';
+
+  @override
+  String get defaultModelPageImageContextModeFullConversation =>
+      'Full conversation';
 
   @override
   String get defaultModelPageSuggestionModelTitle => 'Chat Suggestions Model';

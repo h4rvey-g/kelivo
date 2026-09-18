@@ -4956,6 +4956,7 @@ class ChatDatabaseRepository {
             : null,
         groupId: groupId,
         version: nextVersion,
+        extras: original.extras,
       );
       final currentConversation = await _conversationFromRow(
         conversationRow,
@@ -5939,6 +5940,7 @@ class ChatDatabaseRepository {
     int? completionTokens,
     int? cachedTokens,
     int? durationMs,
+    Map<String, dynamic>? extras,
   }) {
     final companion = MessageRowsCompanion(
       updatedAt: Value(DateTime.now().toUtc()),
@@ -5970,6 +5972,9 @@ class ChatDatabaseRepository {
           ? Value(cachedTokens)
           : const Value.absent(),
       durationMs: durationMs != null ? Value(durationMs) : const Value.absent(),
+      extrasJson: extras != null
+          ? Value(jsonEncode(extras))
+          : const Value.absent(),
     );
     return _db.transaction(() async {
       await (_db.update(
@@ -7023,6 +7028,7 @@ class ChatDatabaseRepository {
       completionTokens: row.completionTokens,
       cachedTokens: row.cachedTokens,
       durationMs: row.durationMs,
+      extras: _decodeExtrasJson(row.extrasJson),
     );
   }
 
@@ -7269,6 +7275,7 @@ class ChatDatabaseRepository {
       cachedTokens: Value(message.cachedTokens),
       durationMs: Value(message.durationMs),
       messageOrder: messageOrder,
+      extrasJson: Value(jsonEncode(message.extras)),
     );
   }
 
@@ -7288,6 +7295,7 @@ class ChatDatabaseRepository {
       completionTokens: Value(message.completionTokens),
       cachedTokens: Value(message.cachedTokens),
       durationMs: Value(message.durationMs),
+      extrasJson: Value(jsonEncode(message.extras)),
     );
   }
 

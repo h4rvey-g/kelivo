@@ -30,6 +30,13 @@ bool _supportsOpenAIImageGenerations(String modelId) {
       normalized == 'dall-e-3';
 }
 
+bool supportsOpenAIImageEdits(ProviderConfig config, String modelId) {
+  final normalized = apiModelId(config, modelId).toLowerCase();
+  return normalized.startsWith('gpt-image-') ||
+      normalized.startsWith('chatgpt-image-') ||
+      normalized == 'dall-e-2';
+}
+
 bool _supportsOpenAIImageEdits(String modelId) {
   final normalized = modelId.toLowerCase();
   return normalized.startsWith('gpt-image-') ||
@@ -56,13 +63,10 @@ Stream<StreamChunk> sendOpenAIImagesStream(
   final input = await _openAIImagesInput(messages, userImagePaths);
   final outputMime = _openAIImagesOutputMime(config, modelId, extraBody);
   final upstreamModelId = apiModelId(config, modelId);
-  if (input.imageRefs.isNotEmpty &&
-      !_supportsOpenAIImageEdits(upstreamModelId)) {
-    throw UnsupportedError(
-      'OpenAI Images API model $upstreamModelId does not support image edits with input images.',
-    );
-  }
-  final response = input.imageRefs.isEmpty
+  final imageRefs = _supportsOpenAIImageEdits(upstreamModelId)
+      ? input.imageRefs
+      : const <ImageRef>[];
+  final response = imageRefs.isEmpty
       ? await _sendOpenAIImageGeneration(
           client,
           config,
@@ -76,7 +80,7 @@ Stream<StreamChunk> sendOpenAIImagesStream(
           config,
           modelId,
           input.prompt,
-          input.imageRefs,
+          imageRefs,
           extraHeaders: extraHeaders,
           extraBody: extraBody,
         );
@@ -233,15 +237,16 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
     final internalMediaRefs = parseInternalMediaRefs(
       message[multimodalInternalMediaPathsKey],
     );
-    if (internalMediaRefs.isNotEmpty) {
+    final imageMediaRefs = [
+      for (final mediaRef in internalMediaRefs)
+        if (isImageMime(mimeForInternalMediaRef(mediaRef))) mediaRef,
+    ];
+    if (imageMediaRefs.isNotEmpty) {
       // /images/edits only accepts image/* inputs; skip audio/video/octet-stream.
+      final mediaRef = imageMediaRefs.last;
       return _OpenAIImagesInput(
         prompt: prompt,
-        imageRefs: [
-          for (final mediaRef in internalMediaRefs)
-            if (isImageMime(mimeForInternalMediaRef(mediaRef)))
-              _imageRefFromSource(mediaRef.uri, mime: mediaRef.mime),
-        ],
+        imageRefs: [_imageRefFromSource(mediaRef.uri, mime: mediaRef.mime)],
       );
     }
     break;
@@ -251,7 +256,7 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
   if (explicitPaths.isNotEmpty) {
     return _OpenAIImagesInput(
       prompt: prompt,
-      imageRefs: [for (final path in explicitPaths) _imageRefFromSource(path)],
+      imageRefs: [_imageRefFromSource(explicitPaths.last)],
     );
   }
 
@@ -264,7 +269,10 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
     if (content is List) {
       final structuredImages = _extractOpenAIImageRefs(content);
       if (structuredImages.isNotEmpty) {
-        return _OpenAIImagesInput(prompt: prompt, imageRefs: structuredImages);
+        return _OpenAIImagesInput(
+          prompt: prompt,
+          imageRefs: [structuredImages.last],
+        );
       }
     }
 
@@ -275,7 +283,10 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
       keepRemoteMarkdownText: false,
     );
     if (parsed.images.isNotEmpty) {
-      return _OpenAIImagesInput(prompt: prompt, imageRefs: parsed.images);
+      return _OpenAIImagesInput(
+        prompt: prompt,
+        imageRefs: [parsed.images.last],
+      );
     }
 
     final previousAssistantImage = _lastAssistantImageBefore(messages, i);

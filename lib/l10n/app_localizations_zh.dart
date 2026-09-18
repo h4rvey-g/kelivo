@@ -2423,6 +2423,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatMessageWidgetAttachmentUnavailable => '附件不可用';
 
   @override
+  String get chatMessageWidgetInheritedImageContext => '已继承上下文';
+
+  @override
+  String get chatMessageWidgetImageContextSummaryFallback =>
+      '上下文总结失败，本轮改用了经过长度限制的可见完整对话。';
+
+  @override
+  String get chatMessageWidgetImageTextOnlyFallback =>
+      '该模型不支持编辑输入图片，本结果根据继承的文字上下文重新生成。';
+
+  @override
+  String get chatMessageWidgetEditInheritedImageContext => '编辑已继承上下文';
+
+  @override
+  String get chatMessageWidgetImageContextCancel => '取消';
+
+  @override
+  String get chatMessageWidgetImageContextSaveAndRetry => '保存并重试';
+
+  @override
   String chatMessageWidgetCitationsTitle(int count) {
     return '引用（共$count条）';
   }
@@ -3231,6 +3251,26 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get defaultModelPageSummaryModelSubtitle => '用于生成对话摘要的模型，推荐使用快速且便宜的模型';
+
+  @override
+  String get defaultModelPageImageContextModelTitle => '画图上下文模型';
+
+  @override
+  String get defaultModelPageImageContextModelSubtitle =>
+      '切换到专用画图模型时总结聊天历史；未设置时使用最近的文本模型。';
+
+  @override
+  String get defaultModelPageImageContextModeTitle => '画图上下文继承';
+
+  @override
+  String get defaultModelPageImageContextModeSubtitle =>
+      '选择如何把可见聊天历史传递给专用画图模型。';
+
+  @override
+  String get defaultModelPageImageContextModeSummary => '总结';
+
+  @override
+  String get defaultModelPageImageContextModeFullConversation => '完整对话';
 
   @override
   String get defaultModelPageSuggestionModelTitle => '聊天建议模型';
@@ -13577,6 +13617,26 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get chatMessageWidgetAttachmentUnavailable => '附件不可用';
 
   @override
+  String get chatMessageWidgetInheritedImageContext => '已继承上下文';
+
+  @override
+  String get chatMessageWidgetImageContextSummaryFallback =>
+      '上下文总结失败，本轮改用了经过长度限制的可见完整对话。';
+
+  @override
+  String get chatMessageWidgetImageTextOnlyFallback =>
+      '该模型不支持编辑输入图片，本结果根据继承的文字上下文重新生成。';
+
+  @override
+  String get chatMessageWidgetEditInheritedImageContext => '编辑已继承上下文';
+
+  @override
+  String get chatMessageWidgetImageContextCancel => '取消';
+
+  @override
+  String get chatMessageWidgetImageContextSaveAndRetry => '保存并重试';
+
+  @override
   String chatMessageWidgetCitationsTitle(int count) {
     return '引用（共$count条）';
   }
@@ -14385,6 +14445,26 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get defaultModelPageSummaryModelSubtitle => '用于生成对话摘要的模型，推荐使用快速且便宜的模型';
+
+  @override
+  String get defaultModelPageImageContextModelTitle => '画图上下文模型';
+
+  @override
+  String get defaultModelPageImageContextModelSubtitle =>
+      '切换到专用画图模型时总结聊天历史；未设置时使用最近的文本模型。';
+
+  @override
+  String get defaultModelPageImageContextModeTitle => '画图上下文继承';
+
+  @override
+  String get defaultModelPageImageContextModeSubtitle =>
+      '选择如何把可见聊天历史传递给专用画图模型。';
+
+  @override
+  String get defaultModelPageImageContextModeSummary => '总结';
+
+  @override
+  String get defaultModelPageImageContextModeFullConversation => '完整对话';
 
   @override
   String get defaultModelPageSuggestionModelTitle => '聊天建议模型';
@@ -24657,6 +24737,26 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get chatMessageWidgetAttachmentUnavailable => '附件不可用';
 
   @override
+  String get chatMessageWidgetInheritedImageContext => '已繼承上下文';
+
+  @override
+  String get chatMessageWidgetImageContextSummaryFallback =>
+      '上下文總結失敗，本輪改用了經過長度限制的可見完整對話。';
+
+  @override
+  String get chatMessageWidgetImageTextOnlyFallback =>
+      '該模型不支援編輯輸入圖片，本結果根據繼承的文字上下文重新生成。';
+
+  @override
+  String get chatMessageWidgetEditInheritedImageContext => '編輯已繼承上下文';
+
+  @override
+  String get chatMessageWidgetImageContextCancel => '取消';
+
+  @override
+  String get chatMessageWidgetImageContextSaveAndRetry => '儲存並重試';
+
+  @override
   String chatMessageWidgetCitationsTitle(int count) {
     return '引用（共$count條）';
   }
@@ -25465,6 +25565,26 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get defaultModelPageSummaryModelSubtitle => '用於生成對話摘要的模型，推薦使用快速且便宜的模型';
+
+  @override
+  String get defaultModelPageImageContextModelTitle => '繪圖上下文模型';
+
+  @override
+  String get defaultModelPageImageContextModelSubtitle =>
+      '切換到專用繪圖模型時總結聊天歷史；未設定時使用最近的文字模型。';
+
+  @override
+  String get defaultModelPageImageContextModeTitle => '繪圖上下文繼承';
+
+  @override
+  String get defaultModelPageImageContextModeSubtitle =>
+      '選擇如何把可見聊天歷史傳遞給專用繪圖模型。';
+
+  @override
+  String get defaultModelPageImageContextModeSummary => '總結';
+
+  @override
+  String get defaultModelPageImageContextModeFullConversation => '完整對話';
 
   @override
   String get defaultModelPageSuggestionModelTitle => '聊天建議模型';

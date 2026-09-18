@@ -3047,6 +3047,14 @@ class ChatService extends ChangeNotifier {
     final conversation = _conversationsCache[conversationId];
     if (conversation == null) throw StateError('conversation_missing');
     await _loadMessageOrder(conversationId);
+    final selectedVersion = conversation.versionSelections[groupId] ?? 0;
+    ChatMessage? sourceMessage;
+    for (final message in _messagesCache[conversationId] ?? const []) {
+      if (message.groupId == groupId && message.version == selectedVersion) {
+        sourceMessage = message;
+        break;
+      }
+    }
     final assistantMessage = ChatMessage(
       role: 'assistant',
       content: '',
@@ -3056,6 +3064,7 @@ class ChatService extends ChangeNotifier {
       isStreaming: true,
       groupId: groupId,
       version: version,
+      extras: sourceMessage?.extras ?? const <String, dynamic>{},
     );
     final result = await _repo.beginRegeneration(
       conversation: conversation,
@@ -3177,6 +3186,7 @@ class ChatService extends ChangeNotifier {
     int? completionTokens,
     int? cachedTokens,
     int? durationMs,
+    Map<String, dynamic>? extras,
   }) {
     return _updateMessage(
       messageId,
@@ -3194,6 +3204,7 @@ class ChatService extends ChangeNotifier {
       completionTokens: completionTokens,
       cachedTokens: cachedTokens,
       durationMs: durationMs,
+      extras: extras,
     );
   }
 
@@ -3214,6 +3225,7 @@ class ChatService extends ChangeNotifier {
     int? completionTokens,
     int? cachedTokens,
     int? durationMs,
+    Map<String, dynamic>? extras,
   }) {
     return _updateMessage(
       messageId,
@@ -3230,6 +3242,7 @@ class ChatService extends ChangeNotifier {
       completionTokens: completionTokens,
       cachedTokens: cachedTokens,
       durationMs: durationMs,
+      extras: extras,
     );
   }
 
@@ -3251,6 +3264,7 @@ class ChatService extends ChangeNotifier {
     int? completionTokens,
     int? cachedTokens,
     int? durationMs,
+    Map<String, dynamic>? extras,
   }) async {
     if (!_initialized) return;
 
@@ -3272,6 +3286,7 @@ class ChatService extends ChangeNotifier {
           completionTokens: completionTokens,
           cachedTokens: cachedTokens,
           durationMs: durationMs,
+          extras: extras,
         ),
       );
       if (notify) notifyListeners();
@@ -3297,6 +3312,7 @@ class ChatService extends ChangeNotifier {
       completionTokens: completionTokens,
       cachedTokens: cachedTokens,
       durationMs: durationMs,
+      extras: extras,
     );
     if (updatedMessage == null) return;
 

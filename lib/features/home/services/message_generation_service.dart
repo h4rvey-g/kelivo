@@ -6,6 +6,7 @@ import '../../../core/models/assistant.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/message_part.dart';
+import '../../../core/models/image_generation_context.dart';
 import '../../../core/models/conversation.dart';
 import '../../../core/models/skills_binding.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -27,6 +28,7 @@ import '../controllers/stream_controller.dart' as stream_ctrl;
 import '../controllers/generation_controller.dart';
 import 'ask_user_interaction_service.dart';
 import 'message_builder_service.dart';
+import 'image_generation_context_service.dart';
 import 'tool_approval_service.dart';
 import '../utils/model_display_helper.dart';
 
@@ -66,6 +68,7 @@ class PreparedGeneration {
   final ToolCallHandler? onToolCall;
   final bool hasBuiltInSearch;
   final List<String> lastUserImagePaths;
+  final ImageGenerationContext? imageGenerationContext;
 
   PreparedGeneration({
     required this.apiMessages,
@@ -73,6 +76,7 @@ class PreparedGeneration {
     this.onToolCall,
     required this.hasBuiltInSearch,
     required this.lastUserImagePaths,
+    this.imageGenerationContext,
   });
 }
 
@@ -138,6 +142,7 @@ class MessageGenerationService {
     AskUserInteractionService? askUserService,
     String? processingMessageId,
     String? requiredAttachmentMessageId,
+    ImageGenerationContext? imageContextSeed,
   }) async {
     final cfg = settings.getProviderConfig(providerKey);
     final kind = ProviderConfig.classify(
@@ -155,6 +160,16 @@ class MessageGenerationService {
       runtimeProvider = contextProvider.read<WorkspaceRuntimeProvider>();
       externalMounts = contextProvider.read<ExternalMountsProvider?>();
     } catch (_) {}
+    final preparedImageContext =
+        await ImageGenerationContextService(messageBuilderService).prepare(
+          messages: messages,
+          versionSelections: versionSelections,
+          settings: settings,
+          providerKey: providerKey,
+          modelId: modelId,
+          conversationId: currentConversation?.id ?? '',
+          seed: imageContextSeed,
+        );
 
     // Build API messages
     final apiMessages = messageBuilderService.buildApiMessages(
@@ -342,6 +357,25 @@ class MessageGenerationService {
     }
 
     await messageBuilderService.inlineLocalImages(apiMessages);
+    if (preparedImageContext != null) {
+      for (var i = apiMessages.length - 1; i >= 0; i--) {
+        final message = apiMessages[i];
+        if (message[MessageBuilderService.internalRevisionIdKey] !=
+            preparedImageContext.userMessageId) {
+          continue;
+        }
+        message['content'] = preparedImageContext.context.buildImagePrompt();
+        final inputImageUri = preparedImageContext.context.inputImageUri;
+        if (inputImageUri != null && inputImageUri.isNotEmpty) {
+          message[MessageBuilderService.internalMediaPathsKey] = [
+            encodeInternalMediaRef(uri: inputImageUri),
+          ];
+        } else {
+          message.remove(MessageBuilderService.internalMediaPathsKey);
+        }
+        break;
+      }
+    }
     if (ContextLogger.enabled) {
       final providerName = cfg.name.trim();
       ContextLogger.logPrepared(
@@ -372,6 +406,7 @@ class MessageGenerationService {
       onToolCall: onToolCall,
       hasBuiltInSearch: hasBuiltInSearch,
       lastUserImagePaths: lastUserImagePaths,
+      imageGenerationContext: preparedImageContext?.context,
     );
   }
 

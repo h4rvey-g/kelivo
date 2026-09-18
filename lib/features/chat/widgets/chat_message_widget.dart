@@ -14,6 +14,7 @@ import 'dart:convert';
 import '../../home/widgets/file_processing_indicator.dart';
 import '../pages/image_viewer_page.dart';
 import '../../../core/models/chat_message.dart';
+import '../../../core/models/image_generation_context.dart';
 import '../../../core/models/message_part.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../../icons/reasoning_icons.dart';
@@ -1153,6 +1154,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
   // Search-result extraction is keyed by tool-part list identity.
   List<ToolUIPart>? _searchItemsParts;
   List<Map<String, dynamic>>? _searchItemsCache;
+  bool _imageContextExpanded = false;
 
   @override
   void initState() {
@@ -2633,6 +2635,167 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     );
   }
 
+  Widget _buildImageGenerationContextPanel(
+    BuildContext context,
+    ImageGenerationContext imageContext,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => setState(
+                    () => _imageContextExpanded = !_imageContextExpanded,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Lucide.Image,
+                          size: 15,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 7),
+                        Flexible(
+                          child: Text(
+                            l10n.chatMessageWidgetInheritedImageContext,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: AppFontWeights.medium,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        if (imageContext.textOnlyFallback) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message:
+                                l10n.chatMessageWidgetImageTextOnlyFallback,
+                            triggerMode: TooltipTriggerMode.tap,
+                            child: Icon(
+                              Lucide.info,
+                              size: 15,
+                              color: cs.tertiary,
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        Icon(
+                          _imageContextExpanded
+                              ? Lucide.ChevronUp
+                              : Lucide.ChevronDown,
+                          size: 15,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.onRegenerate != null && !widget.message.isStreaming)
+                Tooltip(
+                  message: l10n.chatMessageWidgetEditInheritedImageContext,
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 15,
+                    icon: const Icon(Lucide.Pencil),
+                    onPressed: () => _editImageGenerationContext(imageContext),
+                  ),
+                ),
+            ],
+          ),
+          if (_imageContextExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (imageContext.summaryFallback) ...[
+                    Text(
+                      l10n.chatMessageWidgetImageContextSummaryFallback,
+                      style: TextStyle(fontSize: 11.5, color: cs.tertiary),
+                    ),
+                    const SizedBox(height: 7),
+                  ],
+                  SelectableText(
+                    imageContext.inheritedContext,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: cs.onSurface.withValues(alpha: 0.78),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editImageGenerationContext(
+    ImageGenerationContext imageContext,
+  ) async {
+    final l10n = AppLocalizations.of(context)!;
+    final chatService = context.read<ChatService>();
+    final controller = TextEditingController(
+      text: imageContext.inheritedContext,
+    );
+    final edited = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: dialogContext.overlaySurface,
+        title: Text(l10n.chatMessageWidgetEditInheritedImageContext),
+        content: SizedBox(
+          width: 520,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 6,
+            maxLines: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(l10n.chatMessageWidgetImageContextCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: Text(l10n.chatMessageWidgetImageContextSaveAndRetry),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final normalized = edited?.trim();
+    if (normalized == null || normalized.isEmpty || !mounted) return;
+    final updatedContext = imageContext.copyWith(
+      inheritedContext: normalized,
+      summaryFallback: false,
+    );
+    await chatService.updateMessage(
+      widget.message.id,
+      extras: updatedContext.mergeIntoExtras(widget.message.extras),
+    );
+    if (!mounted) return;
+    widget.onRegenerate?.call();
+  }
+
   TimelineProjection _projectAssistantTimeline(
     String visualContent, {
     List<ReasoningSegment>? reasoningSegments,
@@ -3078,6 +3241,11 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
               }
               return widgets;
             }(),
+            if (widget.message.imageGenerationContext
+                case final imageContext?) ...[
+              const SizedBox(height: 8),
+              _buildImageGenerationContextPanel(context, imageContext),
+            ],
             if (showProducedFiles &&
                 _producedWorkspaceParts(widget.toolParts).isNotEmpty) ...[
               const SizedBox(height: 8),

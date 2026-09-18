@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/settings_provider.dart';
+import '../../../core/models/image_generation_context.dart';
 import '../../../icons/lucide_adapter.dart';
 import '../../../shared/widgets/snackbar.dart';
 import '../../../shared/widgets/ios_switch.dart';
@@ -130,6 +131,34 @@ class DefaultModelPage extends StatelessWidget {
               }
             },
             configAction: () => _showSummaryPromptSheet(context),
+          ),
+          const SizedBox(height: 16),
+          _ModelCard(
+            icon: Lucide.Image,
+            title: l10n.defaultModelPageImageContextModelTitle,
+            subtitle: l10n.defaultModelPageImageContextModelSubtitle,
+            modelProvider: settings.imageContextModelProvider,
+            modelId: settings.imageContextModelId,
+            fallbackProvider: settings.currentModelProvider,
+            fallbackModelId: settings.currentModelId,
+            onReset: settings.resetImageContextModel,
+            onPick: () async {
+              final sel = await pickConfiguredModel(
+                settings.imageContextModelProvider,
+                settings.imageContextModelId,
+              );
+              if (sel != null) {
+                await settings.setImageContextModel(
+                  sel.providerKey,
+                  sel.modelId,
+                );
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+          _ImageContextModeCard(
+            value: settings.imageContextInheritanceMode,
+            onChanged: settings.setImageContextInheritanceMode,
           ),
           const SizedBox(height: 16),
           _ModelCard(
@@ -1145,6 +1174,64 @@ class _PerChatModelCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ImageContextModeCard extends StatelessWidget {
+  const _ImageContextModeCard({required this.value, required this.onChanged});
+
+  final ImageContextInheritanceMode value;
+  final ValueChanged<ImageContextInheritanceMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.appColors.surfaceCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.appColors.hairline, width: 0.6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.defaultModelPageImageContextModeTitle,
+            style: TextStyle(fontSize: 15, fontWeight: AppFontWeights.semibold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.defaultModelPageImageContextModeSubtitle,
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<ImageContextInheritanceMode>(
+              showSelectedIcon: false,
+              segments: [
+                ButtonSegment(
+                  value: ImageContextInheritanceMode.summary,
+                  label: Text(l10n.defaultModelPageImageContextModeSummary),
+                ),
+                ButtonSegment(
+                  value: ImageContextInheritanceMode.fullConversation,
+                  label: Text(
+                    l10n.defaultModelPageImageContextModeFullConversation,
+                  ),
+                ),
+              ],
+              selected: {value},
+              onSelectionChanged: (selection) => onChanged(selection.single),
+            ),
+          ),
+        ],
       ),
     );
   }
