@@ -1,3 +1,4 @@
+import '../../../core/services/auth/provider_oauth_service.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/widgets.dart';
@@ -407,8 +408,18 @@ class ChatActions {
   String? activeStreamingMessageId(String conversationId) =>
       _activeAssistantMessages[conversationId]?.id;
 
+  /// Includes preparing, finishing and cancelling runs until their final
+  /// checkpoint is handled, even after the streaming UI has stopped.
+  Set<String> get activeStreamingMessageIds =>
+      _activeAssistantMessages.messageIds;
+
+  @visibleForTesting
+  void debugTrackActiveMessage(ChatMessage message) {
+    _activeAssistantMessages.put(message);
+  }
+
   /// Rebuild retry countdown UI from surviving [StreamingState] after the
-  /// streaming notifier was wiped (new/temporary conversation).
+  /// streaming notifier was explicitly cleared.
   void restoreRetryUi(String conversationId) {
     for (final state in _streamingStates.values) {
       if (state.conversationId != conversationId) continue;
@@ -2737,7 +2748,10 @@ class ChatActions {
       return;
     }
     state.finishHandled = true;
-    final errorText = e.toString();
+    final oauthFailure =
+        e is ProviderOAuthException &&
+        e.kind == ProviderOAuthFailure.loginRequired;
+    final errorText = oauthFailure ? '' : e.toString();
 
     // Reset file processing state on error, scoped to this message so a
     // background conversation's indicator survives.
@@ -2758,6 +2772,13 @@ class ChatActions {
         errorText: errorText,
       ),
     );
+    if (oauthFailure) {
+      final providerId =
+          e.providerId ?? _streamingMessageSnapshot(state).providerId;
+      if (providerId != null) {
+        errorParts.add(ProviderAuthErrorPart(providerId: providerId));
+      }
+    }
     final errorMessage = _streamingMessageSnapshot(state).copyWith(
       parts: errorParts,
       totalTokens: state.totalTokens,
@@ -2767,7 +2788,7 @@ class ChatActions {
       await _finalizeStreamingCheckpoint(
         errorMessage,
         terminalState: GenerationRunState.failed,
-        errorCode: 'generation_failed',
+        errorCode: oauthFailure ? 'oauth_login_required' : 'generation_failed',
       );
       state.terminalPersisted = true;
     } finally {
@@ -2786,7 +2807,7 @@ class ChatActions {
       // handler returns. Re-entering its barrier cancel here would wait on this
       // handler itself and prevent the UI error callback below from firing.
       _conversationStreams.remove(conversationId);
-      onStreamError?.call(errorText);
+      if (!oauthFailure) onStreamError?.call(errorText);
       onStreamFinished?.call(conversationId);
     }
   }

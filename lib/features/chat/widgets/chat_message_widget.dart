@@ -1,3 +1,4 @@
+import '../../provider/widgets/oauth_message_recovery.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
@@ -3423,6 +3424,9 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                 onTap: () => _showCitationsSheet(searchItems),
               ),
             ],
+            for (final error
+                in widget.message.parts.whereType<ProviderAuthErrorPart>())
+              OAuthMessageRecovery(error: error),
             // Action buttons (hidden while generating)
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
@@ -6716,8 +6720,6 @@ class _AskUserOptionRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.25,

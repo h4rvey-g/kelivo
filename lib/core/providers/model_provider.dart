@@ -1,3 +1,4 @@
+import '../services/auth/provider_oauth_service.dart';
 export '../models/model_types.dart';
 
 import 'dart:convert';
@@ -12,6 +13,7 @@ import '../services/custom_request_merger.dart';
 import 'package:Kelivo/secrets/fallback.dart';
 import '../services/api/google_service_account_auth.dart';
 import '../models/model_types.dart';
+import '../utils/kimi_model_compat.dart';
 
 class ModelRegistry {
   // Updated model groups to reflect new series
@@ -114,6 +116,8 @@ class ModelRegistry {
 
   static ModelInfo infer(ModelInfo base) {
     final id = base.id.toLowerCase();
+    final isKimiCode =
+        isKimiCodeK3Alias(id) || isKimiForCodingModel(id) || isKimiK28Model(id);
     final inMods = <Modality>[...base.input];
     final outMods = <Modality>[...base.output];
     final ab = <ModelAbility>[...base.abilities];
@@ -154,15 +158,17 @@ class ModelRegistry {
       return base.copyWith(input: inMods, output: outMods, abilities: ab);
     }
     if (vision.hasMatch(id) ||
+        isKimiCode ||
         _isQwenVisionModel(id) ||
         _isGlmVisionModel(id) ||
         _isDeepSeekVisionModel(id)) {
       if (!inMods.contains(Modality.image)) inMods.add(Modality.image);
     }
-    if (tool.hasMatch(id) && !ab.contains(ModelAbility.tool)) {
+    if ((tool.hasMatch(id) || isKimiCode) && !ab.contains(ModelAbility.tool)) {
       ab.add(ModelAbility.tool);
     }
-    if (reasoning.hasMatch(id) && !ab.contains(ModelAbility.reasoning)) {
+    if ((reasoning.hasMatch(id) || isKimiCode) &&
+        !ab.contains(ModelAbility.reasoning)) {
       ab.add(ModelAbility.reasoning);
     }
     return base.copyWith(input: inMods, output: outMods, abilities: ab);
@@ -174,6 +180,18 @@ abstract class BaseProvider {
 }
 
 class _Http {
+  static Map<String, String> modelListHeaders(
+    ProviderConfig cfg,
+    Map<String, String> base,
+  ) {
+    return CustomRequestMerger.mergeHeaders(
+      base: base,
+      provider: ModelOverridePayloadParser.customHeadersFromRows(
+        cfg.customHeaders,
+      ),
+    );
+  }
+
   static http.Client clientFor(ProviderConfig cfg) {
     final enabled = cfg.proxyEnabled == true;
     final host = (cfg.proxyHost ?? '').trim();
@@ -206,7 +224,10 @@ class OpenAIProvider extends BaseProvider {
       final uri = Uri.parse('${cfg.baseUrl}/models');
       final headers = <String, String>{};
       if (key.isNotEmpty) headers['Authorization'] = 'Bearer $key';
-      final res = await client.get(uri, headers: headers);
+      final res = await client.get(
+        uri,
+        headers: _Http.modelListHeaders(cfg, headers),
+      );
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final data = (jsonDecode(res.body)['data'] as List?) ?? [];
         return [
@@ -237,7 +258,10 @@ class ClaudeProvider extends BaseProvider {
       final uri = Uri.parse('${cfg.baseUrl}/models');
       final headers = <String, String>{'anthropic-version': anthropicVersion};
       if (key.isNotEmpty) headers['x-api-key'] = key;
-      final res = await client.get(uri, headers: headers);
+      final res = await client.get(
+        uri,
+        headers: _Http.modelListHeaders(cfg, headers),
+      );
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final obj = jsonDecode(res.body) as Map<String, dynamic>;
         final data = (obj['data'] as List?) ?? [];
@@ -307,7 +331,10 @@ class GoogleProvider extends BaseProvider {
       }
       final out = <ModelInfo>[];
       try {
-        final res = await client.get(Uri.parse(url), headers: headers);
+        final res = await client.get(
+          Uri.parse(url),
+          headers: _Http.modelListHeaders(cfg, headers),
+        );
         if (res.statusCode >= 200 && res.statusCode < 300) {
           final obj = jsonDecode(res.body) as Map<String, dynamic>;
           final arr = (obj['models'] as List?) ?? [];
@@ -442,6 +469,7 @@ class ProviderManager {
   }
 
   static Future<List<ModelInfo>> listModels(ProviderConfig cfg) {
+    if (cfg.isOAuth) return ProviderOAuthService.instance.models(cfg);
     return forConfig(cfg).listModels(cfg);
   }
 
@@ -450,11 +478,21 @@ class ProviderManager {
     String modelId, {
     bool useStream = false,
   }) async {
+    cfg = await ProviderOAuthService.instance.resolve(cfg);
+    if (cfg.oauthProvider == OAuthProvider.chatgpt) useStream = true;
+    if (cfg.oauthProvider == OAuthProvider.kimi &&
+        (cfg.modelOverrides[modelId] as Map?)?['oauthProtocol'] ==
+            'anthropic') {
+      cfg = cfg.copyWith(providerType: ProviderKind.claude);
+    }
     final kind = ProviderConfig.classify(
       cfg.id,
       explicitType: cfg.providerType,
     );
-    final client = _Http.clientFor(cfg);
+    final client = ProviderOAuthService.instance.authenticatedClient(
+      _Http.clientFor(cfg),
+      cfg,
+    );
     try {
       if (kind == ProviderKind.openai) {
         final base = cfg.baseUrl.endsWith('/')
@@ -508,6 +546,7 @@ class ProviderManager {
         final headers = <String, String>{
           'Authorization': 'Bearer $apiKey',
           'Content-Type': 'application/json',
+          ...?providerSessionHeaders(cfg),
         };
         headers.addAll(_customHeaders(cfg, modelId));
         final res = await client.post(
