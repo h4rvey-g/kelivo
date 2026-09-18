@@ -15,10 +15,10 @@ import 'package:provider/provider.dart';
 
 import '../../../support/business_test_harness.dart';
 
-/// The composer force-disables capabilities the current model lacks by writing
-/// to the ASSISTANT. Once a conversation can pin its own model, that write
-/// would reach every other conversation sharing the assistant, so it has to be
-/// scoped to the case where the assistant really is the source of the model.
+/// The composer clears MCP selection when the assistant's model cannot use it.
+/// Once a conversation can pin its own model, that write would reach every
+/// other conversation sharing the assistant, so it has to be scoped to the
+/// case where the assistant really is the source of the model.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -40,6 +40,7 @@ void main() {
             'id': 'assistant-1',
             'name': 'Assistant',
             'mcpServerIds': ['server-1'],
+            'thinkingBudget': 32000,
           },
         ]),
       );
@@ -57,6 +58,7 @@ void main() {
     WidgetTester tester, {
     required AssistantProvider assistants,
     required bool isConversationOverride,
+    bool supportsReasoning = false,
   }) async {
     final settings = SettingsProvider(preferences);
     await tester.pumpWidget(
@@ -89,7 +91,7 @@ void main() {
               // The model in play supports neither tools nor reasoning, which
               // is what triggers the enforcement under test.
               isToolModel: (_, _) => false,
-              isReasoningModel: (_, _) => false,
+              isReasoningModel: (_, _) => supportsReasoning,
               isReasoningEnabled: (_) => true,
             ),
           ),
@@ -119,7 +121,7 @@ void main() {
     );
   });
 
-  testWidgets('the assistant\'s own model still disables what it cannot do', (
+  testWidgets('the assistant\'s own model still clears unsupported MCP', (
     tester,
   ) async {
     final assistants = await loadAssistantWithMcp(tester);
@@ -132,4 +134,25 @@ void main() {
 
     expect(assistants.currentAssistant?.mcpServerIds, isEmpty);
   });
+
+  testWidgets(
+    'switching from an image model back to chat preserves reasoning strength',
+    (tester) async {
+      final assistants = await loadAssistantWithMcp(tester);
+
+      await pumpComposer(
+        tester,
+        assistants: assistants,
+        isConversationOverride: false,
+      );
+      await pumpComposer(
+        tester,
+        assistants: assistants,
+        isConversationOverride: false,
+        supportsReasoning: true,
+      );
+
+      expect(assistants.currentAssistant?.thinkingBudget, 32000);
+    },
+  );
 }

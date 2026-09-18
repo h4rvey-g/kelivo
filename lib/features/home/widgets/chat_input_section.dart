@@ -188,7 +188,7 @@ class ChatInputSection extends StatelessWidget {
     // support tools. Skipped while the conversation overrides the model —
     // these writes land on the assistant and would leak across conversations.
     if (!chatModelIsConversationOverride) {
-      _enforceModelCapabilities(context, settings, ap, a, pk, mid);
+      _enforceModelCapabilities(ap, a, pk, mid);
     }
 
     final isDesktop = _isDesktopPlatform(context);
@@ -343,8 +343,6 @@ class ChatInputSection extends StatelessWidget {
   }
 
   void _enforceModelCapabilities(
-    BuildContext context,
-    SettingsProvider settings,
     AssistantProvider ap,
     Assistant? a,
     String? pk,
@@ -360,21 +358,6 @@ class ChatInputSection extends StatelessWidget {
           ap.updateAssistant(aa.copyWith(mcpServerIds: const <String>[]));
         }
       });
-    }
-
-    final supportsReasoning = isReasoningModel(pk, mid);
-    if (!supportsReasoning && a != null) {
-      final enabledNow = isReasoningEnabled(
-        a.thinkingBudget ?? settings.thinkingBudget,
-      );
-      if (enabledNow) {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          final aa = ap.currentAssistant;
-          if (aa != null) {
-            await ap.updateAssistant(aa.copyWith(thinkingBudget: 0));
-          }
-        });
-      }
     }
   }
 
