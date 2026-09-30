@@ -2,12 +2,11 @@ import '../../../core/models/chat_message.dart';
 import '../../../core/models/compress_context_options.dart';
 import '../../../core/models/image_generation_context.dart';
 import '../../../core/models/message_part.dart';
-import '../../../core/models/model_types.dart';
+import '../../../core/models/model_spec.dart';
 import '../../../core/providers/settings_provider.dart';
-import '../../../core/services/api/chat_api_helpers.dart';
 import '../../../core/services/api/chat_api_service.dart';
 import '../../../core/services/api/providers/openai_images.dart';
-import '../../../core/services/model_override_payload_parser.dart';
+import '../../../core/services/model_spec/model_spec_resolver.dart';
 import 'message_builder_service.dart';
 
 class PreparedImageGenerationContext {
@@ -115,7 +114,7 @@ class ImageGenerationContextService {
             config: settings.getProviderConfig(summaryModel.providerKey),
             modelId: summaryModel.modelId,
             prompt: _summaryPrompt(_truncateOldest(transcript, budget)),
-            thinkingBudget: settings.summaryGenerationThinkingBudgetFor(null),
+            reasoning: settings.summaryGenerationReasoningFor(null),
             skipImageParsing: true,
           )).trim();
           if (summary.isEmpty) {
@@ -170,7 +169,10 @@ class ImageGenerationContextService {
       if (ChatApiService.supportsOpenAIImagesApiRouting(config, model)) {
         continue;
       }
-      if (!effectiveModelInfo(config, model).output.contains(Modality.text)) {
+      if (!ModelSpecResolver.instance
+          .spec(config, model)
+          .output
+          .contains(Modality.text)) {
         continue;
       }
       return (providerKey: provider, modelId: model);
@@ -180,12 +182,9 @@ class ImageGenerationContextService {
 
   int _targetContextCharBudget(ProviderConfig config, String modelId) {
     return compressRequestCharBudget(
-      contextWindowTokens: readModelContextWindowTokens(
-        ModelOverridePayloadParser.modelOverride(
-          config.modelOverrides,
-          modelId,
-        ),
-      ),
+      contextWindowTokens: ModelSpecResolver.instance
+          .spec(config, modelId)
+          .contextWindow,
       safeRequestChars: 24000,
     );
   }

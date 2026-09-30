@@ -910,6 +910,18 @@ abstract class AppLocalizations {
   /// **'App Launches'**
   String get statsPageLaunchCount;
 
+  /// No description provided for @statsPageCost.
+  ///
+  /// In en, this message translates to:
+  /// **'Cost ({currency})'**
+  String statsPageCost(String currency);
+
+  /// No description provided for @statsPageModelsWithoutPricing.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} model without pricing} other{{count} models without pricing}}'**
+  String statsPageModelsWithoutPricing(int count);
+
   /// No description provided for @statsPageUsageTrendTitle.
   ///
   /// In en, this message translates to:
@@ -1486,12 +1498,6 @@ abstract class AppLocalizations {
   /// **'Please select a model first'**
   String get homePagePleaseSelectModel;
 
-  /// No description provided for @homePageAudioAttachmentUnsupported.
-  ///
-  /// In en, this message translates to:
-  /// **'The current model does not support audio attachments. Switch to a model that supports audio input or remove the audio file and try again.'**
-  String get homePageAudioAttachmentUnsupported;
-
   /// No description provided for @homePagePleaseSetupTranslateModel.
   ///
   /// In en, this message translates to:
@@ -1587,12 +1593,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Assistant not found'**
   String get assistantEditPageNotFound;
-
-  /// No description provided for @assistantEditPageWorkspaceTab.
-  ///
-  /// In en, this message translates to:
-  /// **'Workspace'**
-  String get assistantEditPageWorkspaceTab;
 
   /// No description provided for @assistantEditPageBasicTab.
   ///
@@ -1951,8 +1951,20 @@ abstract class AppLocalizations {
   /// No description provided for @assistantEditThinkingBudgetTitle.
   ///
   /// In en, this message translates to:
-  /// **'Thinking Budget'**
+  /// **'Thinking'**
   String get assistantEditThinkingBudgetTitle;
+
+  /// No description provided for @assistantEditReasoningFollowDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow model default'**
+  String get assistantEditReasoningFollowDefault;
+
+  /// No description provided for @assistantEditReasoningClampedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The actual level is clamped to what each model supports'**
+  String get assistantEditReasoningClampedSubtitle;
 
   /// No description provided for @assistantEditConfigureButton.
   ///
@@ -4564,107 +4576,179 @@ abstract class AppLocalizations {
   /// **'Delete All Versions'**
   String get messageMoreSheetDeleteAllVersions;
 
-  /// No description provided for @reasoningBudgetSheetOff.
-  ///
-  /// In en, this message translates to:
-  /// **'Off'**
-  String get reasoningBudgetSheetOff;
-
-  /// No description provided for @reasoningBudgetSheetAuto.
-  ///
-  /// In en, this message translates to:
-  /// **'Auto'**
-  String get reasoningBudgetSheetAuto;
-
-  /// No description provided for @reasoningBudgetSheetLight.
-  ///
-  /// In en, this message translates to:
-  /// **'Light Reasoning'**
-  String get reasoningBudgetSheetLight;
-
-  /// No description provided for @reasoningBudgetSheetMedium.
-  ///
-  /// In en, this message translates to:
-  /// **'Medium Reasoning'**
-  String get reasoningBudgetSheetMedium;
-
-  /// No description provided for @reasoningBudgetSheetHeavy.
-  ///
-  /// In en, this message translates to:
-  /// **'Heavy Reasoning'**
-  String get reasoningBudgetSheetHeavy;
-
-  /// No description provided for @reasoningBudgetSheetXhigh.
-  ///
-  /// In en, this message translates to:
-  /// **'Extreme Reasoning'**
-  String get reasoningBudgetSheetXhigh;
-
-  /// No description provided for @reasoningBudgetSheetMax.
-  ///
-  /// In en, this message translates to:
-  /// **'Maximum Reasoning'**
-  String get reasoningBudgetSheetMax;
-
   /// No description provided for @reasoningBudgetSheetTitle.
   ///
   /// In en, this message translates to:
   /// **'Reasoning Chain Strength'**
   String get reasoningBudgetSheetTitle;
 
-  /// No description provided for @reasoningBudgetSheetCurrentLevel.
+  /// No description provided for @reasoningLevelSheetTitle.
   ///
   /// In en, this message translates to:
-  /// **'Current Level: {level}'**
-  String reasoningBudgetSheetCurrentLevel(String level);
+  /// **'Reasoning'**
+  String get reasoningLevelSheetTitle;
 
-  /// No description provided for @reasoningBudgetSheetOffSubtitle.
+  /// No description provided for @reasoningLevelAuto.
   ///
   /// In en, this message translates to:
-  /// **'Turn off reasoning, answer directly'**
-  String get reasoningBudgetSheetOffSubtitle;
+  /// **'Auto'**
+  String get reasoningLevelAuto;
 
-  /// No description provided for @reasoningBudgetSheetAutoSubtitle.
+  /// No description provided for @reasoningLevelAutoSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Let the model decide reasoning level automatically'**
-  String get reasoningBudgetSheetAutoSubtitle;
+  /// **'Uses the model or provider default'**
+  String get reasoningLevelAutoSubtitle;
 
-  /// No description provided for @reasoningBudgetSheetLightSubtitle.
+  /// No description provided for @reasoningLevelOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get reasoningLevelOff;
+
+  /// No description provided for @reasoningLevelOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off reasoning and answer directly'**
+  String get reasoningLevelOffSubtitle;
+
+  /// No description provided for @reasoningLevelMinimal.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimal'**
+  String get reasoningLevelMinimal;
+
+  /// No description provided for @reasoningLevelMinimalSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the lightest reasoning to answer questions'**
+  String get reasoningLevelMinimalSubtitle;
+
+  /// No description provided for @reasoningLevelLow.
+  ///
+  /// In en, this message translates to:
+  /// **'Low'**
+  String get reasoningLevelLow;
+
+  /// No description provided for @reasoningLevelLowSubtitle.
   ///
   /// In en, this message translates to:
   /// **'Use light reasoning to answer questions'**
-  String get reasoningBudgetSheetLightSubtitle;
+  String get reasoningLevelLowSubtitle;
 
-  /// No description provided for @reasoningBudgetSheetMediumSubtitle.
+  /// No description provided for @reasoningLevelMedium.
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get reasoningLevelMedium;
+
+  /// No description provided for @reasoningLevelMediumSubtitle.
   ///
   /// In en, this message translates to:
   /// **'Use moderate reasoning to answer questions'**
-  String get reasoningBudgetSheetMediumSubtitle;
+  String get reasoningLevelMediumSubtitle;
 
-  /// No description provided for @reasoningBudgetSheetHeavySubtitle.
+  /// No description provided for @reasoningLevelHigh.
+  ///
+  /// In en, this message translates to:
+  /// **'High'**
+  String get reasoningLevelHigh;
+
+  /// No description provided for @reasoningLevelHighSubtitle.
   ///
   /// In en, this message translates to:
   /// **'Use heavy reasoning for complex questions'**
-  String get reasoningBudgetSheetHeavySubtitle;
+  String get reasoningLevelHighSubtitle;
 
-  /// No description provided for @reasoningBudgetSheetXhighSubtitle.
+  /// No description provided for @reasoningLevelXhigh.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra High'**
+  String get reasoningLevelXhigh;
+
+  /// No description provided for @reasoningLevelXhighSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use very high reasoning depth for harder problems'**
+  String get reasoningLevelXhighSubtitle;
+
+  /// No description provided for @reasoningLevelMax.
+  ///
+  /// In en, this message translates to:
+  /// **'Max'**
+  String get reasoningLevelMax;
+
+  /// No description provided for @reasoningLevelMaxSubtitle.
   ///
   /// In en, this message translates to:
   /// **'Use maximum reasoning depth for the toughest problems'**
-  String get reasoningBudgetSheetXhighSubtitle;
+  String get reasoningLevelMaxSubtitle;
 
-  /// No description provided for @reasoningBudgetSheetCustomLabel.
+  /// No description provided for @reasoningLevelFollowModelDefaultSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the model\'s default when the assistant doesn\'t set one'**
+  String get reasoningLevelFollowModelDefaultSubtitle;
+
+  /// No description provided for @reasoningLevelNoReasoning.
+  ///
+  /// In en, this message translates to:
+  /// **'This model does not support reasoning'**
+  String get reasoningLevelNoReasoning;
+
+  /// No description provided for @reasoningLevelCustomBudget.
   ///
   /// In en, this message translates to:
   /// **'Custom Reasoning Budget'**
-  String get reasoningBudgetSheetCustomLabel;
+  String get reasoningLevelCustomBudget;
 
-  /// No description provided for @reasoningBudgetSheetCustomHint.
+  /// No description provided for @reasoningLevelCustomBudgetHint.
   ///
   /// In en, this message translates to:
-  /// **'e.g. 2048 (-1 auto, 0 off)'**
-  String get reasoningBudgetSheetCustomHint;
+  /// **'Token budget, e.g. 2048'**
+  String get reasoningLevelCustomBudgetHint;
+
+  /// No description provided for @reasoningLevelCompactMin.
+  ///
+  /// In en, this message translates to:
+  /// **'min'**
+  String get reasoningLevelCompactMin;
+
+  /// No description provided for @reasoningLevelCompactLow.
+  ///
+  /// In en, this message translates to:
+  /// **'low'**
+  String get reasoningLevelCompactLow;
+
+  /// No description provided for @reasoningLevelCompactMid.
+  ///
+  /// In en, this message translates to:
+  /// **'mid'**
+  String get reasoningLevelCompactMid;
+
+  /// No description provided for @reasoningLevelCompactHigh.
+  ///
+  /// In en, this message translates to:
+  /// **'high'**
+  String get reasoningLevelCompactHigh;
+
+  /// No description provided for @reasoningLevelCompactXhigh.
+  ///
+  /// In en, this message translates to:
+  /// **'xhigh'**
+  String get reasoningLevelCompactXhigh;
+
+  /// No description provided for @reasoningLevelCompactMax.
+  ///
+  /// In en, this message translates to:
+  /// **'max'**
+  String get reasoningLevelCompactMax;
+
+  /// No description provided for @reasoningLevelBudgetTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'{budget} tokens'**
+  String reasoningLevelBudgetTokens(String budget);
 
   /// No description provided for @chatMessageWidgetFileNotFound.
   ///
@@ -5926,6 +6010,156 @@ abstract class AppLocalizations {
   /// **'Collapse'**
   String get chatInputBarCollapse;
 
+  /// No description provided for @contextUsageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Context window'**
+  String get contextUsageTitle;
+
+  /// No description provided for @contextUsageStateExact.
+  ///
+  /// In en, this message translates to:
+  /// **'Exact (from last response)'**
+  String get contextUsageStateExact;
+
+  /// No description provided for @contextUsageStateExactCalibrated.
+  ///
+  /// In en, this message translates to:
+  /// **'Exact (breakdown scaled from estimate)'**
+  String get contextUsageStateExactCalibrated;
+
+  /// No description provided for @contextUsageStateEstimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated'**
+  String get contextUsageStateEstimated;
+
+  /// No description provided for @contextUsageStateStale.
+  ///
+  /// In en, this message translates to:
+  /// **'Stale, updating…'**
+  String get contextUsageStateStale;
+
+  /// No description provided for @contextUsageStateComputing.
+  ///
+  /// In en, this message translates to:
+  /// **'Computing…'**
+  String get contextUsageStateComputing;
+
+  /// No description provided for @contextUsageStateNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No data yet'**
+  String get contextUsageStateNone;
+
+  /// No description provided for @contextUsageBucketSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System prompt'**
+  String get contextUsageBucketSystem;
+
+  /// No description provided for @contextUsageBucketInjections.
+  ///
+  /// In en, this message translates to:
+  /// **'Instruction injections'**
+  String get contextUsageBucketInjections;
+
+  /// No description provided for @contextUsageBucketHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get contextUsageBucketHistory;
+
+  /// No description provided for @contextUsageBucketTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Built-in tools'**
+  String get contextUsageBucketTools;
+
+  /// No description provided for @contextUsageBucketMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory'**
+  String get contextUsageBucketMemory;
+
+  /// No description provided for @contextUsageBucketWorldBook.
+  ///
+  /// In en, this message translates to:
+  /// **'World books'**
+  String get contextUsageBucketWorldBook;
+
+  /// No description provided for @contextUsageBucketSkills.
+  ///
+  /// In en, this message translates to:
+  /// **'Skills'**
+  String get contextUsageBucketSkills;
+
+  /// No description provided for @contextUsageBucketWorkspace.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace'**
+  String get contextUsageBucketWorkspace;
+
+  /// No description provided for @contextUsageBucketSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search prompt'**
+  String get contextUsageBucketSearch;
+
+  /// No description provided for @contextUsageBucketMcpTools.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP tools'**
+  String get contextUsageBucketMcpTools;
+
+  /// No description provided for @contextUsageBucketAttachments.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get contextUsageBucketAttachments;
+
+  /// No description provided for @contextUsageBucketDraft.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft'**
+  String get contextUsageBucketDraft;
+
+  /// No description provided for @contextUsageBucketUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Used'**
+  String get contextUsageBucketUsed;
+
+  /// No description provided for @contextUsageFreeSpace.
+  ///
+  /// In en, this message translates to:
+  /// **'Free space'**
+  String get contextUsageFreeSpace;
+
+  /// Context usage summary: used tokens, window size, and percent
+  ///
+  /// In en, this message translates to:
+  /// **'{used} / {window} ({percent}%)'**
+  String contextUsageUsedWindow(String used, String window, int percent);
+
+  /// No description provided for @contextUsageNoWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'No context window'**
+  String get contextUsageNoWindow;
+
+  /// No description provided for @contextUsageSetWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Set context window'**
+  String get contextUsageSetWindow;
+
+  /// No description provided for @contextUsageRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get contextUsageRefresh;
+
   /// No description provided for @mcpPageBackTooltip.
   ///
   /// In en, this message translates to:
@@ -6643,12 +6877,6 @@ abstract class AppLocalizations {
   /// **'Required, suggest lowercase/digits/hyphens'**
   String get modelDetailSheetModelIdHint;
 
-  /// No description provided for @modelDetailSheetModelIdDisabledHint.
-  ///
-  /// In en, this message translates to:
-  /// **'{modelId}'**
-  String modelDetailSheetModelIdDisabledHint(String modelId);
-
   /// No description provided for @modelDetailSheetModelNameLabel.
   ///
   /// In en, this message translates to:
@@ -6756,18 +6984,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Built-in tools depend on the provider and API mode.'**
   String get modelDetailSheetBuiltinToolsDescription;
-
-  /// No description provided for @modelDetailSheetSearchTool.
-  ///
-  /// In en, this message translates to:
-  /// **'Search'**
-  String get modelDetailSheetSearchTool;
-
-  /// No description provided for @modelDetailSheetSearchToolDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Enable Google Search integration'**
-  String get modelDetailSheetSearchToolDescription;
 
   /// No description provided for @modelDetailSheetUrlContextTool.
   ///
@@ -6895,12 +7111,6 @@ abstract class AppLocalizations {
   /// **'Please enter a valid model ID (>=2 chars)'**
   String get modelDetailSheetInvalidIdError;
 
-  /// No description provided for @modelDetailSheetModelIdExistsError.
-  ///
-  /// In en, this message translates to:
-  /// **'Model ID already exists'**
-  String get modelDetailSheetModelIdExistsError;
-
   /// No description provided for @modelDetailSheetHeaderKeyHint.
   ///
   /// In en, this message translates to:
@@ -6924,6 +7134,552 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Body JSON'**
   String get modelDetailSheetBodyJsonHint;
+
+  /// No description provided for @modelSpecFormSourceCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get modelSpecFormSourceCustom;
+
+  /// No description provided for @modelSpecFormSourceCatalog.
+  ///
+  /// In en, this message translates to:
+  /// **'Catalog'**
+  String get modelSpecFormSourceCatalog;
+
+  /// No description provided for @modelSpecFormSourceInferred.
+  ///
+  /// In en, this message translates to:
+  /// **'Inferred'**
+  String get modelSpecFormSourceInferred;
+
+  /// No description provided for @modelSpecFormSourceDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get modelSpecFormSourceDefault;
+
+  /// No description provided for @modelSpecFormReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to default'**
+  String get modelSpecFormReset;
+
+  /// No description provided for @modelSpecFormModalitiesSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Modalities & abilities'**
+  String get modelSpecFormModalitiesSection;
+
+  /// No description provided for @modelSpecFormImageType.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get modelSpecFormImageType;
+
+  /// No description provided for @modelSpecFormAudioMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio'**
+  String get modelSpecFormAudioMode;
+
+  /// No description provided for @modelSpecFormVideoMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get modelSpecFormVideoMode;
+
+  /// No description provided for @modelSpecFormPdfMode.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF'**
+  String get modelSpecFormPdfMode;
+
+  /// No description provided for @modelSpecFormStructuredOutputAbility.
+  ///
+  /// In en, this message translates to:
+  /// **'Structured Output'**
+  String get modelSpecFormStructuredOutputAbility;
+
+  /// No description provided for @modelSpecFormReasoningSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning'**
+  String get modelSpecFormReasoningSection;
+
+  /// No description provided for @modelSpecFormDialect.
+  ///
+  /// In en, this message translates to:
+  /// **'Dialect'**
+  String get modelSpecFormDialect;
+
+  /// No description provided for @modelSpecFormDialectNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get modelSpecFormDialectNone;
+
+  /// No description provided for @modelSpecFormDialectNoneSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No reasoning fields'**
+  String get modelSpecFormDialectNoneSubtitle;
+
+  /// No description provided for @modelSpecFormDialectOpenaiReasoningEffort.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI reasoning effort'**
+  String get modelSpecFormDialectOpenaiReasoningEffort;
+
+  /// No description provided for @modelSpecFormDialectOpenaiReasoningEffortSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'reasoning_effort'**
+  String get modelSpecFormDialectOpenaiReasoningEffortSubtitle;
+
+  /// No description provided for @modelSpecFormDialectOpenaiResponsesReasoning.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI Responses reasoning'**
+  String get modelSpecFormDialectOpenaiResponsesReasoning;
+
+  /// No description provided for @modelSpecFormDialectOpenaiResponsesReasoningSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'reasoning.effort'**
+  String get modelSpecFormDialectOpenaiResponsesReasoningSubtitle;
+
+  /// No description provided for @modelSpecFormDialectOpenrouterReasoning.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenRouter reasoning'**
+  String get modelSpecFormDialectOpenrouterReasoning;
+
+  /// No description provided for @modelSpecFormDialectOpenrouterReasoningSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'reasoning'**
+  String get modelSpecFormDialectOpenrouterReasoningSubtitle;
+
+  /// No description provided for @modelSpecFormDialectAnthropicBudget.
+  ///
+  /// In en, this message translates to:
+  /// **'Anthropic budget'**
+  String get modelSpecFormDialectAnthropicBudget;
+
+  /// No description provided for @modelSpecFormDialectAnthropicBudgetSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinking.budget_tokens'**
+  String get modelSpecFormDialectAnthropicBudgetSubtitle;
+
+  /// No description provided for @modelSpecFormDialectAnthropicAdaptiveEffort.
+  ///
+  /// In en, this message translates to:
+  /// **'Anthropic adaptive effort'**
+  String get modelSpecFormDialectAnthropicAdaptiveEffort;
+
+  /// No description provided for @modelSpecFormDialectAnthropicAdaptiveEffortSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinking + output_config.effort'**
+  String get modelSpecFormDialectAnthropicAdaptiveEffortSubtitle;
+
+  /// No description provided for @modelSpecFormDialectAnthropicEffort.
+  ///
+  /// In en, this message translates to:
+  /// **'Anthropic effort'**
+  String get modelSpecFormDialectAnthropicEffort;
+
+  /// No description provided for @modelSpecFormDialectAnthropicEffortSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinking + output_config.effort'**
+  String get modelSpecFormDialectAnthropicEffortSubtitle;
+
+  /// No description provided for @modelSpecFormDialectGeminiThinkingBudget.
+  ///
+  /// In en, this message translates to:
+  /// **'Gemini thinking budget'**
+  String get modelSpecFormDialectGeminiThinkingBudget;
+
+  /// No description provided for @modelSpecFormDialectGeminiThinkingBudgetSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinkingConfig.thinkingBudget'**
+  String get modelSpecFormDialectGeminiThinkingBudgetSubtitle;
+
+  /// No description provided for @modelSpecFormDialectGeminiThinkingLevel.
+  ///
+  /// In en, this message translates to:
+  /// **'Gemini thinking level'**
+  String get modelSpecFormDialectGeminiThinkingLevel;
+
+  /// No description provided for @modelSpecFormDialectGeminiThinkingLevelSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinkingConfig.thinkingLevel'**
+  String get modelSpecFormDialectGeminiThinkingLevelSubtitle;
+
+  /// No description provided for @modelSpecFormDialectQwenEnableThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Qwen enable thinking'**
+  String get modelSpecFormDialectQwenEnableThinking;
+
+  /// No description provided for @modelSpecFormDialectQwenEnableThinkingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'enable_thinking'**
+  String get modelSpecFormDialectQwenEnableThinkingSubtitle;
+
+  /// No description provided for @modelSpecFormDialectThinkingType.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking type'**
+  String get modelSpecFormDialectThinkingType;
+
+  /// No description provided for @modelSpecFormDialectThinkingTypeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinking.type'**
+  String get modelSpecFormDialectThinkingTypeSubtitle;
+
+  /// No description provided for @modelSpecFormDialectSiliconflowEnableThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'SiliconFlow enable thinking'**
+  String get modelSpecFormDialectSiliconflowEnableThinking;
+
+  /// No description provided for @modelSpecFormDialectSiliconflowEnableThinkingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'enable_thinking'**
+  String get modelSpecFormDialectSiliconflowEnableThinkingSubtitle;
+
+  /// No description provided for @modelSpecFormDialectInternThinkingMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Intern thinking mode'**
+  String get modelSpecFormDialectInternThinkingMode;
+
+  /// No description provided for @modelSpecFormDialectInternThinkingModeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinking_mode'**
+  String get modelSpecFormDialectInternThinkingModeSubtitle;
+
+  /// No description provided for @modelSpecFormDialectChatTemplateKwargs.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat template kwargs'**
+  String get modelSpecFormDialectChatTemplateKwargs;
+
+  /// No description provided for @modelSpecFormDialectChatTemplateKwargsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'chat_template_kwargs.enable_thinking'**
+  String get modelSpecFormDialectChatTemplateKwargsSubtitle;
+
+  /// No description provided for @modelSpecFormDialectKimiThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Kimi thinking'**
+  String get modelSpecFormDialectKimiThinking;
+
+  /// No description provided for @modelSpecFormDialectKimiThinkingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'thinking'**
+  String get modelSpecFormDialectKimiThinkingSubtitle;
+
+  /// No description provided for @modelSpecFormDialectCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom JSON'**
+  String get modelSpecFormDialectCustom;
+
+  /// No description provided for @modelSpecFormDialectCustomSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Per-level JSON patch'**
+  String get modelSpecFormDialectCustomSubtitle;
+
+  /// No description provided for @modelSpecFormLevels.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported levels'**
+  String get modelSpecFormLevels;
+
+  /// No description provided for @modelSpecFormCanDisable.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow disabling'**
+  String get modelSpecFormCanDisable;
+
+  /// No description provided for @modelSpecFormDefaultLevel.
+  ///
+  /// In en, this message translates to:
+  /// **'Default level'**
+  String get modelSpecFormDefaultLevel;
+
+  /// No description provided for @modelSpecFormBudgets.
+  ///
+  /// In en, this message translates to:
+  /// **'Token budgets'**
+  String get modelSpecFormBudgets;
+
+  /// No description provided for @modelSpecFormBudgetPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'{tokens}'**
+  String modelSpecFormBudgetPlaceholder(String tokens);
+
+  /// No description provided for @modelSpecFormCustomPatch.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON patch ({level})'**
+  String modelSpecFormCustomPatch(String level);
+
+  /// No description provided for @modelSpecFormCustomPatchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. reasoning_effort: high'**
+  String get modelSpecFormCustomPatchHint;
+
+  /// No description provided for @modelSpecFormInvalidJson.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom reasoning patch must be a valid JSON object'**
+  String get modelSpecFormInvalidJson;
+
+  /// No description provided for @modelSpecFormInvalidNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a valid number'**
+  String get modelSpecFormInvalidNumber;
+
+  /// No description provided for @modelSpecFormStrategySection.
+  ///
+  /// In en, this message translates to:
+  /// **'Strategy'**
+  String get modelSpecFormStrategySection;
+
+  /// No description provided for @modelSpecFormSampling.
+  ///
+  /// In en, this message translates to:
+  /// **'Sampling'**
+  String get modelSpecFormSampling;
+
+  /// No description provided for @modelSpecFormRequestQuirks.
+  ///
+  /// In en, this message translates to:
+  /// **'Request compatibility'**
+  String get modelSpecFormRequestQuirks;
+
+  /// No description provided for @modelSpecFormDynamicWebSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic filtering search tools'**
+  String get modelSpecFormDynamicWebSearch;
+
+  /// No description provided for @modelSpecFormDynamicWebSearchSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When dynamic filtering is on, send the 2026-03-18 web search and fetch tools'**
+  String get modelSpecFormDynamicWebSearchSubtitle;
+
+  /// No description provided for @modelSpecFormRemoteImageUrls.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote image links'**
+  String get modelSpecFormRemoteImageUrls;
+
+  /// No description provided for @modelSpecFormRemoteImageUrlsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Send http(s) image links as-is; when off, remote links are dropped and only local images are sent'**
+  String get modelSpecFormRemoteImageUrlsSubtitle;
+
+  /// No description provided for @modelSpecFormPromptCacheControl.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompt cache marker'**
+  String get modelSpecFormPromptCacheControl;
+
+  /// No description provided for @modelSpecFormPromptCacheControlSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When prompt caching is on, add cache_control to OpenRouter requests'**
+  String get modelSpecFormPromptCacheControlSubtitle;
+
+  /// No description provided for @modelSpecFormSamplingAlways.
+  ///
+  /// In en, this message translates to:
+  /// **'Always'**
+  String get modelSpecFormSamplingAlways;
+
+  /// No description provided for @modelSpecFormSamplingAlwaysSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep temperature and other sampling fields'**
+  String get modelSpecFormSamplingAlwaysSubtitle;
+
+  /// No description provided for @modelSpecFormSamplingOnlyWhenReasoningOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Only when reasoning is off'**
+  String get modelSpecFormSamplingOnlyWhenReasoningOff;
+
+  /// No description provided for @modelSpecFormSamplingOnlyWhenReasoningOffSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Strip sampling fields while the model is thinking'**
+  String get modelSpecFormSamplingOnlyWhenReasoningOffSubtitle;
+
+  /// No description provided for @modelSpecFormSamplingNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get modelSpecFormSamplingNever;
+
+  /// No description provided for @modelSpecFormSamplingNeverSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Always strip sampling fields'**
+  String get modelSpecFormSamplingNeverSubtitle;
+
+  /// No description provided for @modelSpecFormReplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning replay'**
+  String get modelSpecFormReplay;
+
+  /// No description provided for @modelSpecFormReplayNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get modelSpecFormReplayNone;
+
+  /// No description provided for @modelSpecFormReplayNoneSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not send prior reasoning back to the model'**
+  String get modelSpecFormReplayNoneSubtitle;
+
+  /// No description provided for @modelSpecFormReplayToolTurns.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool turns'**
+  String get modelSpecFormReplayToolTurns;
+
+  /// No description provided for @modelSpecFormReplayToolTurnsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay reasoning on tool-call turns'**
+  String get modelSpecFormReplayToolTurnsSubtitle;
+
+  /// No description provided for @modelSpecFormReplayAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get modelSpecFormReplayAll;
+
+  /// No description provided for @modelSpecFormReplayAllSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay reasoning on every follow-up turn'**
+  String get modelSpecFormReplayAllSubtitle;
+
+  /// No description provided for @modelSpecFormReplayField.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay field'**
+  String get modelSpecFormReplayField;
+
+  /// No description provided for @modelSpecFormReplayFieldReasoningContent.
+  ///
+  /// In en, this message translates to:
+  /// **'reasoning_content'**
+  String get modelSpecFormReplayFieldReasoningContent;
+
+  /// No description provided for @modelSpecFormReplayFieldReasoning.
+  ///
+  /// In en, this message translates to:
+  /// **'reasoning'**
+  String get modelSpecFormReplayFieldReasoning;
+
+  /// No description provided for @modelSpecFormReplayFieldReasoningDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'reasoning_details'**
+  String get modelSpecFormReplayFieldReasoningDetails;
+
+  /// No description provided for @modelSpecFormLimitsSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Limits'**
+  String get modelSpecFormLimitsSection;
+
+  /// No description provided for @modelSpecFormLimitsPricingSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Limits & pricing'**
+  String get modelSpecFormLimitsPricingSection;
+
+  /// No description provided for @modelSpecFormContextWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Context window'**
+  String get modelSpecFormContextWindow;
+
+  /// No description provided for @modelSpecFormMaxOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Max output'**
+  String get modelSpecFormMaxOutput;
+
+  /// No description provided for @modelSpecFormPricingSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Pricing / 1M'**
+  String get modelSpecFormPricingSection;
+
+  /// No description provided for @modelSpecFormPricingInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Input'**
+  String get modelSpecFormPricingInput;
+
+  /// No description provided for @modelSpecFormPricingOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get modelSpecFormPricingOutput;
+
+  /// No description provided for @modelSpecFormPricingCacheRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache read'**
+  String get modelSpecFormPricingCacheRead;
+
+  /// No description provided for @modelSpecFormPricingCacheWrite.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache write'**
+  String get modelSpecFormPricingCacheWrite;
+
+  /// No description provided for @modelSpecFormCurrency.
+  ///
+  /// In en, this message translates to:
+  /// **'Currency'**
+  String get modelSpecFormCurrency;
+
+  /// No description provided for @modelSpecFormAdvancedSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Request'**
+  String get modelSpecFormAdvancedSection;
 
   /// No description provided for @modelSelectSheetSearchHint.
   ///
@@ -7440,6 +8196,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Provider added'**
   String get providersPageProviderAddedSnackbar;
+
+  /// No description provided for @modelCatalogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Model catalog'**
+  String get modelCatalogTitle;
+
+  /// No description provided for @modelCatalogSourceBundled.
+  ///
+  /// In en, this message translates to:
+  /// **'Bundled snapshot · {date}'**
+  String modelCatalogSourceBundled(String date);
+
+  /// No description provided for @modelCatalogSourceRemote.
+  ///
+  /// In en, this message translates to:
+  /// **'models.dev · updated {date}'**
+  String modelCatalogSourceRemote(String date);
+
+  /// No description provided for @modelCatalogAutoUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-update every 24 hours'**
+  String get modelCatalogAutoUpdate;
+
+  /// No description provided for @modelCatalogRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Update now'**
+  String get modelCatalogRefresh;
+
+  /// No description provided for @modelCatalogUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Model catalog updated'**
+  String get modelCatalogUpdated;
+
+  /// No description provided for @modelCatalogRefreshFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed: {error}'**
+  String modelCatalogRefreshFailed(String error);
+
+  /// No description provided for @modelCatalogProviderCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} providers'**
+  String modelCatalogProviderCount(int count);
+
+  /// No description provided for @modelCatalogModelCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} models'**
+  String modelCatalogModelCount(int count);
 
   /// No description provided for @providerGroupsGroupLabel.
   ///
@@ -8701,6 +9511,18 @@ abstract class AppLocalizations {
   /// **'Show Token & Context Stats'**
   String get displaySettingsPageShowTokenStatsTitle;
 
+  /// No description provided for @displaySettingsPageShowTotalTokensTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show tokens for the entire turn'**
+  String get displaySettingsPageShowTotalTokensTitle;
+
+  /// No description provided for @displaySettingsPageShowTotalTokensSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sum usage across all API requests in a reply. When off, show only the final request. Statistics always include all requests.'**
+  String get displaySettingsPageShowTotalTokensSubtitle;
+
   /// No description provided for @displaySettingsPageShowTokenStatsSubtitle.
   ///
   /// In en, this message translates to:
@@ -8730,6 +9552,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'When off, tool-use cards are hidden in chat.'**
   String get displaySettingsPageShowToolCardsSubtitle;
+
+  /// No description provided for @displaySettingsShowReasoningLevelBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Show reasoning level on the button'**
+  String get displaySettingsShowReasoningLevelBadge;
+
+  /// No description provided for @displaySettingsShowReasoningLevelBadgeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the current level next to the reasoning icon in the input bar'**
+  String get displaySettingsShowReasoningLevelBadgeSubtitle;
 
   /// No description provided for @displaySettingsPageAutoCollapseThinkingTitle.
   ///
@@ -9138,6 +9972,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Fonts'**
   String get desktopSettingsFontsTitle;
+
+  /// No description provided for @linuxHideTitleBarTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide system title bar'**
+  String get linuxHideTitleBarTitle;
+
+  /// No description provided for @linuxHideTitleBarDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Also hides window buttons. Use your window manager to move, resize, and close the window.'**
+  String get linuxHideTitleBarDescription;
+
+  /// No description provided for @linuxHideTitleBarError.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to change the title bar. Please try again.'**
+  String get linuxHideTitleBarError;
 
   /// No description provided for @displaySettingsPageTrayTitle.
   ///
@@ -10716,6 +11568,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unified search for AI agents with automatic routing across web and specialist data sources. API key is optional.'**
   String get searchProviderAnySearchDescription;
+
+  /// No description provided for @searchServiceNameKagi.
+  ///
+  /// In en, this message translates to:
+  /// **'Kagi'**
+  String get searchServiceNameKagi;
+
+  /// No description provided for @searchProviderKagiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Kagi Search API. Returns premium web search results from Kagi.'**
+  String get searchProviderKagiDescription;
+
+  /// No description provided for @searchServiceNameKimi.
+  ///
+  /// In en, this message translates to:
+  /// **'Kimi'**
+  String get searchServiceNameKimi;
+
+  /// No description provided for @searchProviderKimiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Kimi Search API. Pro returns relevant web content excerpts; Basic returns titles, links, and snippets.'**
+  String get searchProviderKimiDescription;
 
   /// No description provided for @searchServiceNameParallel.
   ///
@@ -14635,11 +15511,35 @@ abstract class AppLocalizations {
   /// **'{value}s'**
   String tokenDetailDuration(String value);
 
+  /// No description provided for @tokenDetailFirstToken.
+  ///
+  /// In en, this message translates to:
+  /// **'{value}s (first token)'**
+  String tokenDetailFirstToken(String value);
+
   /// No description provided for @tokenDetailTotalTokens.
   ///
   /// In en, this message translates to:
   /// **'{count} tokens'**
   String tokenDetailTotalTokens(int count);
+
+  /// No description provided for @tokenDetailReasoningTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} tokens'**
+  String tokenDetailReasoningTokens(int count);
+
+  /// No description provided for @tokenDetailCacheWriteTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} cache write tokens'**
+  String tokenDetailCacheWriteTokens(int count);
+
+  /// No description provided for @tokenDetailCost.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount}'**
+  String tokenDetailCost(String amount);
 
   /// No description provided for @debugPageTitle.
   ///
@@ -16993,6 +17893,12 @@ abstract class AppLocalizations {
   /// **'Read file'**
   String get workspaceToolTitleReadFile;
 
+  /// No description provided for @workspaceToolTitleViewImage.
+  ///
+  /// In en, this message translates to:
+  /// **'View image'**
+  String get workspaceToolTitleViewImage;
+
   /// No description provided for @workspaceToolTitleWriteFile.
   ///
   /// In en, this message translates to:
@@ -17966,8 +18872,44 @@ abstract class AppLocalizations {
   /// No description provided for @workspaceEntryDefaultWorkspaceSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'New conversations with this assistant start bound to this workspace.'**
+  /// **'New conversations use this workspace. Existing conversations stay unchanged.'**
   String get workspaceEntryDefaultWorkspaceSubtitle;
+
+  /// No description provided for @workspaceEntryDefaultWorkspaceUnset.
+  ///
+  /// In en, this message translates to:
+  /// **'Not set'**
+  String get workspaceEntryDefaultWorkspaceUnset;
+
+  /// No description provided for @workspaceEntryDefaultWorkspaceAutomaticSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The first workspace you bind to a conversation will be remembered for new conversations.'**
+  String get workspaceEntryDefaultWorkspaceAutomaticSubtitle;
+
+  /// No description provided for @workspaceBindingRememberedDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Remembered as the default workspace for “{assistant}”. New conversations will use it.'**
+  String workspaceBindingRememberedDefault(String assistant);
+
+  /// No description provided for @workspaceBindingSuggestDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this workspace for future conversations with “{assistant}” too?'**
+  String workspaceBindingSuggestDefault(String assistant);
+
+  /// No description provided for @workspaceBindingUndoDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get workspaceBindingUndoDefault;
+
+  /// No description provided for @workspaceBindingUseAsDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Set as default'**
+  String get workspaceBindingUseAsDefault;
 
   /// No description provided for @workspaceEntryNone.
   ///
@@ -19251,6 +20193,12 @@ abstract class AppLocalizations {
   /// **'Read files with line numbers and paging.'**
   String get workspaceToolHelpRead;
 
+  /// No description provided for @workspaceToolHelpViewImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Let the model inspect an image from the workspace.'**
+  String get workspaceToolHelpViewImage;
+
   /// No description provided for @workspaceToolHelpWrite.
   ///
   /// In en, this message translates to:
@@ -19730,36 +20678,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show files created or modified by tools below replies.'**
   String get displaySettingsPageShowProducedFilesSubtitle;
-
-  /// No description provided for @reasoningBudgetSliderLow.
-  ///
-  /// In en, this message translates to:
-  /// **'Low'**
-  String get reasoningBudgetSliderLow;
-
-  /// No description provided for @reasoningBudgetSliderMedium.
-  ///
-  /// In en, this message translates to:
-  /// **'Medium'**
-  String get reasoningBudgetSliderMedium;
-
-  /// No description provided for @reasoningBudgetSliderHigh.
-  ///
-  /// In en, this message translates to:
-  /// **'High'**
-  String get reasoningBudgetSliderHigh;
-
-  /// No description provided for @reasoningBudgetSliderXhigh.
-  ///
-  /// In en, this message translates to:
-  /// **'XHigh'**
-  String get reasoningBudgetSliderXhigh;
-
-  /// No description provided for @reasoningBudgetSliderMax.
-  ///
-  /// In en, this message translates to:
-  /// **'Max'**
-  String get reasoningBudgetSliderMax;
 
   /// No description provided for @defaultModelPagePerChatModelTitle.
   ///
@@ -21465,6 +22383,12 @@ abstract class AppLocalizations {
   /// **'Resets {time}'**
   String oauthResetsAt(String time);
 
+  /// No description provided for @oauthUsedValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Used {value}'**
+  String oauthUsedValue(String value);
+
   /// No description provided for @oauthNetworkError.
   ///
   /// In en, this message translates to:
@@ -21578,6 +22502,531 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reuse context across messages and choose how long the cache is retained.'**
   String get oauthPromptCachingHelp;
+
+  /// No description provided for @scheduledTasksPreparation.
+  ///
+  /// In en, this message translates to:
+  /// **'Execution and notifications'**
+  String get scheduledTasksPreparation;
+
+  /// No description provided for @scheduledTasksAllowPreparation.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow advance preparation'**
+  String get scheduledTasksAllowPreparation;
+
+  /// No description provided for @scheduledTasksPreparationDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Advance preparation is for text tasks that do not need current information. It cannot use tools or attachments, or perform external actions.'**
+  String get scheduledTasksPreparationDetail;
+
+  /// No description provided for @scheduledTasksIOSDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'iOS background limits prevent Kelivo from waking at a set time to run a model. Instead, content is prepared while the app can run, and the system shows a notification at the scheduled time. Only the next occurrence is prepared. Preparation may not finish after leaving the app; reopen Kelivo to prepare subsequent occurrences.'**
+  String get scheduledTasksIOSDetail;
+
+  /// No description provided for @scheduledTasksContextPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation context'**
+  String get scheduledTasksContextPolicy;
+
+  /// No description provided for @scheduledTasksContextLatest.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the latest conversation'**
+  String get scheduledTasksContextLatest;
+
+  /// No description provided for @scheduledTasksContextSnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the prepared snapshot'**
+  String get scheduledTasksContextSnapshot;
+
+  /// No description provided for @scheduledTasksUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'When unable to execute'**
+  String get scheduledTasksUnavailable;
+
+  /// No description provided for @scheduledTasksRemind.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a reminder only'**
+  String get scheduledTasksRemind;
+
+  /// No description provided for @scheduledTasksSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip this occurrence'**
+  String get scheduledTasksSkip;
+
+  /// No description provided for @scheduledTasksNotify.
+  ///
+  /// In en, this message translates to:
+  /// **'Result notifications'**
+  String get scheduledTasksNotify;
+
+  /// No description provided for @scheduledTasksShowPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Show result text in notifications'**
+  String get scheduledTasksShowPreview;
+
+  /// No description provided for @scheduledTasksPreparationWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare up to'**
+  String get scheduledTasksPreparationWindow;
+
+  /// No description provided for @scheduledTasksPreparationAttempts.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic attempt limit'**
+  String get scheduledTasksPreparationAttempts;
+
+  /// No description provided for @scheduledTasksPreparationCooldown.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimum interval (minutes)'**
+  String get scheduledTasksPreparationCooldown;
+
+  /// No description provided for @scheduledTasksPreparationBudget.
+  ///
+  /// In en, this message translates to:
+  /// **'At most one preparation at a time across all tasks. Automatic preparation pauses after six total attempts per hour, including cancelled requests. Prepare now is not limited by attempt counts.'**
+  String get scheduledTasksPreparationBudget;
+
+  /// No description provided for @scheduledTasksPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing result'**
+  String get scheduledTasksPreparing;
+
+  /// No description provided for @scheduledTasksPrepared.
+  ///
+  /// In en, this message translates to:
+  /// **'Result prepared'**
+  String get scheduledTasksPrepared;
+
+  /// No description provided for @scheduledTasksPendingPreparation.
+  ///
+  /// In en, this message translates to:
+  /// **'Result not prepared yet'**
+  String get scheduledTasksPendingPreparation;
+
+  /// No description provided for @scheduledTasksNotificationRegistered.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification scheduled'**
+  String get scheduledTasksNotificationRegistered;
+
+  /// No description provided for @scheduledTasksNotificationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification not scheduled'**
+  String get scheduledTasksNotificationUnavailable;
+
+  /// No description provided for @scheduledTasksReminded.
+  ///
+  /// In en, this message translates to:
+  /// **'Due · reminder only'**
+  String get scheduledTasksReminded;
+
+  /// No description provided for @scheduledTasksSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped'**
+  String get scheduledTasksSkipped;
+
+  /// No description provided for @scheduledTasksCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get scheduledTasksCancelled;
+
+  /// No description provided for @scheduledTasksReminderBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your scheduled task is due. Open Kelivo to continue.'**
+  String get scheduledTasksReminderBody;
+
+  /// No description provided for @scheduledTasksResultBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your scheduled task result is ready.'**
+  String get scheduledTasksResultBody;
+
+  /// No description provided for @scheduledTasksNotificationPermission.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow task notifications'**
+  String get scheduledTasksNotificationPermission;
+
+  /// No description provided for @scheduledTasksPreparationCost.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation calls the model and may cost extra. With “Follow latest conversation”, new messages before the due time can invalidate a prepared result. Unused or cancelled output may still be billed, and preparing again makes another model request.'**
+  String get scheduledTasksPreparationCost;
+
+  /// No description provided for @scheduledTasksAllowPreparationTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate the next result before its scheduled time, while Kelivo can run. The result stays out of the chat until it is due. Preparation uses text only, without tools, attachments or custom request bodies. It may incur model charges.'**
+  String get scheduledTasksAllowPreparationTip;
+
+  /// No description provided for @scheduledTasksContextPolicyTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow latest conversation: before the task is due, new messages, edits or switching message versions invalidate the prepared result; preparing again uses another attempt and may cost extra. Once due, the saved notification result is added to the chat unchanged.\n\nUse preparation snapshot: keep the prepared result even if the conversation changes. It will not reflect later messages.'**
+  String get scheduledTasksContextPolicyTip;
+
+  /// No description provided for @scheduledTasksPreparationWindowTip.
+  ///
+  /// In en, this message translates to:
+  /// **'How far ahead of the scheduled time preparation may begin, up to 24 hours. For example, opening Kelivo at noon can prepare the next morning’s reminder. A larger window gives more chances to prepare, but the result may be less current. It does not change the scheduled time or guarantee background execution. Prepare now bypasses this automatic waiting period and all attempt limits.'**
+  String get scheduledTasksPreparationWindowTip;
+
+  /// No description provided for @scheduledTasksPreparationAttemptsTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic preparation pauses when this occurrence reaches the total attempt limit. First attempts, failures, cancellations and manual preparation all count in the record. Prepare now can still run after this limit is reached. More attempts may incur more model charges; this is not a spending limit.'**
+  String get scheduledTasksPreparationAttemptsTip;
+
+  /// No description provided for @scheduledTasksPreparationCooldownTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimum time between the start of preparation attempts for the same occurrence. Waiting longer reduces repeated requests. A retry still needs the app to be able to run; it is not a background timer. Prepare now bypasses this automatic waiting period and all attempt limits.'**
+  String get scheduledTasksPreparationCooldownTip;
+
+  /// No description provided for @scheduledTasksUnavailableTip.
+  ///
+  /// In en, this message translates to:
+  /// **'If no prepared result is available and the task cannot run when due, send a reminder or skip the occurrence. A reminder contains no generated answer and requires notifications to be enabled. If Kelivo is open when the task is due, it can run the task then.'**
+  String get scheduledTasksUnavailableTip;
+
+  /// No description provided for @scheduledTasksNotifyTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow result notifications and fallback reminders. Turning this off does not stop the task or model calls, and does not prevent preparation charges. System notification permission is also required.'**
+  String get scheduledTasksNotifyTip;
+
+  /// No description provided for @scheduledTasksShowPreviewTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the prepared result text in the notification, including on the lock screen if allowed by system settings. Turn this off to show a generic notice; the full result remains available in the chat. Global notification privacy settings also apply.'**
+  String get scheduledTasksShowPreviewTip;
+
+  /// No description provided for @scheduledTasksHours.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 hour} other{{count} hours}}'**
+  String scheduledTasksHours(int count);
+
+  /// No description provided for @scheduledTasksMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 minute} other{{count} minutes}}'**
+  String scheduledTasksMinutes(int count);
+
+  /// No description provided for @scheduledTasksPreparationOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation off'**
+  String get scheduledTasksPreparationOff;
+
+  /// No description provided for @scheduledTasksPreparationQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get scheduledTasksPreparationQueued;
+
+  /// No description provided for @scheduledTasksPreparationQueuedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Another task is being prepared. Eligible tasks continue in due-time order.'**
+  String get scheduledTasksPreparationQueuedDetail;
+
+  /// No description provided for @scheduledTasksPreparationIdle.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for chat'**
+  String get scheduledTasksPreparationIdle;
+
+  /// No description provided for @scheduledTasksPreparationIdleDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation resumes after active replies finish and this task’s context settles.'**
+  String get scheduledTasksPreparationIdleDetail;
+
+  /// No description provided for @scheduledTasksPreparationWindowWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Outside preparation window'**
+  String get scheduledTasksPreparationWindowWaiting;
+
+  /// No description provided for @scheduledTasksPreparationCooldownWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting to retry'**
+  String get scheduledTasksPreparationCooldownWaiting;
+
+  /// No description provided for @scheduledTasksPreparationRetryAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Can retry after {time}'**
+  String scheduledTasksPreparationRetryAt(String time);
+
+  /// No description provided for @scheduledTasksPreparationLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic attempt limit reached'**
+  String get scheduledTasksPreparationLimitReached;
+
+  /// No description provided for @scheduledTasksPreparationAttemptsUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'This occurrence has used {count} attempts; the automatic limit is {limit}. Use Prepare now to continue manually.'**
+  String scheduledTasksPreparationAttemptsUsed(int count, int limit);
+
+  /// No description provided for @scheduledTasksPreparationHourlyLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic hourly limit reached'**
+  String get scheduledTasksPreparationHourlyLimit;
+
+  /// No description provided for @scheduledTasksPreparationHourlyLimitDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic preparation is paused until hourly capacity is available. You can still use Prepare now.'**
+  String get scheduledTasksPreparationHourlyLimitDetail;
+
+  /// No description provided for @scheduledTasksPreparationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation unavailable'**
+  String get scheduledTasksPreparationUnavailable;
+
+  /// No description provided for @scheduledTasksPreparationReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read task context. It will be checked again shortly; see execution history for details.'**
+  String get scheduledTasksPreparationReadFailed;
+
+  /// No description provided for @scheduledTasksPreparationResultRetained.
+  ///
+  /// In en, this message translates to:
+  /// **'Context could not be checked. The prepared result is retained and will be checked again.'**
+  String get scheduledTasksPreparationResultRetained;
+
+  /// No description provided for @scheduledTasksPreparationContextChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation or task context changed, so the earlier result was discarded.'**
+  String get scheduledTasksPreparationContextChanged;
+
+  /// No description provided for @scheduledTasksPreparationPublishing.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting to add to chat'**
+  String get scheduledTasksPreparationPublishing;
+
+  /// No description provided for @scheduledTasksPreparationPublishingDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved result will be added to the conversation when the current reply finishes.'**
+  String get scheduledTasksPreparationPublishingDetail;
+
+  /// No description provided for @scheduledTasksPreparationPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation prompt'**
+  String get scheduledTasksPreparationPrompt;
+
+  /// No description provided for @scheduledTasksPreparationPromptTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Extra system instructions used only when preparing this task in advance, separate from the task instructions. You can change the style or remove these instructions entirely. Tools and live information remain unavailable. Editing this prompt invalidates any result prepared before the due time; preparing it again may incur another model charge.'**
+  String get scheduledTasksPreparationPromptTip;
+
+  /// No description provided for @scheduledTasksPreparationPromptEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave empty to add no preparation instructions'**
+  String get scheduledTasksPreparationPromptEmpty;
+
+  /// No description provided for @scheduledTasksPreparationPromptVariables.
+  ///
+  /// In en, this message translates to:
+  /// **'Placeholders: {timeVariable} is the planned local delivery time; {offsetVariable} is its UTC offset. These are replaced when preparing the result.'**
+  String scheduledTasksPreparationPromptVariables(
+    String timeVariable,
+    String offsetVariable,
+  );
+
+  /// No description provided for @scheduledTasksPrepareNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare now'**
+  String get scheduledTasksPrepareNow;
+
+  /// No description provided for @scheduledTasksPrepareNowDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare the next result now and deliver it at the scheduled time. Automatic waiting periods and attempt limits do not apply. This may incur model charges. An existing prepared result is reused.'**
+  String get scheduledTasksPrepareNowDetail;
+
+  /// No description provided for @scheduledTasksPrepareNowReady.
+  ///
+  /// In en, this message translates to:
+  /// **'The next result is already prepared. No additional model request was made.'**
+  String get scheduledTasksPrepareNowReady;
+
+  /// No description provided for @scheduledTasksPrepareNowStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing the next result for its scheduled time.'**
+  String get scheduledTasksPrepareNowStarted;
+
+  /// No description provided for @scheduledTasksPrepareNowBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Another task is being prepared. Please try again when it finishes.'**
+  String get scheduledTasksPrepareNowBusy;
+
+  /// No description provided for @scheduledTasksPrepareNowChatBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait for the current reply to finish, then try again.'**
+  String get scheduledTasksPrepareNowChatBusy;
+
+  /// No description provided for @scheduledTasksPrepareNowDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable this task and advance preparation first. Regenerate tasks cannot be prepared in advance.'**
+  String get scheduledTasksPrepareNowDisabled;
+
+  /// No description provided for @scheduledTasksPrepareNowUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparation is not available yet. Please try again shortly.'**
+  String get scheduledTasksPrepareNowUnavailable;
+
+  /// No description provided for @scheduledTasksPrepareNowNoUpcoming.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no upcoming occurrence to prepare. Check the task time and enabled state.'**
+  String get scheduledTasksPrepareNowNoUpcoming;
+
+  /// No description provided for @phoneControlTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone Control'**
+  String get phoneControlTitle;
+
+  /// No description provided for @phoneControlSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Read the screen and perform actions through Accessibility'**
+  String get phoneControlSubtitle;
+
+  /// No description provided for @phoneControlAccessibilityService.
+  ///
+  /// In en, this message translates to:
+  /// **'Accessibility service'**
+  String get phoneControlAccessibilityService;
+
+  /// No description provided for @phoneControlOpenSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open accessibility settings'**
+  String get phoneControlOpenSettings;
+
+  /// No description provided for @phoneControlRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh status'**
+  String get phoneControlRefresh;
+
+  /// No description provided for @phoneControlChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking service status…'**
+  String get phoneControlChecking;
+
+  /// No description provided for @phoneControlReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled and connected'**
+  String get phoneControlReady;
+
+  /// No description provided for @phoneControlDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not enabled'**
+  String get phoneControlDisabled;
+
+  /// No description provided for @phoneControlDisconnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled, but not connected. Try turning the service off and on in system settings, then refresh.'**
+  String get phoneControlDisconnected;
+
+  /// No description provided for @phoneControlStatusUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to read service status. Refresh to try again.'**
+  String get phoneControlStatusUnavailable;
+
+  /// No description provided for @phoneControlSettingsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to open settings. Open Android Settings → Accessibility manually.'**
+  String get phoneControlSettingsUnavailable;
+
+  /// No description provided for @phoneControlUsageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How it works'**
+  String get phoneControlUsageTitle;
+
+  /// No description provided for @phoneControlDisclosure.
+  ///
+  /// In en, this message translates to:
+  /// **'For phone control tasks you request in a conversation, the assistant can read the current screen, tap, enter text, scroll, navigate, and open apps. Screen content is sent to the model provider configured for that conversation and is saved in its tool results. Password fields are hidden. This service does not continuously record screen content. You can turn off this tool for the assistant, or disable the service in system settings at any time.'**
+  String get phoneControlDisclosure;
+
+  /// No description provided for @phoneControlAssistantTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable the tool for your assistant'**
+  String get phoneControlAssistantTitle;
+
+  /// No description provided for @phoneControlAssistantHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Both permissions are required: enable Kelivo phone control in system Accessibility settings, then enable Phone Control under your assistant’s Local Tools (also available in the chat tools menu). Each assistant is configured separately. Keep the phone unlocked while running a task.'**
+  String get phoneControlAssistantHint;
+
+  /// No description provided for @phoneControlRestrictedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Accessibility switch unavailable?'**
+  String get phoneControlRestrictedTitle;
+
+  /// No description provided for @phoneControlRestrictedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'For some downloaded APKs, Android requires “Allow restricted settings” in the app info menu first. Tap to open Kelivo’s app info, then return to Accessibility settings.'**
+  String get phoneControlRestrictedHint;
+
+  /// No description provided for @phoneControlEnableAssistant.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow this assistant to use phone control'**
+  String get phoneControlEnableAssistant;
 }
 
 class _AppLocalizationsDelegate

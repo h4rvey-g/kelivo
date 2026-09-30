@@ -6,6 +6,10 @@ import 'package:provider/provider.dart';
 
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/assistant.dart';
+import '../../../core/services/api/reasoning/reasoning_level_options.dart';
+import '../../../core/services/api/reasoning/reasoning_dialects.dart';
+import '../../../core/services/api/reasoning/reasoning_selection.dart';
+import '../../../core/services/model_spec/model_spec_resolver.dart';
 import '../../../core/models/workspace_binding.dart';
 import '../../../core/models/skills_binding.dart';
 import '../../../core/providers/asr_provider.dart';
@@ -31,7 +35,7 @@ typedef IsReasoningModelCallback =
     bool Function(String providerKey, String modelId);
 
 /// Callback for checking if reasoning is enabled.
-typedef IsReasoningEnabledCallback = bool Function(int? budget);
+typedef IsReasoningEnabledCallback = bool Function(ReasoningRequest request);
 
 /// Widget that wraps ChatInputBar with all the necessary logic and callbacks.
 ///
@@ -61,11 +65,13 @@ class ChatInputSection extends StatelessWidget {
     this.onOpenSkills,
     this.onOpenSearch,
     this.onConfigureReasoning,
+    this.onOpenContextUsage,
     this.onSend,
     this.onStop,
     this.hasQueuedInput = false,
     this.queuedPreviewText,
     this.onCancelQueuedInput,
+    this.onExpandedChanged,
     this.onQuickPhrase,
     this.onLongPressQuickPhrase,
     this.onToggleOcr,
@@ -105,11 +111,13 @@ class ChatInputSection extends StatelessWidget {
   final VoidCallback? onOpenSkills;
   final VoidCallback? onOpenSearch;
   final VoidCallback? onConfigureReasoning;
+  final VoidCallback? onOpenContextUsage;
   final Future<ChatInputSubmissionResult> Function(ChatInputData)? onSend;
   final VoidCallback? onStop;
   final bool hasQueuedInput;
   final String? queuedPreviewText;
   final VoidCallback? onCancelQueuedInput;
+  final ValueChanged<bool>? onExpandedChanged;
   final VoidCallback? onQuickPhrase;
   final VoidCallback? onLongPressQuickPhrase;
   final VoidCallback? onToggleOcr;
@@ -183,6 +191,16 @@ class ChatInputSection extends StatelessWidget {
       },
       growable: false,
     );
+    final selectedReasoning = _selectedReasoning(settings, a, pk, mid);
+    final reasoningSpec = (pk != null && mid != null)
+        ? ModelSpecResolver.instance.spec(settings.getProviderConfig(pk), mid)
+        : null;
+    final effectiveReasoning = reasoningSpec == null
+        ? selectedReasoning
+        : ReasoningRequest(
+            resolveReasoning(reasoningSpec, selectedReasoning).effective,
+            budgetTokens: selectedReasoning.budgetTokens,
+          );
 
     // Enforce model capabilities: disable MCP selection if model doesn't
     // support tools. Skipped while the conversation overrides the model —
@@ -224,16 +242,12 @@ class ChatInputSection extends StatelessWidget {
       mediaController: mediaController,
       asrProvider: asr,
       onConfigureReasoning: onConfigureReasoning,
-      reasoningActive: isReasoningEnabled(
-        (context.watch<AssistantProvider>().currentAssistant?.thinkingBudget) ??
-            settings.thinkingBudget,
-      ),
-      reasoningBudget:
-          (context
-              .watch<AssistantProvider>()
-              .currentAssistant
-              ?.thinkingBudget) ??
-          settings.thinkingBudget,
+      onOpenContextUsage: onOpenContextUsage,
+      reasoningActive: isReasoningEnabled(effectiveReasoning),
+      reasoning: effectiveReasoning,
+      reasoningCustomBudget: reasoningSpec != null
+          ? isCustomBudgetSelection(reasoningSpec, selectedReasoning)
+          : false,
       supportsReasoning: (pk != null && mid != null)
           ? isReasoningModel(pk, mid)
           : false,
@@ -244,6 +258,7 @@ class ChatInputSection extends StatelessWidget {
       hasQueuedInput: hasQueuedInput,
       queuedPreviewText: queuedPreviewText,
       onCancelQueuedInput: onCancelQueuedInput,
+      onExpandedChanged: onExpandedChanged,
       showToolsButton: _shouldShowToolsButton(pk, mid),
       toolsActive: _isToolsActive(context, a, workspaceBound),
       showQuickPhraseButton: _hasQuickPhrases(context, a),
@@ -297,7 +312,7 @@ class ChatInputSection extends StatelessWidget {
               onTap: () => WorkspaceNavigation.openEnvironmentPage(context),
             ),
           ),
-        bar,
+        Flexible(child: bar),
       ],
     );
   }
@@ -376,6 +391,23 @@ class ChatInputSection extends StatelessWidget {
         }
       });
     }
+  }
+
+  ReasoningRequest _selectedReasoning(
+    SettingsProvider settings,
+    Assistant? assistant,
+    String? providerKey,
+    String? modelId,
+  ) {
+    if (providerKey == null || modelId == null) {
+      return assistant?.reasoning ?? ReasoningRequest.auto;
+    }
+    return selectReasoningRequest(
+      settings: settings,
+      config: settings.getProviderConfig(providerKey),
+      modelId: modelId,
+      assistant: assistant,
+    );
   }
 
   /// The button hosts local tools and the workspace as well as MCP, so it

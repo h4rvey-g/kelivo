@@ -1,9 +1,9 @@
+import '../../scheduled_tasks/scheduled_task_preparation_binding.dart';
 import '../../../core/services/scheduled_tasks_service.dart';
 import '../../scheduled_tasks/scheduled_task_runner.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show listEquals, defaultTargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -12,6 +12,7 @@ import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/message_part.dart';
 import '../../../core/models/conversation.dart';
+import '../../../core/models/reasoning_request.dart';
 import '../../../core/models/workspace_binding.dart';
 import '../../../core/providers/workspace_provider.dart';
 import '../../../core/models/quick_phrase.dart';
@@ -24,6 +25,7 @@ import '../../../core/providers/quick_phrase_provider.dart';
 import '../../../core/providers/instruction_injection_provider.dart';
 import '../../../core/providers/memory_provider.dart';
 import '../../../core/services/chat/chat_service.dart';
+import '../../../core/utils/scheduler_idle.dart';
 import '../../../core/services/tts/tts_text_selection.dart';
 import '../../../core/services/haptics.dart';
 import '../../../core/services/notification_service.dart';
@@ -46,6 +48,7 @@ import 'stream_controller.dart' as stream_ctrl;
 import 'generation_controller.dart';
 import 'scroll_controller.dart' as scroll_ctrl;
 import 'home_view_model.dart';
+import '../services/context_usage_service.dart';
 import '../services/message_builder_service.dart';
 import '../services/message_generation_service.dart';
 import '../services/local_tools_service.dart';
@@ -227,6 +230,8 @@ class HomePageController extends ChangeNotifier {
   // App and route visibility determine whether a completion notification
   // would add value or merely duplicate content already on screen.
   bool _homeRouteVisible = true;
+  bool _homePresentationVisible = true;
+  bool _homeAppVisible = true;
   bool _chatInitialized = false;
   bool _openingNotificationConversation = false;
   String? _pendingNotificationConversationId;
@@ -254,6 +259,7 @@ class HomePageController extends ChangeNotifier {
 
   // Input bar measurement
   double _inputBarHeight = 72;
+  bool _inputBarExpanded = false;
 
   UserMessageEditState? _userMessageEditState;
 
@@ -410,8 +416,26 @@ class HomePageController extends ChangeNotifier {
       onStateChanged: () => notifyListeners(),
       getSettingsProvider: () => _context.read<SettingsProvider>(),
       getCurrentConversationId: () => currentConversation?.id,
-      onStreamTick: () => _scrollCtrl.autoScrollToBottomIfNeeded(),
+      onStreamTick: _handleStreamTick,
     );
+  }
+
+  /// Minimum gap between generation haptics. Stream ticks arrive every 50ms;
+  /// pulsing on each one blurs into a continuous buzz.
+  static const Duration _generateHapticInterval = Duration(milliseconds: 100);
+  final Stopwatch _generateHapticClock = Stopwatch();
+
+  void _handleStreamTick() {
+    _scrollCtrl.autoScrollToBottomIfNeeded();
+    if (!_context.read<SettingsProvider>().hapticsOnGenerate) return;
+    if (_generateHapticClock.isRunning &&
+        _generateHapticClock.elapsed < _generateHapticInterval) {
+      return;
+    }
+    _generateHapticClock
+      ..reset()
+      ..start();
+    Haptics.light();
   }
 
   void _initializeServices() {
@@ -477,6 +501,13 @@ class HomePageController extends ChangeNotifier {
   }
 
   void _initializeViewModel() {
+    ContextUsageService? contextUsage;
+    try {
+      contextUsage = _context.read<ContextUsageService>();
+    } catch (_) {}
+    contextUsage?.bindAssembler(
+      _messageGenerationService.previewContextAssembly,
+    );
     _viewModel = HomeViewModel(
       chatService: _chatService,
       messageBuilderService: _messageBuilderService,
@@ -486,9 +517,13 @@ class HomePageController extends ChangeNotifier {
       chatController: _chatController,
       contextProvider: _context,
       getTitleForLocale: _titleForLocale,
+      contextUsage: contextUsage,
     );
     _viewModel.onBackgroundTaskError = _showBackgroundTaskFailure;
-    _viewModel.addListener(notifyListeners);
+    _viewModel.addListener(() {
+      _streamController.refreshPresentation();
+      notifyListeners();
+    });
   }
 
   void _showBackgroundTaskFailure(BackgroundTaskKind task, Object error) {
@@ -563,12 +598,7 @@ class HomePageController extends ChangeNotifier {
   }
 
   String _localizeGenerationError(AppLocalizations l10n, String error) {
-    switch (error) {
-      case 'audio_attachment_unsupported':
-        return l10n.homePageAudioAttachmentUnsupported;
-      default:
-        return '${l10n.generationInterrupted}: $error';
-    }
+    return '${l10n.generationInterrupted}: $error';
   }
 
   void _initializeScrollController() {
@@ -825,6 +855,10 @@ class HomePageController extends ChangeNotifier {
         }
         onRevealConversation?.call();
         await switchConversationAnimated(conversationId);
+        final messageId = NotificationService.takePendingMessageId(
+          conversationId,
+        );
+        if (messageId != null) await scrollToMessageId(messageId);
       }
     } catch (error) {
       debugPrint('Failed to open chat completion notification: $error');
@@ -927,6 +961,16 @@ class HomePageController extends ChangeNotifier {
       }
       _chatInitialized = true;
       if (ScheduledTasksService.supported) {
+        if (ScheduledTasksService.instance.isIOS) {
+          final binding = _scheduledPreparation =
+              ScheduledTaskPreparationBinding(ScheduledTasksService.instance);
+          if (!_context.mounted) return;
+          await binding.attach(
+            _context,
+            _messageBuilderService,
+            _chatController,
+          );
+        }
         final executor = _scheduledExecutor =
             (task, cancellation, onConversation) => runScheduledTask(
               _context,
@@ -935,7 +979,7 @@ class HomePageController extends ChangeNotifier {
               cancellation,
               onConversation,
             );
-        unawaited(ScheduledTasksService.instance.attach(executor));
+        await ScheduledTasksService.instance.attach(executor);
       }
     } finally {
       _startupConversationPending = false;
@@ -964,10 +1008,8 @@ class HomePageController extends ChangeNotifier {
     if (ids.isEmpty) return;
     final Future<void> task;
     try {
-      task = SchedulerBinding.instance.scheduleTask(
-        () => warmUpRecentConversations(ids, serial),
-        Priority.idle,
-        debugLabel: 'home.startupWarmup',
+      task = waitForSchedulerIdle().then(
+        (_) => warmUpRecentConversations(ids, serial),
       );
     } catch (_) {
       // No scheduler binding (bare unit tests): warm-up is optional.
@@ -2515,7 +2557,14 @@ class HomePageController extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// While the composer fills the chat area its height says nothing about
+  /// the space the message list must keep clear, so it is not measured.
+  void setInputBarExpanded(bool expanded) {
+    _inputBarExpanded = expanded;
+  }
+
   void measureInputBar() {
+    if (_inputBarExpanded) return;
     try {
       final ctx = _inputBarKey.currentContext;
       if (ctx == null) return;
@@ -2880,10 +2929,8 @@ class HomePageController extends ChangeNotifier {
     return _generationController.isToolModel(providerKey, modelId);
   }
 
-  bool isReasoningEnabled(int? budget) {
-    if (budget == null) return true;
-    if (budget == -1) return true;
-    return budget >= 1024;
+  bool isReasoningEnabled(ReasoningRequest r) {
+    return _generationController.isReasoningEnabled(r);
   }
 
   // ============================================================================
@@ -2936,6 +2983,21 @@ class HomePageController extends ChangeNotifier {
   // ============================================================================
 
   void onAppLifecycleStateChanged(AppLifecycleState state) {
+    _homeAppVisible =
+        state != AppLifecycleState.paused &&
+        state != AppLifecycleState.hidden &&
+        state != AppLifecycleState.detached;
+    _streamController.setPresentationEnabled(
+      _homePresentationVisible && _homeAppVisible,
+    );
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.paused) {
+      unawaited(
+        ScheduledTasksService.instance.lifecycle(
+          state == AppLifecycleState.resumed,
+        ),
+      );
+    }
     if (state == AppLifecycleState.resumed) {
       ScreenWakelock.reassert();
     }
@@ -2956,6 +3018,11 @@ class HomePageController extends ChangeNotifier {
   void onDidPushNext() {
     _homeRouteVisible = false;
     dismissKeyboard();
+  }
+
+  void onHomeVisibilityChanged(bool visible) {
+    _homePresentationVisible = visible;
+    _streamController.setPresentationEnabled(visible && _homeAppVisible);
   }
 
   // ============================================================================
@@ -3068,10 +3135,12 @@ class HomePageController extends ChangeNotifier {
   // ============================================================================
 
   ScheduledTaskExecutor? _scheduledExecutor;
+  ScheduledTaskPreparationBinding? _scheduledPreparation;
 
   @override
   void dispose() {
     if (_scheduledExecutor case final executor?) {
+      _scheduledPreparation?.dispose();
       ScheduledTasksService.instance.detach(executor);
     }
     final background = MobileBackgroundCoordinator.instance;

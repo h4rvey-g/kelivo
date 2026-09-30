@@ -52,12 +52,20 @@ void main() {
           BusinessKeyDisposition.localOnly,
         );
         expect(
+          BusinessKeyRegistry.classify('linux_hide_title_bar_v1'),
+          BusinessKeyDisposition.localOnly,
+        );
+        expect(
           BusinessKeyRegistry.classify('pinned_chat_ids'),
           BusinessKeyDisposition.discarded,
         );
         expect(
           BusinessKeyRegistry.classify('plugin_future_key_v1'),
           BusinessKeyDisposition.unknownPreference,
+        );
+        expect(
+          BusinessKeyRegistry.classify('reasoning_choice_by_model_v1'),
+          BusinessKeyDisposition.preference,
         );
       },
     );
@@ -89,7 +97,8 @@ void main() {
           'providers_order_v1': <String>['first', 'orphan'],
           'theme_mode_v1': 'dark',
           'use_dynamic_color_v1': false,
-          'thinking_budget_v1': 4096,
+          'reasoning_choice_by_model_v1':
+              '{"OpenAI::gpt-test":{"level":"high","budgetTokens":32000}}',
           'tts_speech_rate_v1': 0.75,
           'pinned_models_v1': jsonEncode(['first/model-a']),
           'plugin_future_key_v1': <String>['one', 'two'],
@@ -777,6 +786,38 @@ void main() {
             'search_services_v1',
           ),
         ),
+      );
+    });
+
+    test('accepts and preserves Kagi search credentials', () {
+      final snapshot = BusinessSettingsRouter.normalizeAndRoute({
+        'search_services_v1': jsonEncode([
+          {
+            'id': 'kagi-1',
+            'type': 'kagi',
+            'apiKey': 'primary-key',
+            'apiKeys': ['backup-key'],
+          },
+        ]),
+      });
+
+      final exported = BusinessSettingsRouter.exportSnapshot(snapshot);
+      expect(jsonDecode(exported['search_services_v1']! as String), [
+        {
+          'id': 'kagi-1',
+          'type': 'kagi',
+          'apiKey': 'primary-key',
+          'apiKeys': ['backup-key'],
+        },
+      ]);
+
+      expect(
+        () => BusinessSettingsRouter.normalizeAndRoute({
+          'search_services_v1': jsonEncode([
+            {'id': 'kagi-invalid', 'type': 'kagi', 'apiKey': 123},
+          ]),
+        }),
+        throwsA(isA<FormatException>()),
       );
     });
 

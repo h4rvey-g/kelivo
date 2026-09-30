@@ -4,6 +4,7 @@ import '../../../models/message_part.dart';
 import '../../../models/token_usage.dart';
 import '../generation/text_generation_result.dart';
 import 'stream_chunk.dart';
+import 'stream_text_buffer.dart';
 
 /// Folds [StreamChunk] events into an ordered [MessagePart] list.
 ///
@@ -25,6 +26,8 @@ class StreamChunkHandler {
   final void Function(RetryPending pending)? onRetry;
 
   final List<MessagePart> _parts = <MessagePart>[];
+  final Map<int, StreamTextBuffer> _textBuffers = {};
+  List<MessagePart>? _snapshot;
   final Map<String, int> _textIndex = <String, int>{};
   final Map<String, int> _reasoningIndex = <String, int>{};
   final Map<String, int> _imageIndex = <String, int>{};
@@ -35,19 +38,53 @@ class StreamChunkHandler {
   final Map<String, StringBuffer> _imageBuffers = <String, StringBuffer>{};
 
   TokenUsage? usage;
+  TokenUsage? _completedUsage;
+  TokenUsage? _resultTotalUsage;
+
+  /// All API requests in this turn. [usage] remains the latest request only.
+  TokenUsage? get totalUsage =>
+      _resultTotalUsage ??
+      (_completedUsage == null
+          ? usage
+          : _completedUsage! + (usage ?? const TokenUsage()));
   dynamic reasoningDetails;
   bool finished = false;
   String? finishReason;
 
-  List<MessagePart> get parts => List<MessagePart>.unmodifiable(_parts);
+  List<MessagePart> get parts {
+    if (_snapshot != null) return _snapshot!;
+    for (final index in _textBuffers.keys) {
+      _flushText(index);
+    }
+    return _snapshot = List<MessagePart>.unmodifiable(_parts);
+  }
+
+  void _flushText(int index) {
+    final buffer = _textBuffers[index];
+    if (buffer == null) return;
+    final current = _parts[index];
+    final text = buffer.value;
+    if (current is TextPart && current.text != text) {
+      _parts[index] = TextPart(text);
+    } else if (current is ReasoningPart && current.text != text) {
+      _parts[index] = ReasoningPart(text);
+    }
+  }
+
+  void _endText(int? index) {
+    if (index == null) return;
+    _flushText(index);
+    _textBuffers.remove(index);
+  }
 
   TextGenerationResult toResult() {
     return TextGenerationResult(
       parts: [
-        for (final part in _parts)
+        for (final part in parts)
           if (!_isBlankPart(part)) part,
       ],
       usage: usage,
+      totalUsage: totalUsage,
       finishReason: finishReason,
       reasoningDetails: reasoningDetails,
     );
@@ -64,6 +101,7 @@ class StreamChunkHandler {
   /// Merge a complete non-stream result. Image URIs are kept as-is.
   void handleResult(TextGenerationResult result) {
     if (finished) return;
+    _snapshot = null;
     for (final part in result.parts) {
       switch (part) {
         case TextPart(:final text) when text.isEmpty:
@@ -79,6 +117,7 @@ class StreamChunkHandler {
     if (result.usage != null) {
       usage = (usage ?? const TokenUsage()).merge(result.usage!);
     }
+    _resultTotalUsage = result.totalUsage;
     if (result.reasoningDetails != null) {
       reasoningDetails = result.reasoningDetails;
     }
@@ -114,26 +153,25 @@ class StreamChunkHandler {
 
   void handle(StreamChunk chunk) {
     if (finished) return;
+    _snapshot = null;
     switch (chunk) {
       case TextStart(:final id):
         _ensureText(id);
       case TextDelta(:final id, :final text):
         if (text.isEmpty) return;
         final index = _ensureText(id);
-        final current = _parts[index] as TextPart;
-        _parts[index] = TextPart(current.text + text);
+        _textBuffers.putIfAbsent(index, StreamTextBuffer.new).add(text);
       case TextEnd(:final id):
-        _textIndex.remove(id);
+        _endText(_textIndex.remove(id));
       case ReasoningStart(:final id):
         _ensureReasoning(id);
       case ReasoningDelta(:final id, :final text, :final details):
         if (details != null) reasoningDetails = details;
         if (text.isEmpty) return;
         final index = _ensureReasoning(id);
-        final current = _parts[index] as ReasoningPart;
-        _parts[index] = ReasoningPart(current.text + text);
+        _textBuffers.putIfAbsent(index, StreamTextBuffer.new).add(text);
       case ReasoningEnd(:final id):
-        _reasoningIndex.remove(id);
+        _endText(_reasoningIndex.remove(id));
       case ToolCallStart(:final id, :final toolName, :final metadata):
         _upsertTool(id, name: toolName, metadata: metadata);
       case ToolCallDelta(
@@ -250,13 +288,23 @@ class StreamChunkHandler {
           content: _mergeSearchItems(existing?.content, items),
           server: true,
         );
-      case Usage(:final usage):
+      case Usage(:final usage, :final startsRequest):
+        if (startsRequest) {
+          if (this.usage != null) {
+            _completedUsage =
+                (_completedUsage ?? const TokenUsage()) + this.usage!;
+          }
+          this.usage = null;
+        }
         this.usage = (this.usage ?? const TokenUsage()).merge(usage);
       case final RetryPending pending:
         onRetry?.call(pending);
       case RetryAttemptStart():
         break;
       case Finish(:final finishReason):
+        for (final index in _textBuffers.keys.toList()) {
+          _endText(index);
+        }
         this.finishReason = finishReason;
         finished = true;
         // Tool payloads were encoded while the turn was still streaming, so

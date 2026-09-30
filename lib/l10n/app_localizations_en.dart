@@ -466,6 +466,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statsPageLaunchCount => 'App Launches';
 
   @override
+  String statsPageCost(String currency) {
+    return 'Cost ($currency)';
+  }
+
+  @override
+  String statsPageModelsWithoutPricing(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count models without pricing',
+      one: '$count model without pricing',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get statsPageUsageTrendTitle => 'Usage Trend';
 
   @override
@@ -766,10 +782,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homePagePleaseSelectModel => 'Please select a model first';
 
   @override
-  String get homePageAudioAttachmentUnsupported =>
-      'The current model does not support audio attachments. Switch to a model that supports audio input or remove the audio file and try again.';
-
-  @override
   String get homePagePleaseSetupTranslateModel =>
       'Please set a translation model first';
 
@@ -821,9 +833,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get assistantEditPageNotFound => 'Assistant not found';
-
-  @override
-  String get assistantEditPageWorkspaceTab => 'Workspace';
 
   @override
   String get assistantEditPageBasicTab => 'Basic';
@@ -1017,7 +1026,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Enable streaming responses';
 
   @override
-  String get assistantEditThinkingBudgetTitle => 'Thinking Budget';
+  String get assistantEditThinkingBudgetTitle => 'Thinking';
+
+  @override
+  String get assistantEditReasoningFollowDefault => 'Follow model default';
+
+  @override
+  String get assistantEditReasoningClampedSubtitle =>
+      'The actual level is clamped to what each model supports';
 
   @override
   String get assistantEditConfigureButton => 'Configure';
@@ -2437,63 +2453,102 @@ class AppLocalizationsEn extends AppLocalizations {
   String get messageMoreSheetDeleteAllVersions => 'Delete All Versions';
 
   @override
-  String get reasoningBudgetSheetOff => 'Off';
-
-  @override
-  String get reasoningBudgetSheetAuto => 'Auto';
-
-  @override
-  String get reasoningBudgetSheetLight => 'Light Reasoning';
-
-  @override
-  String get reasoningBudgetSheetMedium => 'Medium Reasoning';
-
-  @override
-  String get reasoningBudgetSheetHeavy => 'Heavy Reasoning';
-
-  @override
-  String get reasoningBudgetSheetXhigh => 'Extreme Reasoning';
-
-  @override
-  String get reasoningBudgetSheetMax => 'Maximum Reasoning';
-
-  @override
   String get reasoningBudgetSheetTitle => 'Reasoning Chain Strength';
 
   @override
-  String reasoningBudgetSheetCurrentLevel(String level) {
-    return 'Current Level: $level';
-  }
+  String get reasoningLevelSheetTitle => 'Reasoning';
 
   @override
-  String get reasoningBudgetSheetOffSubtitle =>
-      'Turn off reasoning, answer directly';
+  String get reasoningLevelAuto => 'Auto';
 
   @override
-  String get reasoningBudgetSheetAutoSubtitle =>
-      'Let the model decide reasoning level automatically';
+  String get reasoningLevelAutoSubtitle => 'Uses the model or provider default';
 
   @override
-  String get reasoningBudgetSheetLightSubtitle =>
+  String get reasoningLevelOff => 'Off';
+
+  @override
+  String get reasoningLevelOffSubtitle =>
+      'Turn off reasoning and answer directly';
+
+  @override
+  String get reasoningLevelMinimal => 'Minimal';
+
+  @override
+  String get reasoningLevelMinimalSubtitle =>
+      'Use the lightest reasoning to answer questions';
+
+  @override
+  String get reasoningLevelLow => 'Low';
+
+  @override
+  String get reasoningLevelLowSubtitle =>
       'Use light reasoning to answer questions';
 
   @override
-  String get reasoningBudgetSheetMediumSubtitle =>
+  String get reasoningLevelMedium => 'Medium';
+
+  @override
+  String get reasoningLevelMediumSubtitle =>
       'Use moderate reasoning to answer questions';
 
   @override
-  String get reasoningBudgetSheetHeavySubtitle =>
+  String get reasoningLevelHigh => 'High';
+
+  @override
+  String get reasoningLevelHighSubtitle =>
       'Use heavy reasoning for complex questions';
 
   @override
-  String get reasoningBudgetSheetXhighSubtitle =>
+  String get reasoningLevelXhigh => 'Extra High';
+
+  @override
+  String get reasoningLevelXhighSubtitle =>
+      'Use very high reasoning depth for harder problems';
+
+  @override
+  String get reasoningLevelMax => 'Max';
+
+  @override
+  String get reasoningLevelMaxSubtitle =>
       'Use maximum reasoning depth for the toughest problems';
 
   @override
-  String get reasoningBudgetSheetCustomLabel => 'Custom Reasoning Budget';
+  String get reasoningLevelFollowModelDefaultSubtitle =>
+      'Use the model\'s default when the assistant doesn\'t set one';
 
   @override
-  String get reasoningBudgetSheetCustomHint => 'e.g. 2048 (-1 auto, 0 off)';
+  String get reasoningLevelNoReasoning =>
+      'This model does not support reasoning';
+
+  @override
+  String get reasoningLevelCustomBudget => 'Custom Reasoning Budget';
+
+  @override
+  String get reasoningLevelCustomBudgetHint => 'Token budget, e.g. 2048';
+
+  @override
+  String get reasoningLevelCompactMin => 'min';
+
+  @override
+  String get reasoningLevelCompactLow => 'low';
+
+  @override
+  String get reasoningLevelCompactMid => 'mid';
+
+  @override
+  String get reasoningLevelCompactHigh => 'high';
+
+  @override
+  String get reasoningLevelCompactXhigh => 'xhigh';
+
+  @override
+  String get reasoningLevelCompactMax => 'max';
+
+  @override
+  String reasoningLevelBudgetTokens(String budget) {
+    return '$budget tokens';
+  }
 
   @override
   String chatMessageWidgetFileNotFound(String fileName) {
@@ -3215,6 +3270,84 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatInputBarCollapse => 'Collapse';
 
   @override
+  String get contextUsageTitle => 'Context window';
+
+  @override
+  String get contextUsageStateExact => 'Exact (from last response)';
+
+  @override
+  String get contextUsageStateExactCalibrated =>
+      'Exact (breakdown scaled from estimate)';
+
+  @override
+  String get contextUsageStateEstimated => 'Estimated';
+
+  @override
+  String get contextUsageStateStale => 'Stale, updating…';
+
+  @override
+  String get contextUsageStateComputing => 'Computing…';
+
+  @override
+  String get contextUsageStateNone => 'No data yet';
+
+  @override
+  String get contextUsageBucketSystem => 'System prompt';
+
+  @override
+  String get contextUsageBucketInjections => 'Instruction injections';
+
+  @override
+  String get contextUsageBucketHistory => 'Messages';
+
+  @override
+  String get contextUsageBucketTools => 'Built-in tools';
+
+  @override
+  String get contextUsageBucketMemory => 'Memory';
+
+  @override
+  String get contextUsageBucketWorldBook => 'World books';
+
+  @override
+  String get contextUsageBucketSkills => 'Skills';
+
+  @override
+  String get contextUsageBucketWorkspace => 'Workspace';
+
+  @override
+  String get contextUsageBucketSearch => 'Search prompt';
+
+  @override
+  String get contextUsageBucketMcpTools => 'MCP tools';
+
+  @override
+  String get contextUsageBucketAttachments => 'Attachments';
+
+  @override
+  String get contextUsageBucketDraft => 'Draft';
+
+  @override
+  String get contextUsageBucketUsed => 'Used';
+
+  @override
+  String get contextUsageFreeSpace => 'Free space';
+
+  @override
+  String contextUsageUsedWindow(String used, String window, int percent) {
+    return '$used / $window ($percent%)';
+  }
+
+  @override
+  String get contextUsageNoWindow => 'No context window';
+
+  @override
+  String get contextUsageSetWindow => 'Set context window';
+
+  @override
+  String get contextUsageRefresh => 'Refresh';
+
+  @override
   String get mcpPageBackTooltip => 'Back';
 
   @override
@@ -3625,11 +3758,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Required, suggest lowercase/digits/hyphens';
 
   @override
-  String modelDetailSheetModelIdDisabledHint(String modelId) {
-    return '$modelId';
-  }
-
-  @override
   String get modelDetailSheetModelNameLabel => 'Model Name';
 
   @override
@@ -3684,13 +3812,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get modelDetailSheetBuiltinToolsDescription =>
       'Built-in tools depend on the provider and API mode.';
-
-  @override
-  String get modelDetailSheetSearchTool => 'Search';
-
-  @override
-  String get modelDetailSheetSearchToolDescription =>
-      'Enable Google Search integration';
 
   @override
   String get modelDetailSheetUrlContextTool => 'URL Context';
@@ -3767,9 +3888,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Please enter a valid model ID (>=2 chars)';
 
   @override
-  String get modelDetailSheetModelIdExistsError => 'Model ID already exists';
-
-  @override
   String get modelDetailSheetHeaderKeyHint => 'Header Key';
 
   @override
@@ -3780,6 +3898,309 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelDetailSheetBodyJsonHint => 'Body JSON';
+
+  @override
+  String get modelSpecFormSourceCustom => 'Custom';
+
+  @override
+  String get modelSpecFormSourceCatalog => 'Catalog';
+
+  @override
+  String get modelSpecFormSourceInferred => 'Inferred';
+
+  @override
+  String get modelSpecFormSourceDefault => 'Default';
+
+  @override
+  String get modelSpecFormReset => 'Reset to default';
+
+  @override
+  String get modelSpecFormModalitiesSection => 'Modalities & abilities';
+
+  @override
+  String get modelSpecFormImageType => 'Image';
+
+  @override
+  String get modelSpecFormAudioMode => 'Audio';
+
+  @override
+  String get modelSpecFormVideoMode => 'Video';
+
+  @override
+  String get modelSpecFormPdfMode => 'PDF';
+
+  @override
+  String get modelSpecFormStructuredOutputAbility => 'Structured Output';
+
+  @override
+  String get modelSpecFormReasoningSection => 'Reasoning';
+
+  @override
+  String get modelSpecFormDialect => 'Dialect';
+
+  @override
+  String get modelSpecFormDialectNone => 'None';
+
+  @override
+  String get modelSpecFormDialectNoneSubtitle => 'No reasoning fields';
+
+  @override
+  String get modelSpecFormDialectOpenaiReasoningEffort =>
+      'OpenAI reasoning effort';
+
+  @override
+  String get modelSpecFormDialectOpenaiReasoningEffortSubtitle =>
+      'reasoning_effort';
+
+  @override
+  String get modelSpecFormDialectOpenaiResponsesReasoning =>
+      'OpenAI Responses reasoning';
+
+  @override
+  String get modelSpecFormDialectOpenaiResponsesReasoningSubtitle =>
+      'reasoning.effort';
+
+  @override
+  String get modelSpecFormDialectOpenrouterReasoning => 'OpenRouter reasoning';
+
+  @override
+  String get modelSpecFormDialectOpenrouterReasoningSubtitle => 'reasoning';
+
+  @override
+  String get modelSpecFormDialectAnthropicBudget => 'Anthropic budget';
+
+  @override
+  String get modelSpecFormDialectAnthropicBudgetSubtitle =>
+      'thinking.budget_tokens';
+
+  @override
+  String get modelSpecFormDialectAnthropicAdaptiveEffort =>
+      'Anthropic adaptive effort';
+
+  @override
+  String get modelSpecFormDialectAnthropicAdaptiveEffortSubtitle =>
+      'thinking + output_config.effort';
+
+  @override
+  String get modelSpecFormDialectAnthropicEffort => 'Anthropic effort';
+
+  @override
+  String get modelSpecFormDialectAnthropicEffortSubtitle =>
+      'thinking + output_config.effort';
+
+  @override
+  String get modelSpecFormDialectGeminiThinkingBudget =>
+      'Gemini thinking budget';
+
+  @override
+  String get modelSpecFormDialectGeminiThinkingBudgetSubtitle =>
+      'thinkingConfig.thinkingBudget';
+
+  @override
+  String get modelSpecFormDialectGeminiThinkingLevel => 'Gemini thinking level';
+
+  @override
+  String get modelSpecFormDialectGeminiThinkingLevelSubtitle =>
+      'thinkingConfig.thinkingLevel';
+
+  @override
+  String get modelSpecFormDialectQwenEnableThinking => 'Qwen enable thinking';
+
+  @override
+  String get modelSpecFormDialectQwenEnableThinkingSubtitle =>
+      'enable_thinking';
+
+  @override
+  String get modelSpecFormDialectThinkingType => 'Thinking type';
+
+  @override
+  String get modelSpecFormDialectThinkingTypeSubtitle => 'thinking.type';
+
+  @override
+  String get modelSpecFormDialectSiliconflowEnableThinking =>
+      'SiliconFlow enable thinking';
+
+  @override
+  String get modelSpecFormDialectSiliconflowEnableThinkingSubtitle =>
+      'enable_thinking';
+
+  @override
+  String get modelSpecFormDialectInternThinkingMode => 'Intern thinking mode';
+
+  @override
+  String get modelSpecFormDialectInternThinkingModeSubtitle => 'thinking_mode';
+
+  @override
+  String get modelSpecFormDialectChatTemplateKwargs => 'Chat template kwargs';
+
+  @override
+  String get modelSpecFormDialectChatTemplateKwargsSubtitle =>
+      'chat_template_kwargs.enable_thinking';
+
+  @override
+  String get modelSpecFormDialectKimiThinking => 'Kimi thinking';
+
+  @override
+  String get modelSpecFormDialectKimiThinkingSubtitle => 'thinking';
+
+  @override
+  String get modelSpecFormDialectCustom => 'Custom JSON';
+
+  @override
+  String get modelSpecFormDialectCustomSubtitle => 'Per-level JSON patch';
+
+  @override
+  String get modelSpecFormLevels => 'Supported levels';
+
+  @override
+  String get modelSpecFormCanDisable => 'Allow disabling';
+
+  @override
+  String get modelSpecFormDefaultLevel => 'Default level';
+
+  @override
+  String get modelSpecFormBudgets => 'Token budgets';
+
+  @override
+  String modelSpecFormBudgetPlaceholder(String tokens) {
+    return '$tokens';
+  }
+
+  @override
+  String modelSpecFormCustomPatch(String level) {
+    return 'JSON patch ($level)';
+  }
+
+  @override
+  String get modelSpecFormCustomPatchHint => 'e.g. reasoning_effort: high';
+
+  @override
+  String get modelSpecFormInvalidJson =>
+      'Custom reasoning patch must be a valid JSON object';
+
+  @override
+  String get modelSpecFormInvalidNumber => 'Please enter a valid number';
+
+  @override
+  String get modelSpecFormStrategySection => 'Strategy';
+
+  @override
+  String get modelSpecFormSampling => 'Sampling';
+
+  @override
+  String get modelSpecFormRequestQuirks => 'Request compatibility';
+
+  @override
+  String get modelSpecFormDynamicWebSearch => 'Dynamic filtering search tools';
+
+  @override
+  String get modelSpecFormDynamicWebSearchSubtitle =>
+      'When dynamic filtering is on, send the 2026-03-18 web search and fetch tools';
+
+  @override
+  String get modelSpecFormRemoteImageUrls => 'Remote image links';
+
+  @override
+  String get modelSpecFormRemoteImageUrlsSubtitle =>
+      'Send http(s) image links as-is; when off, remote links are dropped and only local images are sent';
+
+  @override
+  String get modelSpecFormPromptCacheControl => 'Prompt cache marker';
+
+  @override
+  String get modelSpecFormPromptCacheControlSubtitle =>
+      'When prompt caching is on, add cache_control to OpenRouter requests';
+
+  @override
+  String get modelSpecFormSamplingAlways => 'Always';
+
+  @override
+  String get modelSpecFormSamplingAlwaysSubtitle =>
+      'Keep temperature and other sampling fields';
+
+  @override
+  String get modelSpecFormSamplingOnlyWhenReasoningOff =>
+      'Only when reasoning is off';
+
+  @override
+  String get modelSpecFormSamplingOnlyWhenReasoningOffSubtitle =>
+      'Strip sampling fields while the model is thinking';
+
+  @override
+  String get modelSpecFormSamplingNever => 'Never';
+
+  @override
+  String get modelSpecFormSamplingNeverSubtitle =>
+      'Always strip sampling fields';
+
+  @override
+  String get modelSpecFormReplay => 'Reasoning replay';
+
+  @override
+  String get modelSpecFormReplayNone => 'None';
+
+  @override
+  String get modelSpecFormReplayNoneSubtitle =>
+      'Do not send prior reasoning back to the model';
+
+  @override
+  String get modelSpecFormReplayToolTurns => 'Tool turns';
+
+  @override
+  String get modelSpecFormReplayToolTurnsSubtitle =>
+      'Replay reasoning on tool-call turns';
+
+  @override
+  String get modelSpecFormReplayAll => 'All';
+
+  @override
+  String get modelSpecFormReplayAllSubtitle =>
+      'Replay reasoning on every follow-up turn';
+
+  @override
+  String get modelSpecFormReplayField => 'Replay field';
+
+  @override
+  String get modelSpecFormReplayFieldReasoningContent => 'reasoning_content';
+
+  @override
+  String get modelSpecFormReplayFieldReasoning => 'reasoning';
+
+  @override
+  String get modelSpecFormReplayFieldReasoningDetails => 'reasoning_details';
+
+  @override
+  String get modelSpecFormLimitsSection => 'Limits';
+
+  @override
+  String get modelSpecFormLimitsPricingSection => 'Limits & pricing';
+
+  @override
+  String get modelSpecFormContextWindow => 'Context window';
+
+  @override
+  String get modelSpecFormMaxOutput => 'Max output';
+
+  @override
+  String get modelSpecFormPricingSection => 'Pricing / 1M';
+
+  @override
+  String get modelSpecFormPricingInput => 'Input';
+
+  @override
+  String get modelSpecFormPricingOutput => 'Output';
+
+  @override
+  String get modelSpecFormPricingCacheRead => 'Cache read';
+
+  @override
+  String get modelSpecFormPricingCacheWrite => 'Cache write';
+
+  @override
+  String get modelSpecFormCurrency => 'Currency';
+
+  @override
+  String get modelSpecFormAdvancedSection => 'Request';
 
   @override
   String get modelSelectSheetSearchHint => 'Search models or providers';
@@ -4053,6 +4474,43 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get providersPageProviderAddedSnackbar => 'Provider added';
+
+  @override
+  String get modelCatalogTitle => 'Model catalog';
+
+  @override
+  String modelCatalogSourceBundled(String date) {
+    return 'Bundled snapshot · $date';
+  }
+
+  @override
+  String modelCatalogSourceRemote(String date) {
+    return 'models.dev · updated $date';
+  }
+
+  @override
+  String get modelCatalogAutoUpdate => 'Auto-update every 24 hours';
+
+  @override
+  String get modelCatalogRefresh => 'Update now';
+
+  @override
+  String get modelCatalogUpdated => 'Model catalog updated';
+
+  @override
+  String modelCatalogRefreshFailed(String error) {
+    return 'Update failed: $error';
+  }
+
+  @override
+  String modelCatalogProviderCount(int count) {
+    return '$count providers';
+  }
+
+  @override
+  String modelCatalogModelCount(int count) {
+    return '$count models';
+  }
 
   @override
   String get providerGroupsGroupLabel => 'Group';
@@ -4750,6 +5208,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Show Token & Context Stats';
 
   @override
+  String get displaySettingsPageShowTotalTokensTitle =>
+      'Show tokens for the entire turn';
+
+  @override
+  String get displaySettingsPageShowTotalTokensSubtitle =>
+      'Sum usage across all API requests in a reply. When off, show only the final request. Statistics always include all requests.';
+
+  @override
   String get displaySettingsPageShowTokenStatsSubtitle =>
       'Show token usage and message count';
 
@@ -4766,6 +5232,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get displaySettingsPageShowToolCardsSubtitle =>
       'When off, tool-use cards are hidden in chat.';
+
+  @override
+  String get displaySettingsShowReasoningLevelBadge =>
+      'Show reasoning level on the button';
+
+  @override
+  String get displaySettingsShowReasoningLevelBadgeSubtitle =>
+      'Show the current level next to the reasoning icon in the input bar';
 
   @override
   String get displaySettingsPageAutoCollapseThinkingTitle =>
@@ -5014,6 +5488,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get desktopSettingsFontsTitle => 'Fonts';
+
+  @override
+  String get linuxHideTitleBarTitle => 'Hide system title bar';
+
+  @override
+  String get linuxHideTitleBarDescription =>
+      'Also hides window buttons. Use your window manager to move, resize, and close the window.';
+
+  @override
+  String get linuxHideTitleBarError =>
+      'Unable to change the title bar. Please try again.';
 
   @override
   String get displaySettingsPageTrayTitle => 'System Tray';
@@ -5876,6 +6361,20 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get searchProviderAnySearchDescription =>
       'Unified search for AI agents with automatic routing across web and specialist data sources. API key is optional.';
+
+  @override
+  String get searchServiceNameKagi => 'Kagi';
+
+  @override
+  String get searchProviderKagiDescription =>
+      'Kagi Search API. Returns premium web search results from Kagi.';
+
+  @override
+  String get searchServiceNameKimi => 'Kimi';
+
+  @override
+  String get searchProviderKimiDescription =>
+      'Kimi Search API. Pro returns relevant web content excerpts; Basic returns titles, links, and snippets.';
 
   @override
   String get searchServiceNameParallel => 'Parallel';
@@ -8080,8 +8579,28 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String tokenDetailFirstToken(String value) {
+    return '${value}s (first token)';
+  }
+
+  @override
   String tokenDetailTotalTokens(int count) {
     return '$count tokens';
+  }
+
+  @override
+  String tokenDetailReasoningTokens(int count) {
+    return '$count tokens';
+  }
+
+  @override
+  String tokenDetailCacheWriteTokens(int count) {
+    return '$count cache write tokens';
+  }
+
+  @override
+  String tokenDetailCost(String amount) {
+    return '$amount';
   }
 
   @override
@@ -9455,6 +9974,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workspaceToolTitleReadFile => 'Read file';
 
   @override
+  String get workspaceToolTitleViewImage => 'View image';
+
+  @override
   String get workspaceToolTitleWriteFile => 'Write file';
 
   @override
@@ -10007,7 +10529,30 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workspaceEntryDefaultWorkspaceSubtitle =>
-      'New conversations with this assistant start bound to this workspace.';
+      'New conversations use this workspace. Existing conversations stay unchanged.';
+
+  @override
+  String get workspaceEntryDefaultWorkspaceUnset => 'Not set';
+
+  @override
+  String get workspaceEntryDefaultWorkspaceAutomaticSubtitle =>
+      'The first workspace you bind to a conversation will be remembered for new conversations.';
+
+  @override
+  String workspaceBindingRememberedDefault(String assistant) {
+    return 'Remembered as the default workspace for “$assistant”. New conversations will use it.';
+  }
+
+  @override
+  String workspaceBindingSuggestDefault(String assistant) {
+    return 'Use this workspace for future conversations with “$assistant” too?';
+  }
+
+  @override
+  String get workspaceBindingUndoDefault => 'Undo';
+
+  @override
+  String get workspaceBindingUseAsDefault => 'Set as default';
 
   @override
   String get workspaceEntryNone => 'None';
@@ -10743,6 +11288,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Read files with line numbers and paging.';
 
   @override
+  String get workspaceToolHelpViewImage =>
+      'Let the model inspect an image from the workspace.';
+
+  @override
   String get workspaceToolHelpWrite =>
       'Create files or overwrite their contents.';
 
@@ -11016,21 +11565,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get displaySettingsPageShowProducedFilesSubtitle =>
       'Show files created or modified by tools below replies.';
-
-  @override
-  String get reasoningBudgetSliderLow => 'Low';
-
-  @override
-  String get reasoningBudgetSliderMedium => 'Medium';
-
-  @override
-  String get reasoningBudgetSliderHigh => 'High';
-
-  @override
-  String get reasoningBudgetSliderXhigh => 'XHigh';
-
-  @override
-  String get reasoningBudgetSliderMax => 'Max';
 
   @override
   String get defaultModelPagePerChatModelTitle => 'Per-Chat Model';
@@ -11981,6 +12515,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String oauthUsedValue(String value) {
+    return 'Used $value';
+  }
+
+  @override
   String get oauthNetworkError =>
       'Could not connect. Check your network and try again.';
 
@@ -12045,4 +12584,332 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get oauthPromptCachingHelp =>
       'Reuse context across messages and choose how long the cache is retained.';
+
+  @override
+  String get scheduledTasksPreparation => 'Execution and notifications';
+
+  @override
+  String get scheduledTasksAllowPreparation => 'Allow advance preparation';
+
+  @override
+  String get scheduledTasksPreparationDetail =>
+      'Advance preparation is for text tasks that do not need current information. It cannot use tools or attachments, or perform external actions.';
+
+  @override
+  String get scheduledTasksIOSDetail =>
+      'iOS background limits prevent Kelivo from waking at a set time to run a model. Instead, content is prepared while the app can run, and the system shows a notification at the scheduled time. Only the next occurrence is prepared. Preparation may not finish after leaving the app; reopen Kelivo to prepare subsequent occurrences.';
+
+  @override
+  String get scheduledTasksContextPolicy => 'Conversation context';
+
+  @override
+  String get scheduledTasksContextLatest => 'Follow the latest conversation';
+
+  @override
+  String get scheduledTasksContextSnapshot => 'Use the prepared snapshot';
+
+  @override
+  String get scheduledTasksUnavailable => 'When unable to execute';
+
+  @override
+  String get scheduledTasksRemind => 'Send a reminder only';
+
+  @override
+  String get scheduledTasksSkip => 'Skip this occurrence';
+
+  @override
+  String get scheduledTasksNotify => 'Result notifications';
+
+  @override
+  String get scheduledTasksShowPreview => 'Show result text in notifications';
+
+  @override
+  String get scheduledTasksPreparationWindow => 'Prepare up to';
+
+  @override
+  String get scheduledTasksPreparationAttempts => 'Automatic attempt limit';
+
+  @override
+  String get scheduledTasksPreparationCooldown => 'Minimum interval (minutes)';
+
+  @override
+  String get scheduledTasksPreparationBudget =>
+      'At most one preparation at a time across all tasks. Automatic preparation pauses after six total attempts per hour, including cancelled requests. Prepare now is not limited by attempt counts.';
+
+  @override
+  String get scheduledTasksPreparing => 'Preparing result';
+
+  @override
+  String get scheduledTasksPrepared => 'Result prepared';
+
+  @override
+  String get scheduledTasksPendingPreparation => 'Result not prepared yet';
+
+  @override
+  String get scheduledTasksNotificationRegistered => 'Notification scheduled';
+
+  @override
+  String get scheduledTasksNotificationUnavailable =>
+      'Notification not scheduled';
+
+  @override
+  String get scheduledTasksReminded => 'Due · reminder only';
+
+  @override
+  String get scheduledTasksSkipped => 'Skipped';
+
+  @override
+  String get scheduledTasksCancelled => 'Cancelled';
+
+  @override
+  String get scheduledTasksReminderBody =>
+      'Your scheduled task is due. Open Kelivo to continue.';
+
+  @override
+  String get scheduledTasksResultBody => 'Your scheduled task result is ready.';
+
+  @override
+  String get scheduledTasksNotificationPermission => 'Allow task notifications';
+
+  @override
+  String get scheduledTasksPreparationCost =>
+      'Preparation calls the model and may cost extra. With “Follow latest conversation”, new messages before the due time can invalidate a prepared result. Unused or cancelled output may still be billed, and preparing again makes another model request.';
+
+  @override
+  String get scheduledTasksAllowPreparationTip =>
+      'Generate the next result before its scheduled time, while Kelivo can run. The result stays out of the chat until it is due. Preparation uses text only, without tools, attachments or custom request bodies. It may incur model charges.';
+
+  @override
+  String get scheduledTasksContextPolicyTip =>
+      'Follow latest conversation: before the task is due, new messages, edits or switching message versions invalidate the prepared result; preparing again uses another attempt and may cost extra. Once due, the saved notification result is added to the chat unchanged.\n\nUse preparation snapshot: keep the prepared result even if the conversation changes. It will not reflect later messages.';
+
+  @override
+  String get scheduledTasksPreparationWindowTip =>
+      'How far ahead of the scheduled time preparation may begin, up to 24 hours. For example, opening Kelivo at noon can prepare the next morning’s reminder. A larger window gives more chances to prepare, but the result may be less current. It does not change the scheduled time or guarantee background execution. Prepare now bypasses this automatic waiting period and all attempt limits.';
+
+  @override
+  String get scheduledTasksPreparationAttemptsTip =>
+      'Automatic preparation pauses when this occurrence reaches the total attempt limit. First attempts, failures, cancellations and manual preparation all count in the record. Prepare now can still run after this limit is reached. More attempts may incur more model charges; this is not a spending limit.';
+
+  @override
+  String get scheduledTasksPreparationCooldownTip =>
+      'Minimum time between the start of preparation attempts for the same occurrence. Waiting longer reduces repeated requests. A retry still needs the app to be able to run; it is not a background timer. Prepare now bypasses this automatic waiting period and all attempt limits.';
+
+  @override
+  String get scheduledTasksUnavailableTip =>
+      'If no prepared result is available and the task cannot run when due, send a reminder or skip the occurrence. A reminder contains no generated answer and requires notifications to be enabled. If Kelivo is open when the task is due, it can run the task then.';
+
+  @override
+  String get scheduledTasksNotifyTip =>
+      'Allow result notifications and fallback reminders. Turning this off does not stop the task or model calls, and does not prevent preparation charges. System notification permission is also required.';
+
+  @override
+  String get scheduledTasksShowPreviewTip =>
+      'Show the prepared result text in the notification, including on the lock screen if allowed by system settings. Turn this off to show a generic notice; the full result remains available in the chat. Global notification privacy settings also apply.';
+
+  @override
+  String scheduledTasksHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hours',
+      one: '1 hour',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String scheduledTasksMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count minutes',
+      one: '1 minute',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get scheduledTasksPreparationOff => 'Preparation off';
+
+  @override
+  String get scheduledTasksPreparationQueued => 'Queued';
+
+  @override
+  String get scheduledTasksPreparationQueuedDetail =>
+      'Another task is being prepared. Eligible tasks continue in due-time order.';
+
+  @override
+  String get scheduledTasksPreparationIdle => 'Waiting for chat';
+
+  @override
+  String get scheduledTasksPreparationIdleDetail =>
+      'Preparation resumes after active replies finish and this task’s context settles.';
+
+  @override
+  String get scheduledTasksPreparationWindowWaiting =>
+      'Outside preparation window';
+
+  @override
+  String get scheduledTasksPreparationCooldownWaiting => 'Waiting to retry';
+
+  @override
+  String scheduledTasksPreparationRetryAt(String time) {
+    return 'Can retry after $time';
+  }
+
+  @override
+  String get scheduledTasksPreparationLimitReached =>
+      'Automatic attempt limit reached';
+
+  @override
+  String scheduledTasksPreparationAttemptsUsed(int count, int limit) {
+    return 'This occurrence has used $count attempts; the automatic limit is $limit. Use Prepare now to continue manually.';
+  }
+
+  @override
+  String get scheduledTasksPreparationHourlyLimit =>
+      'Automatic hourly limit reached';
+
+  @override
+  String get scheduledTasksPreparationHourlyLimitDetail =>
+      'Automatic preparation is paused until hourly capacity is available. You can still use Prepare now.';
+
+  @override
+  String get scheduledTasksPreparationUnavailable => 'Preparation unavailable';
+
+  @override
+  String get scheduledTasksPreparationReadFailed =>
+      'Could not read task context. It will be checked again shortly; see execution history for details.';
+
+  @override
+  String get scheduledTasksPreparationResultRetained =>
+      'Context could not be checked. The prepared result is retained and will be checked again.';
+
+  @override
+  String get scheduledTasksPreparationContextChanged =>
+      'The conversation or task context changed, so the earlier result was discarded.';
+
+  @override
+  String get scheduledTasksPreparationPublishing => 'Waiting to add to chat';
+
+  @override
+  String get scheduledTasksPreparationPublishingDetail =>
+      'The saved result will be added to the conversation when the current reply finishes.';
+
+  @override
+  String get scheduledTasksPreparationPrompt => 'Preparation prompt';
+
+  @override
+  String get scheduledTasksPreparationPromptTip =>
+      'Extra system instructions used only when preparing this task in advance, separate from the task instructions. You can change the style or remove these instructions entirely. Tools and live information remain unavailable. Editing this prompt invalidates any result prepared before the due time; preparing it again may incur another model charge.';
+
+  @override
+  String get scheduledTasksPreparationPromptEmpty =>
+      'Leave empty to add no preparation instructions';
+
+  @override
+  String scheduledTasksPreparationPromptVariables(
+    String timeVariable,
+    String offsetVariable,
+  ) {
+    return 'Placeholders: $timeVariable is the planned local delivery time; $offsetVariable is its UTC offset. These are replaced when preparing the result.';
+  }
+
+  @override
+  String get scheduledTasksPrepareNow => 'Prepare now';
+
+  @override
+  String get scheduledTasksPrepareNowDetail =>
+      'Prepare the next result now and deliver it at the scheduled time. Automatic waiting periods and attempt limits do not apply. This may incur model charges. An existing prepared result is reused.';
+
+  @override
+  String get scheduledTasksPrepareNowReady =>
+      'The next result is already prepared. No additional model request was made.';
+
+  @override
+  String get scheduledTasksPrepareNowStarted =>
+      'Preparing the next result for its scheduled time.';
+
+  @override
+  String get scheduledTasksPrepareNowBusy =>
+      'Another task is being prepared. Please try again when it finishes.';
+
+  @override
+  String get scheduledTasksPrepareNowChatBusy =>
+      'Please wait for the current reply to finish, then try again.';
+
+  @override
+  String get scheduledTasksPrepareNowDisabled =>
+      'Enable this task and advance preparation first. Regenerate tasks cannot be prepared in advance.';
+
+  @override
+  String get scheduledTasksPrepareNowUnavailable =>
+      'Preparation is not available yet. Please try again shortly.';
+
+  @override
+  String get scheduledTasksPrepareNowNoUpcoming =>
+      'There is no upcoming occurrence to prepare. Check the task time and enabled state.';
+
+  @override
+  String get phoneControlTitle => 'Phone Control';
+
+  @override
+  String get phoneControlSubtitle =>
+      'Read the screen and perform actions through Accessibility';
+
+  @override
+  String get phoneControlAccessibilityService => 'Accessibility service';
+
+  @override
+  String get phoneControlOpenSettings => 'Open accessibility settings';
+
+  @override
+  String get phoneControlRefresh => 'Refresh status';
+
+  @override
+  String get phoneControlChecking => 'Checking service status…';
+
+  @override
+  String get phoneControlReady => 'Enabled and connected';
+
+  @override
+  String get phoneControlDisabled => 'Not enabled';
+
+  @override
+  String get phoneControlDisconnected =>
+      'Enabled, but not connected. Try turning the service off and on in system settings, then refresh.';
+
+  @override
+  String get phoneControlStatusUnavailable =>
+      'Unable to read service status. Refresh to try again.';
+
+  @override
+  String get phoneControlSettingsUnavailable =>
+      'Unable to open settings. Open Android Settings → Accessibility manually.';
+
+  @override
+  String get phoneControlUsageTitle => 'How it works';
+
+  @override
+  String get phoneControlDisclosure =>
+      'For phone control tasks you request in a conversation, the assistant can read the current screen, tap, enter text, scroll, navigate, and open apps. Screen content is sent to the model provider configured for that conversation and is saved in its tool results. Password fields are hidden. This service does not continuously record screen content. You can turn off this tool for the assistant, or disable the service in system settings at any time.';
+
+  @override
+  String get phoneControlAssistantTitle => 'Enable the tool for your assistant';
+
+  @override
+  String get phoneControlAssistantHint =>
+      'Both permissions are required: enable Kelivo phone control in system Accessibility settings, then enable Phone Control under your assistant’s Local Tools (also available in the chat tools menu). Each assistant is configured separately. Keep the phone unlocked while running a task.';
+
+  @override
+  String get phoneControlRestrictedTitle => 'Accessibility switch unavailable?';
+
+  @override
+  String get phoneControlRestrictedHint =>
+      'For some downloaded APKs, Android requires “Allow restricted settings” in the app info menu first. Tap to open Kelivo’s app info, then return to Accessibility settings.';
+
+  @override
+  String get phoneControlEnableAssistant =>
+      'Allow this assistant to use phone control';
 }

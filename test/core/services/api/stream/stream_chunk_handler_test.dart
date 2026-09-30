@@ -11,6 +11,70 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
+    'sum requests once while merging partial and repeated usage updates',
+    () {
+      final handler = StreamChunkHandler();
+      handler.handle(
+        const Usage(
+          TokenUsage(promptTokens: 100, cachedTokens: 10, cacheWriteTokens: 30),
+        ),
+      );
+      handler.handle(
+        const Usage(TokenUsage(completionTokens: 20, reasoningTokens: 5)),
+      );
+      handler.handle(
+        const Usage(TokenUsage(completionTokens: 20, reasoningTokens: 5)),
+      );
+      handler.handle(
+        const Usage(TokenUsage(promptTokens: 200), startsRequest: true),
+      );
+      handler.handle(const Usage(TokenUsage(completionTokens: 30)));
+      handler.handle(const Finish());
+      final result = handler.toResult();
+      expect(result.usage!.totalTokens, 230);
+      expect(result.usage!.cacheWriteTokens, 0);
+      expect(result.usage!.reasoningTokens, 0);
+      expect(result.totalUsage!.toJson(), {
+        'promptTokens': 300,
+        'completionTokens': 50,
+        'cachedTokens': 10,
+        'cacheWriteTokens': 30,
+        'reasoningTokens': 5,
+        'totalTokens': 350,
+      });
+      final nonStreamHandler = StreamChunkHandler()..handleResult(result);
+      expect(nonStreamHandler.totalUsage!.totalTokens, 350);
+      expect(nonStreamHandler.usage!.totalTokens, 230);
+    },
+  );
+
+  test('materialized snapshots survive later appends and text boundaries', () {
+    final handler = StreamChunkHandler();
+    handler.handle(const ReasoningDelta(id: 'r', text: 'plan'));
+    handler.handle(const TextDelta(id: 't', text: 'before'));
+    final before = handler.parts;
+    handler.handle(const TextDelta(id: 't', text: '\n'));
+    handler.handle(const TextDelta(id: 't', text: '\uD83D'));
+    handler.handle(const TextDelta(id: 't', text: '\uDE42'));
+    final after = handler.parts;
+    expect((before.last as TextPart).text, 'before');
+    expect(identical(before.first, after.first), true);
+    expect(identical(after, handler.parts), true);
+    handler.handle(const TextEnd('t'));
+    handler.handle(const TextDelta(id: 't', text: 'next'));
+    handler.handle(const ReasoningDelta(id: 'r', text: ' finished'));
+    expect(
+      handler.toResult().parts.whereType<ReasoningPart>().single.text,
+      'plan finished',
+    );
+    expect(handler.toResult().parts.whereType<TextPart>().map((p) => p.text), [
+      'before\n\uD83D\uDE42',
+      'next',
+    ]);
+    expect((before.first as ReasoningPart).text, 'plan');
+  });
+
+  test(
     'a hosted card keeps its input when the result lands a response later',
     () {
       // A turn that starts a hosted tool alongside a client one is cut in two:

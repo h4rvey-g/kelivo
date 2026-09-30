@@ -172,9 +172,7 @@ class TranslationService {
         messages: [
           {'role': 'user', 'content': prompt},
         ],
-        thinkingBudget: settings.translateGenerationThinkingBudgetFor(
-          assistant?.thinkingBudget,
-        ),
+        reasoning: settings.translateGenerationReasoningFor(assistant),
         requestId: translationRequestId(message.id),
         parseMarkdownImageLinks: settings.sendMarkdownImageLinksAsImages,
       );

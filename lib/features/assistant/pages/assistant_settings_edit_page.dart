@@ -22,9 +22,10 @@ import 'package:uuid/uuid.dart';
 import '../../chat/widgets/chat_message_widget.dart';
 import '../../chat/widgets/chat_gradient_background.dart';
 import '../../home/widgets/assistant_avatar.dart';
-import '../../chat/widgets/reasoning_budget_sheet.dart';
 import '../../model/widgets/model_select_sheet.dart';
 import '../../../core/models/assistant.dart';
+import '../widgets/assistant_reasoning_picker.dart';
+import '../../chat/widgets/reasoning_level_sheet.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/conversation.dart';
 import '../../../core/models/preset_message.dart';
@@ -41,6 +42,7 @@ import '../../../core/services/memory/memory_gatekeeper.dart';
 import '../../../core/services/memory/memory_pipeline.dart';
 import '../../settings/pages/memory_settings_page.dart';
 import '../../settings/widgets/memory_ui.dart';
+import '../../../shared/widgets/tip_icon.dart';
 import '../../../core/services/haptics.dart';
 import '../../../desktop/desktop_context_menu.dart';
 import '../../../desktop/setting/memory_dialogs.dart';
@@ -65,8 +67,9 @@ import '../../../utils/sandbox_path_resolver.dart';
 import '../utils/assistant_edit_tab_layout.dart';
 import 'assistant_regex_tab.dart';
 import 'assistant_settings_edit_skills_tab.dart';
-import 'assistant_settings_edit_workspace_tab.dart';
+import '../widgets/assistant_default_workspace_row.dart';
 import 'health_data_settings_page.dart';
+import '../../settings/pages/phone_control_settings_page.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
 import 'package:Kelivo/shared/widgets/section_card.dart';
 
@@ -156,12 +159,6 @@ List<_AssistantEditTabSpec> _assistantEditTabSpecs(
       label: l10n.assistantEditPageRegexTab,
       icon: Lucide.CaseSensitive,
       child: AssistantRegexTab(assistantId: assistantId),
-    ),
-    _AssistantEditTabSpec(
-      id: assistantEditTabWorkspace,
-      label: l10n.assistantEditPageWorkspaceTab,
-      icon: Lucide.FolderCode,
-      child: AssistantSettingsEditWorkspaceTab(assistantId: assistantId),
     ),
   ];
 }
@@ -1434,7 +1431,7 @@ Widget _iosNavRow(
             },
           ),
         ),
-        if (tip != null) MemoryTipIcon(message: tip),
+        if (tip != null) TipIcon(message: tip),
         GestureDetector(
           onTap: onTap,
           behavior: HitTestBehavior.opaque,
@@ -1531,7 +1528,7 @@ Widget _iosSwitchRow(
             },
           ),
         ),
-        if (tip != null) MemoryTipIcon(message: tip),
+        if (tip != null) TipIcon(message: tip),
         IosSwitch(value: value, onChanged: onChanged, semanticLabel: label),
       ],
     ),
@@ -1636,7 +1633,6 @@ class _IosButtonState extends State<_IosButton> {
 // ===== Desktop Assistant Dialog (reuses mobile tabs) =====
 
 enum _AssistantDesktopMenu {
-  workspace,
   basic,
   prompts,
   memory,
@@ -1646,6 +1642,23 @@ enum _AssistantDesktopMenu {
   quick,
   custom,
   regex,
+}
+
+Future<void> openAssistantBasicSettings(
+  BuildContext context, {
+  required String assistantId,
+}) {
+  if (PlatformUtils.isDesktopTarget) {
+    return showAssistantDesktopDialog(context, assistantId: assistantId);
+  }
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      builder: (_) => _AssistantDetailSectionPage(
+        assistantId: assistantId,
+        tabId: assistantEditTabBasic,
+      ),
+    ),
+  );
 }
 
 Future<void> showAssistantDesktopDialog(
@@ -1741,11 +1754,6 @@ class _DesktopAssistantDialogShellState
                   switchInCurve: Curves.easeOutCubic,
                   child: () {
                     switch (_menu) {
-                      case _AssistantDesktopMenu.workspace:
-                        return AssistantSettingsEditWorkspaceTab(
-                          assistantId: widget.assistantId,
-                          key: const ValueKey('workspace'),
-                        );
                       case _AssistantDesktopMenu.basic:
                         return _DesktopAssistantBasicPane(
                           assistantId: widget.assistantId,
@@ -1810,7 +1818,6 @@ class _DesktopAssistantMenuState extends State<_DesktopAssistantMenu> {
       (_AssistantDesktopMenu.quick, l10n.assistantEditPageQuickPhraseTab),
       (_AssistantDesktopMenu.custom, l10n.assistantEditPageCustomTab),
       (_AssistantDesktopMenu.regex, l10n.assistantEditPageRegexTab),
-      (_AssistantDesktopMenu.workspace, l10n.assistantEditPageWorkspaceTab),
     ];
     return SizedBox(
       width: 220,
@@ -2393,6 +2400,13 @@ class _DesktopAssistantBasicPaneState
                     ),
                   ),
                 ],
+              ),
+            ),
+            sectionDivider(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: AssistantDefaultWorkspaceRow(
+                assistantId: widget.assistantId,
               ),
             ),
             sectionDivider(),

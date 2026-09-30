@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import '../../../core/services/haptics.dart';
+import '../../../shared/widgets/optional_shader_mask.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:open_filex/open_filex.dart';
@@ -39,7 +40,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
-import '../../../core/providers/model_provider.dart';
+import '../../../core/services/model_spec/model_spec_resolver.dart';
 import '../../../core/models/assistant_regex.dart';
 import '../../../shared/widgets/custom_bottom_sheet.dart';
 import '../../../shared/widgets/ios_checkbox.dart';
@@ -485,6 +486,7 @@ IconData? _localToolIconFor(String name, Map<String, dynamic> args) {
     LocalToolNames.calendarQuery => Lucide.Calendar,
     LocalToolNames.calendarCreate => Lucide.CalendarPlus,
     LocalToolNames.currentLocation => Lucide.MapPin,
+    LocalToolNames.phoneControl => Lucide.Smartphone,
     LocalToolNames.weather => Lucide.CloudSun,
     LocalToolNames.healthSummary => Lucide.HeartPulse,
     LocalToolNames.remindersQuery => Lucide.ListTodo,
@@ -517,6 +519,7 @@ String? _localToolTitleFor(
     LocalToolNames.calendarCreate =>
       l10n.assistantEditLocalToolCalendarCreateTitle,
     LocalToolNames.currentLocation => l10n.assistantEditLocalToolLocationTitle,
+    LocalToolNames.phoneControl => l10n.phoneControlTitle,
     LocalToolNames.weather => l10n.assistantEditLocalToolWeatherTitle,
     LocalToolNames.healthSummary => l10n.assistantEditLocalToolHealthTitle,
     LocalToolNames.remindersQuery =>
@@ -1388,38 +1391,18 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     }
 
     final providerId = widget.message.providerId;
-    String baseId = modelId;
+    String displayName = modelId;
     String? providerName;
     if (providerId != null && providerId.isNotEmpty) {
       try {
         final cfg = settings.getProviderConfig(providerId);
         providerName = cfg.name.trim();
-        final ov = cfg.modelOverrides[modelId] as Map?;
-        if (ov != null) {
-          final name = (ov['name'] as String?)?.trim();
-          if (name != null && name.isNotEmpty) {
-            if (settings.showProviderInChatMessage && providerName.isNotEmpty) {
-              return '$name | $providerName';
-            }
-            return name;
-          }
-          final apiId = (ov['apiModelId'] ?? ov['api_model_id'])
-              ?.toString()
-              .trim();
-          if (apiId != null && apiId.isNotEmpty) {
-            baseId = apiId;
-          }
-        }
+        final resolved = ModelSpecResolver.instance.resolve(cfg, modelId);
+        displayName = resolved.override.displayName ?? resolved.spec.upstreamId;
       } catch (_) {
-        // ignore lookup failures; fall through to inferred name.
+        // ignore lookup failures; fall through to the logical model id.
       }
     }
-
-    final inferred = ModelRegistry.infer(
-      ModelInfo(id: baseId, displayName: baseId),
-    );
-    final fallback = inferred.displayName.trim();
-    final displayName = fallback.isNotEmpty ? fallback : baseId;
     if (settings.showProviderInChatMessage &&
         providerName != null &&
         providerName.isNotEmpty) {
@@ -2951,6 +2934,10 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     final showModelTimestamp = context.select<SettingsProvider, bool>(
       (s) => s.showModelTimestamp,
     );
+    final showTotalTokens = context.select<SettingsProvider, bool>(
+      (s) => s.showTotalTokens,
+    );
+    final finishUsage = showTotalTokens ? null : widget.message.finishUsage;
     final enableAssistantMarkdown = context.select<SettingsProvider, bool>(
       (s) => s.enableAssistantMarkdown,
     );
@@ -3429,6 +3416,9 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
               OAuthMessageRecovery(error: error),
             // Action buttons (hidden while generating)
             AnimatedSwitcher(
+              // Completion previously remounted the row at its final height.
+              // Keep that geometry while retaining the expensive Markdown tree.
+              key: ValueKey(('assistant-actions', widget.message.isStreaming)),
               duration: const Duration(milliseconds: 220),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
@@ -3636,11 +3626,30 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                               widget.message.totalTokens != null) ...[
                             const Spacer(),
                             TokenDisplayWidget(
-                              totalTokens: widget.message.totalTokens!,
-                              promptTokens: widget.message.promptTokens,
-                              completionTokens: widget.message.completionTokens,
-                              cachedTokens: widget.message.cachedTokens,
+                              totalTokens:
+                                  finishUsage?.totalTokens ??
+                                  widget.message.totalTokens!,
+                              promptTokens:
+                                  finishUsage?.promptTokens ??
+                                  widget.message.promptTokens,
+                              completionTokens:
+                                  finishUsage?.completionTokens ??
+                                  widget.message.completionTokens,
+                              cachedTokens:
+                                  finishUsage?.cachedTokens ??
+                                  widget.message.cachedTokens,
+                              reasoningTokens:
+                                  finishUsage?.reasoningTokens ??
+                                  widget.message.reasoningTokens,
+                              cacheWriteTokens:
+                                  finishUsage?.cacheWriteTokens ??
+                                  widget.message.cacheWriteTokens,
                               durationMs: widget.message.durationMs,
+                              firstTokenMs: widget.message.firstTokenMs,
+                              totalCompletionTokens:
+                                  widget.message.completionTokens,
+                              providerId: widget.message.providerId,
+                              modelId: widget.message.modelId,
                             ),
                           ],
                         ],
@@ -5258,50 +5267,35 @@ class _ChainOfThoughtReasoningStepState
     if (state == _ReasoningStepState.preview) {
       content = ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 100),
-        child: _hasOverflow
-            ? ShaderMask(
-                shaderCallback: (rect) {
-                  final h = rect.height;
-                  const double topFade = 12;
-                  const double bottomFade = 28;
-                  final double sTop = (topFade / h).clamp(0.0, 1.0);
-                  final double sBot = (1.0 - bottomFade / h).clamp(0.0, 1.0);
-                  return LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: const [
-                      Color(
-                        0x00FFFFFF,
-                      ), // color-gate: ignore (dstIn alpha mask)
-                      Color(
-                        0xFFFFFFFF,
-                      ), // color-gate: ignore (dstIn alpha mask)
-                      Color(
-                        0xFFFFFFFF,
-                      ), // color-gate: ignore (dstIn alpha mask)
-                      Color(
-                        0x00FFFFFF,
-                      ), // color-gate: ignore (dstIn alpha mask)
-                    ],
-                    stops: [0.0, sTop, sBot, 1.0],
-                  ).createShader(rect);
-                },
-                blendMode: BlendMode.dstIn,
-                child: SingleChildScrollView(
-                  controller: _scroll,
-                  physics: const BouncingScrollPhysics(),
-                  child: AutoScrollSelectionArea(
-                    child: reasoningContent(display),
-                  ),
-                ),
-              )
-            : SingleChildScrollView(
-                controller: _scroll,
-                physics: const NeverScrollableScrollPhysics(),
-                child: AutoScrollSelectionArea(
-                  child: reasoningContent(display),
-                ),
-              ),
+        child: OptionalShaderMask(
+          enabled: _hasOverflow,
+          shaderCallback: (rect) {
+            final h = rect.height;
+            const double topFade = 12;
+            const double bottomFade = 28;
+            final double sTop = (topFade / h).clamp(0.0, 1.0);
+            final double sBot = (1.0 - bottomFade / h).clamp(0.0, 1.0);
+            return LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: const [
+                Color(0x00FFFFFF), // color-gate: ignore (dstIn alpha mask)
+                Color(0xFFFFFFFF), // color-gate: ignore (dstIn alpha mask)
+                Color(0xFFFFFFFF), // color-gate: ignore (dstIn alpha mask)
+                Color(0x00FFFFFF), // color-gate: ignore (dstIn alpha mask)
+              ],
+              stops: [0.0, sTop, sBot, 1.0],
+            ).createShader(rect);
+          },
+          blendMode: BlendMode.dstIn,
+          child: SingleChildScrollView(
+            controller: _scroll,
+            // Bouncing physics already declines drags when content fits.
+            // Keeping it stable also retains ScrollPosition on overflow.
+            physics: const BouncingScrollPhysics(),
+            child: AutoScrollSelectionArea(child: reasoningContent(display)),
+          ),
+        ),
       );
     } else if (state == _ReasoningStepState.expanded) {
       content = AutoScrollSelectionArea(child: reasoningContent(display));
@@ -7303,54 +7297,41 @@ class _ReasoningSectionState extends State<_ReasoningSection> {
         padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 80),
-          child: _hasOverflow
-              ? ShaderMask(
-                  shaderCallback: (rect) {
-                    final h = rect.height;
-                    const double topFade = 12.0;
-                    const double bottomFade = 28.0;
-                    final double sTop = (topFade / h).clamp(0.0, 1.0);
-                    final double sBot = (1.0 - bottomFade / h).clamp(0.0, 1.0);
-                    return LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: const [
-                        Color(
-                          0x00FFFFFF,
-                        ), // color-gate: ignore (dstIn alpha mask)
-                        Color(
-                          0xFFFFFFFF,
-                        ), // color-gate: ignore (dstIn alpha mask)
-                        Color(
-                          0xFFFFFFFF,
-                        ), // color-gate: ignore (dstIn alpha mask)
-                        Color(
-                          0x00FFFFFF,
-                        ), // color-gate: ignore (dstIn alpha mask)
-                      ],
-                      stops: [0.0, sTop, sBot, 1.0],
-                    ).createShader(rect);
-                  },
-                  blendMode: BlendMode.dstIn,
-                  child: NotificationListener<ScrollUpdateNotification>(
-                    onNotification: (_) {
-                      WidgetsBinding.instance.addPostFrameCallback(
-                        (_) => _checkOverflow(),
-                      );
-                      return false;
-                    },
-                    child: SingleChildScrollView(
-                      controller: _scroll,
-                      physics: const BouncingScrollPhysics(),
-                      child: reasoningContent(display),
-                    ),
-                  ),
-                )
-              : SingleChildScrollView(
-                  controller: _scroll,
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: reasoningContent(display),
-                ),
+          child: OptionalShaderMask(
+            enabled: _hasOverflow,
+            shaderCallback: (rect) {
+              final h = rect.height;
+              const double topFade = 12.0;
+              const double bottomFade = 28.0;
+              final double sTop = (topFade / h).clamp(0.0, 1.0);
+              final double sBot = (1.0 - bottomFade / h).clamp(0.0, 1.0);
+              return LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: const [
+                  Color(0x00FFFFFF), // color-gate: ignore (dstIn alpha mask)
+                  Color(0xFFFFFFFF), // color-gate: ignore (dstIn alpha mask)
+                  Color(0xFFFFFFFF), // color-gate: ignore (dstIn alpha mask)
+                  Color(0x00FFFFFF), // color-gate: ignore (dstIn alpha mask)
+                ],
+                stops: [0.0, sTop, sBot, 1.0],
+              ).createShader(rect);
+            },
+            blendMode: BlendMode.dstIn,
+            child: NotificationListener<ScrollUpdateNotification>(
+              onNotification: (_) {
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _checkOverflow(),
+                );
+                return false;
+              },
+              child: SingleChildScrollView(
+                controller: _scroll,
+                physics: const BouncingScrollPhysics(),
+                child: reasoningContent(display),
+              ),
+            ),
+          ),
         ),
       );
     }

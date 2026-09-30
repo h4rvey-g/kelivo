@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'assistant_regex.dart';
 import 'health_data_type.dart';
 import 'preset_message.dart';
+import 'reasoning_request.dart';
 
 enum MemorySmartAddMode { batched, perItem }
+
+enum DefaultWorkspaceSetup { automatic, suggest, completed }
 
 enum MemoryWriteScope {
   alwaysGlobal,
@@ -43,8 +46,7 @@ class Assistant {
   final int contextMessageSize; // number of previous messages to include
   final bool limitContextMessages; // whether to enforce contextMessageSize
   final bool streamOutput; // streaming responses
-  final int?
-  thinkingBudget; // null = use global/default; 0=off; >0 tokens budget
+  final ReasoningRequest? reasoning; // null = no assistant default
   final int? maxTokens; // null = unlimited
   final String systemPrompt;
   final bool allowConversationSystemPrompt;
@@ -55,6 +57,13 @@ class Assistant {
   final List<String> localToolIds; // enabled local tool IDs
   /// Default workspace for new conversations started with this assistant.
   final String? defaultWorkspaceId;
+
+  /// New assistants remember the first binding; existing assistants only suggest it.
+  final DefaultWorkspaceSetup defaultWorkspaceSetup;
+
+  /// Runtime-only identity for default-workspace edits, including selecting the
+  /// same value. Unrelated edits preserve it; it is not serialized.
+  final Object? defaultWorkspaceChangeToken;
 
   /// Enabled skill IDs. `null` means every installed skill is available.
   final List<String>? skillIds;
@@ -102,7 +111,7 @@ class Assistant {
     this.contextMessageSize = 64,
     this.limitContextMessages = false,
     this.streamOutput = true,
-    this.thinkingBudget,
+    this.reasoning,
     this.maxTokens,
     this.systemPrompt = '',
     this.allowConversationSystemPrompt = false,
@@ -112,6 +121,8 @@ class Assistant {
     this.mcpServerIds = const <String>[],
     this.localToolIds = const <String>[],
     this.defaultWorkspaceId,
+    this.defaultWorkspaceSetup = DefaultWorkspaceSetup.automatic,
+    this.defaultWorkspaceChangeToken,
     this.skillIds,
     this.healthDataTypeIds = HealthDataTypeIds.defaultSelected,
     this.background,
@@ -149,7 +160,7 @@ class Assistant {
     int? contextMessageSize,
     bool? limitContextMessages,
     bool? streamOutput,
-    int? thinkingBudget,
+    ReasoningRequest? reasoning,
     int? maxTokens,
     String? systemPrompt,
     bool? allowConversationSystemPrompt,
@@ -159,6 +170,7 @@ class Assistant {
     List<String>? mcpServerIds,
     List<String>? localToolIds,
     String? defaultWorkspaceId,
+    DefaultWorkspaceSetup? defaultWorkspaceSetup,
     List<String>? skillIds,
     List<String>? healthDataTypeIds,
     String? background,
@@ -187,7 +199,7 @@ class Assistant {
     bool clearAvatar = false,
     bool clearTemperature = false,
     bool clearTopP = false,
-    bool clearThinkingBudget = false,
+    bool clearReasoning = false,
     bool clearMaxTokens = false,
     bool clearBackground = false,
   }) {
@@ -206,9 +218,7 @@ class Assistant {
       contextMessageSize: contextMessageSize ?? this.contextMessageSize,
       limitContextMessages: limitContextMessages ?? this.limitContextMessages,
       streamOutput: streamOutput ?? this.streamOutput,
-      thinkingBudget: clearThinkingBudget
-          ? null
-          : (thinkingBudget ?? this.thinkingBudget),
+      reasoning: clearReasoning ? null : (reasoning ?? this.reasoning),
       maxTokens: clearMaxTokens ? null : (maxTokens ?? this.maxTokens),
       systemPrompt: systemPrompt ?? this.systemPrompt,
       allowConversationSystemPrompt:
@@ -223,6 +233,17 @@ class Assistant {
       defaultWorkspaceId: clearDefaultWorkspaceId
           ? null
           : (defaultWorkspaceId ?? this.defaultWorkspaceId),
+      defaultWorkspaceSetup:
+          defaultWorkspaceSetup ??
+          (clearDefaultWorkspaceId || defaultWorkspaceId != null
+              ? DefaultWorkspaceSetup.completed
+              : this.defaultWorkspaceSetup),
+      defaultWorkspaceChangeToken:
+          clearDefaultWorkspaceId ||
+              defaultWorkspaceId != null ||
+              defaultWorkspaceSetup != null
+          ? Object()
+          : defaultWorkspaceChangeToken,
       skillIds: clearSkillIds ? null : (skillIds ?? this.skillIds),
       healthDataTypeIds: healthDataTypeIds ?? this.healthDataTypeIds,
       background: clearBackground ? null : (background ?? this.background),
@@ -271,7 +292,7 @@ class Assistant {
     'contextMessageSize': contextMessageSize,
     'limitContextMessages': limitContextMessages,
     'streamOutput': streamOutput,
-    'thinkingBudget': thinkingBudget,
+    'reasoning': reasoning?.toJson(),
     'maxTokens': maxTokens,
     'systemPrompt': systemPrompt,
     'allowConversationSystemPrompt': allowConversationSystemPrompt,
@@ -281,6 +302,7 @@ class Assistant {
     'mcpServerIds': mcpServerIds,
     'localToolIds': localToolIds,
     'defaultWorkspaceId': defaultWorkspaceId,
+    'defaultWorkspaceSetup': defaultWorkspaceSetup.name,
     'skillIds': skillIds,
     'healthDataTypeIds': healthDataTypeIds,
     'background': background,
@@ -305,6 +327,11 @@ class Assistant {
     'regexRules': regexRules.map((e) => e.toJson()).toList(),
   };
 
+  static ReasoningRequest? _readReasoning(Object? value) {
+    if (value is Map) return ReasoningRequest.fromJson(value);
+    return null;
+  }
+
   static double _readGradientBackgroundPhase(Object? value) =>
       value is num && value.isFinite && value >= 0
       ? value.toDouble()
@@ -323,7 +350,7 @@ class Assistant {
     contextMessageSize: (json['contextMessageSize'] as num?)?.toInt() ?? 64,
     limitContextMessages: json['limitContextMessages'] as bool? ?? false,
     streamOutput: json['streamOutput'] as bool? ?? true,
-    thinkingBudget: (json['thinkingBudget'] as num?)?.toInt(),
+    reasoning: _readReasoning(json['reasoning']),
     maxTokens: (json['maxTokens'] as num?)?.toInt(),
     systemPrompt: (json['systemPrompt'] as String?) ?? '',
     allowConversationSystemPrompt:
@@ -337,6 +364,13 @@ class Assistant {
     localToolIds:
         (json['localToolIds'] as List?)?.cast<String>() ?? const <String>[],
     defaultWorkspaceId: json['defaultWorkspaceId'] as String?,
+    defaultWorkspaceSetup:
+        DefaultWorkspaceSetup.values
+            .where((value) => value.name == json['defaultWorkspaceSetup'])
+            .firstOrNull ??
+        ((json['defaultWorkspaceId'] as String?)?.isNotEmpty == true
+            ? DefaultWorkspaceSetup.completed
+            : DefaultWorkspaceSetup.suggest),
     skillIds: json['skillIds'] == null
         ? null
         : (json['skillIds'] as List).map((e) => e.toString()).toList(),

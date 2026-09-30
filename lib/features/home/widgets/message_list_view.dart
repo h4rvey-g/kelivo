@@ -299,6 +299,9 @@ class MessageListView extends StatefulWidget {
 
 class _MessageListViewState extends State<MessageListView> {
   static const _footerExtent = 48.0;
+  static final _idleStreamingContent = AlwaysStoppedAnimation(
+    StreamingContentData(content: '', totalTokens: 0),
+  );
 
   bool get _hasFooter => _showsFooter(widget);
 
@@ -1552,6 +1555,7 @@ class _MessageListViewState extends State<MessageListView> {
         old.completionTokens != current.completionTokens ||
         old.cachedTokens != current.cachedTokens ||
         old.durationMs != current.durationMs ||
+        old.firstTokenMs != current.firstTokenMs ||
         _partsIdentityChanged(old.parts, current.parts);
   }
 
@@ -2097,9 +2101,10 @@ class _MessageListViewState extends State<MessageListView> {
                           textScale * presentation.chatFontScale,
                         ),
                       ),
-                      child: isStreaming
+                      child: message.role == 'assistant'
                           ? _buildStreamingMessageWidget(
                               context,
+                              isStreaming: isStreaming,
                               message: message,
                               index: index,
                               r: r,
@@ -2219,10 +2224,12 @@ class _MessageListViewState extends State<MessageListView> {
     );
   }
 
-  /// Build a streaming message widget that uses ValueListenableBuilder
-  /// to avoid full page rebuilds during streaming.
+  /// Keep the assistant subtree mounted when its stream finishes. Inactive
+  /// rows use immutable listenables, so they don't subscribe to stream/scroll
+  /// changes or retain a completed stream's payload.
   Widget _buildStreamingMessageWidget(
     BuildContext context, {
+    required bool isStreaming,
     required ChatMessage message,
     required int index,
     required stream_ctrl.ReasoningData? r,
@@ -2240,8 +2247,12 @@ class _MessageListViewState extends State<MessageListView> {
     required _MessagePresentation presentation,
   }) {
     return _StreamingMessageDataGate(
-      notifier: widget.streamingContentNotifier!.getNotifier(message.id),
-      deferUpdates: _deferStreamingMessageUpdates,
+      notifier: isStreaming
+          ? widget.streamingContentNotifier!.getNotifier(message.id)
+          : _idleStreamingContent,
+      deferUpdates: isStreaming
+          ? _deferStreamingMessageUpdates
+          : const AlwaysStoppedAnimation(false),
       deferredHold: _deferredStreamingHolds[message.id],
       builder: (context, data, deferUpdates) {
         final painted = deferUpdates
@@ -2256,15 +2267,17 @@ class _MessageListViewState extends State<MessageListView> {
             : message.totalTokens;
 
         // Create a modified message with streaming content
-        final streamingMessage = message.copyWith(
-          parts: painted.parts,
-          content: painted.parts == null ? displayContent : null,
-          totalTokens: displayTokens,
-          promptTokens: painted.promptTokens,
-          completionTokens: painted.completionTokens,
-          cachedTokens: painted.cachedTokens,
-          durationMs: painted.durationMs,
-        );
+        final streamingMessage = isStreaming
+            ? message.copyWith(
+                parts: painted.parts,
+                content: painted.parts == null ? displayContent : null,
+                totalTokens: displayTokens,
+                promptTokens: painted.promptTokens,
+                completionTokens: painted.completionTokens,
+                cachedTokens: painted.cachedTokens,
+                durationMs: painted.durationMs,
+              )
+            : message;
 
         // Update reasoning text from streaming data while preserving expanded state from r
         // This allows user to toggle expanded state during streaming without it being reset
@@ -2297,7 +2310,7 @@ class _MessageListViewState extends State<MessageListView> {
             isProcessingFiles: isProcessingFiles,
             suggestions: suggestions,
             presentation: presentation,
-            enableStreamingTextMotion: !deferUpdates,
+            enableStreamingTextMotion: !isStreaming || !deferUpdates,
             contentSplitOffsets: painted.contentSplitOffsets,
             reasoningCountAtSplit: painted.reasoningCountAtSplit,
             toolCountAtSplit: painted.toolCountAtSplit,
@@ -2752,7 +2765,7 @@ class _StreamingMessageDataGate extends StatefulWidget {
     required this.builder,
   });
 
-  final ValueNotifier<StreamingContentData> notifier;
+  final ValueListenable<StreamingContentData> notifier;
   final ValueListenable<bool> deferUpdates;
   final StreamingContentData? deferredHold;
   final Widget Function(

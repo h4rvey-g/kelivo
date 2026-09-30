@@ -24,10 +24,12 @@ final class BusinessKeyRegistry {
     'window_physical_pos_x_v1',
     'window_physical_pos_y_v1',
     'window_maximized_v1',
+    'linux_hide_title_bar_v1',
     'desktop_hotkeys_commands_v1',
     'desktop_hotkeys_enabled_v1',
     'display_chat_font_scale_v1',
     'flutter_log_enabled_v1',
+    'model_catalog_auto_update_v1',
   };
 
   static const discardedKeys = <String>{
@@ -41,6 +43,7 @@ final class BusinessKeyRegistry {
 
   static const preferenceKeys = <String>{
     'desktop_scheduled_tasks_v1',
+    'scheduled_task_results_v1',
     'current_assistant_id_v1',
     'selected_model_v1',
     'chat_model_quick_slot_count_v1',
@@ -117,7 +120,7 @@ final class BusinessKeyRegistry {
     'suggestion_insert_on_tap_only_v1',
     'compress_model_v1',
     'compress_prompt_v1',
-    'thinking_budget_v1',
+    'reasoning_choice_by_model_v1',
     'image_cropper_enabled_v1',
     'image_upload_quality_v1',
     'image_compress_custom_quality_v1',
@@ -527,11 +530,11 @@ final class BusinessSettingsRouter {
             'temperature',
             'topP',
             'contextMessageSize',
-            'thinkingBudget',
             'maxTokens',
             'recentChatsSummaryMessageCount',
             'memoryOrganizeEveryNTurns',
           },
+          maps: const {'reasoning'},
           lists: const {
             'customHeaders',
             'customBody',
@@ -1013,6 +1016,7 @@ final class BusinessSettingsRouter {
       case 'ollama':
       case 'jina':
       case 'doubao':
+      case 'kagi':
         _validateKnownFields(
           kind,
           payload,
@@ -1094,6 +1098,7 @@ final class BusinessSettingsRouter {
           stringLists: const {'apiKeys'},
         );
       case 'parallel':
+      case 'kimi':
         _validateKnownFields(
           kind,
           payload,

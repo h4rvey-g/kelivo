@@ -5,7 +5,9 @@ import 'package:Kelivo/core/database/chat_database_repository.dart';
 import 'package:Kelivo/core/database/generation_run.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
+import 'package:Kelivo/core/models/image_generation_context.dart';
 import 'package:Kelivo/core/models/message_part.dart';
+import 'package:Kelivo/core/models/token_usage.dart';
 import 'package:Kelivo/core/services/api/providers/openai/chat_completions_decoder.dart';
 import 'package:Kelivo/core/services/api/stream/sse_decode_loop.dart';
 import 'package:Kelivo/core/services/api/stream/sse_framing.dart';
@@ -75,6 +77,145 @@ void main() {
         await directory.delete(recursive: true);
       }
     });
+
+    test(
+      'image context and token extras survive inserts and updates together',
+      () async {
+        const imageContext = ImageGenerationContext(
+          stageId: 'first',
+          inheritanceMode: ImageContextInheritanceMode.fullConversation,
+          inheritedContext: 'A portrait with a blue coat.',
+          modificationLog: ['Add a hat'],
+        );
+        const finishUsage = TokenUsage(promptTokens: 10, completionTokens: 8);
+        await repository.putMessage(
+          ChatMessage(
+            id: 'image',
+            role: 'assistant',
+            conversationId: 'conversation',
+            extras: imageContext.mergeIntoExtras(),
+            firstTokenMs: 25,
+            reasoningTokens: 4,
+            cacheWriteTokens: 2,
+            finishUsage: finishUsage,
+          ),
+        );
+        final inserted = (await repository.getMessage('image'))!;
+        expect(
+          inserted.imageGenerationContext?.toJson(),
+          imageContext.toJson(),
+        );
+        expect(inserted.firstTokenMs, 25);
+        expect(inserted.reasoningTokens, 4);
+        expect(inserted.cacheWriteTokens, 2);
+        expect(inserted.finishUsage?.toJson(), finishUsage.toJson());
+
+        final updated = (await repository.updateMessageFields(
+          'image',
+          extras: const {'other.feature': true},
+          reasoningTokens: 6,
+        ))!;
+        expect(updated.imageGenerationContext?.toJson(), imageContext.toJson());
+        expect(updated.extras['other.feature'], isTrue);
+        expect(updated.reasoningTokens, 6);
+        expect(updated.firstTokenMs, 25);
+        expect(updated.finishUsage?.toJson(), finishUsage.toJson());
+
+        await repository.updateStreamingCheckpoint(
+          updated.copyWith(content: 'Generated image', completionTokens: 8),
+          const [],
+        );
+        final reloaded = (await repository.getMessage('image'))!;
+        expect(
+          reloaded.imageGenerationContext?.toJson(),
+          imageContext.toJson(),
+        );
+        expect(reloaded.extras['other.feature'], isTrue);
+        expect(reloaded.reasoningTokens, 6);
+        expect(reloaded.cacheWriteTokens, 2);
+        expect(reloaded.firstTokenMs, 25);
+        expect(reloaded.finishUsage?.toJson(), finishUsage.toJson());
+
+        final nextVersion = (await repository.appendMessageVersion(
+          messageId: 'image',
+          content: 'Edited image prompt',
+        ))!;
+        final nextMessage = (await repository.getMessage(
+          nextVersion.message.id,
+        ))!;
+        expect(
+          nextMessage.imageGenerationContext?.toJson(),
+          imageContext.toJson(),
+        );
+        expect(nextMessage.extras['other.feature'], isTrue);
+        expect(nextMessage.reasoningTokens, isNull);
+        expect(nextMessage.cacheWriteTokens, isNull);
+        expect(nextMessage.firstTokenMs, isNull);
+        expect(nextMessage.finishUsage, isNull);
+      },
+    );
+
+    test(
+      'checkpoints preserve unchanged parts and remove only a truncated tail',
+      () async {
+        final snapshot = ChatMessage(
+          id: 'streaming',
+          role: 'assistant',
+          conversationId: 'conversation',
+          isStreaming: true,
+          parts: const [
+            ReasoningPart('plan'),
+            TextPart('before'),
+            TextPart('tail'),
+          ],
+        );
+        await repository.updateStreamingCheckpoint(snapshot, const []);
+        final raw = sqlite.sqlite3.open('${directory.path}/chat.sqlite');
+        try {
+          final before = raw.select(
+            "SELECT part_id, updated_at FROM message_part_rows WHERE revision_id = 'streaming' ORDER BY ordinal",
+          );
+          await repository.updateStreamingCheckpoint(
+            snapshot.copyWith(
+              parts: const [
+                ReasoningPart('plan'),
+                TextPart('before'),
+                TextPart('tail more'),
+              ],
+            ),
+            const [],
+          );
+          final after = raw.select(
+            "SELECT part_id, updated_at FROM message_part_rows WHERE revision_id = 'streaming' ORDER BY ordinal",
+          );
+          expect(
+            after.map((r) => r['part_id']),
+            before.map((r) => r['part_id']),
+          );
+          expect(
+            after.take(2).map((r) => r['updated_at']),
+            before.take(2).map((r) => r['updated_at']),
+          );
+          await repository.updateStreamingCheckpoint(
+            snapshot.copyWith(
+              parts: const [ReasoningPart('plan'), TextPart('before')],
+              isStreaming: false,
+            ),
+            const [],
+          );
+          final finalRows = raw.select(
+            "SELECT part_id, payload FROM message_part_rows WHERE revision_id = 'streaming' ORDER BY ordinal",
+          );
+          expect(
+            finalRows.map((r) => r['part_id']),
+            before.take(2).map((r) => r['part_id']),
+          );
+          expect(finalRows.map((r) => r['payload']), ['plan', 'before']);
+        } finally {
+          raw.close();
+        }
+      },
+    );
 
     test('一次事务写入完整消息快照和 tool events 且不改变顺序', () async {
       final snapshot = ChatMessage(
