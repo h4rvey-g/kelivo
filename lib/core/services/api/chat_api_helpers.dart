@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:Kelivo/secrets/fallback.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
@@ -49,29 +48,11 @@ String apiModelId(ProviderConfig cfg, String modelId) {
 }
 
 String apiKeyForRequest(ProviderConfig cfg, String modelId) {
-  final orig = effectiveApiKey(cfg).trim();
-  if (orig.isNotEmpty) return orig;
-  if ((cfg.id) == 'SiliconFlow') {
-    final host = Uri.tryParse(cfg.baseUrl)?.host.toLowerCase() ?? '';
-    if (!host.contains('siliconflow')) return orig;
-    final m = apiModelId(cfg, modelId).toLowerCase();
-    final allowed = m == 'thudm/glm-4-9b-0414' || m == 'qwen/qwen3-8b';
-    final fallback = siliconflowFallbackKey.trim();
-    if (allowed && fallback.isNotEmpty) {
-      return fallback;
-    }
-  }
-  return orig;
+  return effectiveApiKey(cfg).trim();
 }
 
 String effectiveApiKey(ProviderConfig cfg) {
-  try {
-    if (cfg.multiKeyEnabled == true && (cfg.apiKeys?.isNotEmpty == true)) {
-      final sel = ApiKeyManager().selectForProvider(cfg);
-      if (sel.key != null) return sel.key!.key;
-    }
-  } catch (_) {}
-  return cfg.apiKey;
+  return ApiKeyManager().effectiveKeyForProvider(cfg);
 }
 
 // Read built-in tools configured per model (e.g., ['search', 'url_context']).
@@ -382,7 +363,7 @@ Future<String?> tryEncodeBase64File(
     if (resolved == null) return null;
     final file = File(resolved);
     if (!await file.exists()) return null;
-    return _encodeBase64File(resolved, withPrefix: withPrefix);
+    return await _encodeBase64File(resolved, withPrefix: withPrefix);
   } catch (_) {
     return null;
   }
@@ -452,7 +433,7 @@ void applyAnthropicMessagesProtocolConstraints(Map<String, dynamic> body) {
   thinking['budget_tokens'] = next;
 }
 
-// Clean JSON Schema for Google Gemini API strict validation
+// Clean schemas for Google Gemini's native `parameters` field.
 // Google requires array types to have 'items' field, and only accepts `enum`
 // on string-typed schemas (values must be strings too).
 Map<String, dynamic> cleanSchemaForGemini(
@@ -504,7 +485,10 @@ String? _inferScalarType(List<dynamic> values) {
 
 dynamic _cleanSchemaNode(dynamic node, bool stringEnumOnly) {
   if (node is! Map) return node;
-  final result = Map<String, dynamic>.from(node);
+  // Native Schema rejects this JSON Schema keyword. Only remove it from
+  // schema nodes; a property name or a key inside default/example is data.
+  final result = Map<String, dynamic>.from(node)
+    ..remove('additionalProperties');
 
   final declaredType = (result['type'] ?? '').toString();
 
@@ -582,6 +566,13 @@ dynamic _cleanSchemaNode(dynamic node, bool stringEnumOnly) {
     result['items'] = _cleanSchemaNode(result['items'], stringEnumOnly);
   } else if (type == 'array' && !result.containsKey('items')) {
     result['items'] = {'type': 'string'}; // Default to string array
+  }
+
+  if (result['anyOf'] is List) {
+    result['anyOf'] = [
+      for (final variant in result['anyOf'] as List)
+        _cleanSchemaNode(variant, stringEnumOnly),
+    ];
   }
 
   return result;

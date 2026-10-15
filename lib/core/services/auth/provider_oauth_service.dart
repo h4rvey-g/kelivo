@@ -29,6 +29,7 @@ class ProviderOAuthService extends ChangeNotifier {
   final http.Client Function(ProviderConfig) _clientFactory;
   SettingsProvider? _settings;
   final _refreshes = <String, Future<ProviderConfig>>{};
+  final _modelSyncs = <(SettingsProvider, String), Future<void>>{};
   final _usage = <String, ProviderUsageSnapshot>{};
   final _usageRequests = <String, Future<ProviderUsageSnapshot>>{};
   OAuthCancellation? _login;
@@ -174,7 +175,10 @@ class ProviderOAuthService extends ChangeNotifier {
         throw const ProviderOAuthException(ProviderOAuthFailure.cancelled);
       }
       final saved = (providerId == null ? config : _current(providerId)!)
-          .copyWith(oauthCredentials: credentials);
+          .copyWith(
+            oauthCredentials: credentials,
+            oauthModelsClientVersion: null,
+          );
       await settings.setProviderConfig(saved.id, saved);
       if (providerId == null) {
         await settings.setProvidersOrder([
@@ -200,7 +204,7 @@ class ProviderOAuthService extends ChangeNotifier {
     _usage.remove(_sessionKey(config));
     await _settings!.setProviderConfig(
       id,
-      config.copyWith(oauthCredentials: null),
+      config.copyWith(oauthCredentials: null, oauthModelsClientVersion: null),
     );
     notifyListeners();
   }
@@ -354,31 +358,79 @@ class ProviderOAuthService extends ChangeNotifier {
                     !RegExp(
                       r'grok-(?:imagine|stt|voice|tts)',
                     ).hasMatch(row['id'] as String)))
-              _OAuthModelSpec(
-                row: row,
-                base: _oauthDiscoveredSpec(
-                  ModelSpecResolver.instance
-                      .resolve(
-                        config,
-                        row['id'] as String,
-                        displayName:
-                            oauthString(row['display_name']) ??
-                            oauthString(row['name']) ??
-                            row['id'] as String,
-                      )
-                      .spec,
-                  row,
-                ),
-              ),
+              _modelFromRow(config, row),
         ];
       });
 
+  _OAuthModelSpec _modelFromRow(
+    ProviderConfig config,
+    Map<String, dynamic> row,
+  ) => _OAuthModelSpec(
+    row: row,
+    base: _oauthDiscoveredSpec(
+      ModelSpecResolver.instance.spec(
+        config,
+        row['id'] as String,
+        displayName:
+            oauthString(row['display_name']) ??
+            oauthString(row['name']) ??
+            row['id'] as String,
+      ),
+      row,
+    ),
+  );
+
+  /// Like OMP's versioned Codex cache, refresh each account after a client
+  /// version change. Keep its saved models usable if discovery is unavailable.
+  Future<void> syncOutdatedModels(SettingsProvider settings) async {
+    await settings.loaded;
+    if (!identical(settings, _settings)) return;
+    // Startup discovery can run before the first rebuild applies the proxy.
+    settings.applyGlobalProxyOverridesIfNeeded();
+    for (final id in settings.providerConfigs.keys.toList()) {
+      if (!identical(settings, _settings)) return;
+      final config = _current(id);
+      if (config == null ||
+          !config.enabled ||
+          config.oauthProvider != OAuthProvider.chatgpt ||
+          config.oauthCredentials == null ||
+          config.oauthCredentials!.requiresLogin ||
+          config.oauthModelsClientVersion == codexClientVersion) {
+        continue;
+      }
+      try {
+        await syncModels(id);
+      } catch (_) {
+        // Leave the version unchanged so the next launch or manual sync retries.
+      }
+    }
+  }
+
   Future<void> syncModels(String id) async {
+    final settings = _settings;
     final before = _current(id);
-    if (before == null) return;
+    if (settings == null || before == null) return;
+    final key = (settings, _sessionKey(before));
+    final pending = _modelSyncs[key];
+    if (pending != null) return pending;
+    final request = _syncModels(settings, before);
+    _modelSyncs[key] = request;
+    try {
+      await request;
+    } finally {
+      _modelSyncs.remove(key);
+    }
+  }
+
+  Future<void> _syncModels(
+    SettingsProvider settings,
+    ProviderConfig before,
+  ) async {
     final list = await models(before);
-    final current = _current(id);
-    if (current == null ||
+    final current = _current(before.id);
+    if (!identical(settings, _settings) ||
+        current == null ||
+        current.oauthProvider != before.oauthProvider ||
         current.oauthCredentials?.sessionId !=
             before.oauthCredentials?.sessionId) {
       return;
@@ -391,20 +443,25 @@ class ProviderOAuthService extends ChangeNotifier {
           : const <String, dynamic>{};
       overrides[model.id] = mergeOAuthModelOverride(
         existing: overrides[model.id],
-        model: model,
+        // Model edits can land while discovery is in flight.
+        model: model is _OAuthModelSpec ? _modelFromRow(current, row) : model,
         reasoning: oauthDiscoveredReasoning(provider, row),
+        contextWindow: _oauthContextWindow(row),
         extra: {
           if (provider == OAuthProvider.kimi)
             'oauthProtocol': kimiOAuthProtocol(row),
         },
       );
     }
-    await _settings!.setProviderConfig(
-      id,
+    await settings.setProviderConfig(
+      current.id,
       current.copyWith(
         models: list.map((e) => e.id).toList(),
         modelOverrides: overrides,
         oauthModelsSyncedAt: DateTime.now(),
+        oauthModelsClientVersion: provider == OAuthProvider.chatgpt
+            ? codexClientVersion
+            : null,
       ),
     );
   }
@@ -525,6 +582,7 @@ Map<String, dynamic> mergeOAuthModelOverride({
   required Object? existing,
   required ModelSpec model,
   ReasoningSpecOverride? reasoning,
+  int? contextWindow,
   Map<String, dynamic> extra = const {},
 }) {
   final current = existing is Map
@@ -540,6 +598,7 @@ Map<String, dynamic> mergeOAuthModelOverride({
         output: List<Modality>.from(model.output),
         abilities: List<ModelAbility>.from(model.abilities),
         reasoning: _mergeReasoningOverride(current.reasoning, reasoning),
+        contextWindow: contextWindow,
         extra: nextExtra,
       )
       .toJson();
@@ -611,12 +670,21 @@ String? _oauthDefaultLevel(Map<String, dynamic> row) {
   return null;
 }
 
+int? _oauthContextWindow(Map<String, dynamic> row) {
+  final value = oauthNumber(row['context_window']);
+  if (value == null || value <= 0 || value != value.truncateToDouble()) {
+    return null;
+  }
+  return value.toInt();
+}
+
 ModelSpec _oauthDiscoveredSpec(ModelSpec resolved, Map<String, dynamic> row) {
   final imageIn =
       row['supports_image_in'] == true ||
       (row['input_modalities'] as List? ?? const []).contains('image');
   final support = oauthRowReasoningSupport(row);
   return resolved.copyWith(
+    contextWindow: _oauthContextWindow(row),
     input: <Modality>[...resolved.input, if (imageIn) Modality.image],
     abilities: <ModelAbility>[
       ...resolved.abilities.where(
@@ -712,15 +780,11 @@ class _ProviderOAuthHttpClient extends http.BaseClient {
       final existingBeta = result.headers['anthropic-beta'];
       final existingContentType = result.headers['content-type'];
       for (final name in authHeaders.keys) {
-        result.headers.removeWhere(
-          (key, _) => key.toLowerCase() == name.toLowerCase(),
-        );
+        result.headers.remove(name);
       }
       result.headers.addAll(authHeaders);
       if (isClaude) {
-        result.headers.removeWhere(
-          (key, _) => key.toLowerCase() == 'x-api-key',
-        );
+        result.headers.remove('x-api-key');
         setClaudeOAuthHeader(
           result.headers,
           'anthropic-beta',

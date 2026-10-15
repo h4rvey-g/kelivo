@@ -39,12 +39,15 @@ import '../../../core/providers/world_book_provider.dart';
 import '../../../core/services/api/builtin_tools.dart';
 import '../../../core/services/api/providers/claude/claude_container.dart';
 import '../../../core/services/api/providers/claude/claude_history.dart';
+import '../../../core/services/api/providers/claude/claude_thinking_recovery.dart';
 import '../../../core/services/api/providers/google/gemini_thought_signature.dart';
 import '../../../core/models/assistant_regex.dart';
 import '../../../core/utils/multimodal_input_utils.dart';
 import '../../../utils/assistant_regex.dart';
 import '../../../utils/markdown_media_sanitizer.dart';
 import 'ocr_service.dart';
+import 'assistant_tool_history.dart';
+import '../../../core/services/api/providers/openai/responses_history.dart';
 
 /// Result of §7.6 memory-prefix resolution.
 ///
@@ -72,6 +75,12 @@ const MemoryPrefixResolution _noMemoryPrefix = (
 /// temporary ones are never written there, so without a pass-scoped record each
 /// message would look like the first and re-inject the same snapshot.
 class MemoryInjectionPass {
+  MemoryInjectionPass({this.retainedSnapshotCarriers});
+
+  /// Frozen snapshot carriers actually retained in this request. A null value
+  /// lets standalone prompt resolution consult the stored history instead.
+  final Set<String>? retainedSnapshotCarriers;
+
   /// Revision ids that received a memory block during this request.
   final Set<String> snapshotCarriers = <String>{};
 
@@ -160,6 +169,15 @@ class MessageBuilderService {
   /// the provider strips.
   final String? Function(ChatMessage message, String kind)?
   providerArtifactLookup;
+
+  String? _providerArtifact(ChatMessage message, String kind) {
+    // Native replay data follows the frozen message, including an explicitly
+    // empty snapshot. A later LRU eviction or stream update must not change it.
+    if (message.hasProviderArtifactSnapshot) {
+      return message.providerArtifactSnapshot[kind];
+    }
+    return providerArtifactLookup?.call(message, kind);
+  }
 
   /// Cache for document text extraction to avoid re-reading files on every message
   /// Keyed by path, validated with (modified + size) to avoid stale reuse.
@@ -306,11 +324,17 @@ class MessageBuilderService {
   /// Build API messages list from current conversation state.
   ///
   /// Applies truncation and version collapsing. Attachments come from parts.
+  /// [preserveToolTurns] keeps OpenAI-compatible tool rounds ordered.
+  /// [responsesScope] selects native Responses replay for matching artifacts.
+  /// [claudeSource] keeps ordinary Claude blocks on their original model.
   List<Map<String, dynamic>> buildApiMessages({
     required List<ChatMessage> messages,
     required Map<String, int> versionSelections,
     required Conversation? currentConversation,
     bool includeToolMessages = false,
+    bool preserveToolTurns = false,
+    ResponsesReplayScope? responsesScope,
+    ({String providerId, String modelId})? claudeSource,
   }) {
     final tIndex = currentConversation?.truncateIndex ?? -1;
     final List<ChatMessage> sourceAll =
@@ -324,15 +348,83 @@ class MessageBuilderService {
 
     final out = <Map<String, dynamic>>[];
 
+    final thinkingRecovery = ClaudeThinkingRecovery();
     for (final m in source) {
+      if (includeToolMessages && !preserveToolTurns && m.role == 'assistant') {
+        thinkingRecovery.readArtifact(
+          _providerArtifact(m, claudeThinkingRecoveryArtifactKind),
+        );
+      }
+      if (m.role == 'assistant' &&
+          includeToolMessages &&
+          responsesScope != null) {
+        final history = buildResponsesHistory(
+          payload: _providerArtifact(m, responsesTurnArtifactKind),
+          scope: responsesScope,
+          toolEvents: chatService.getToolEventsForMessage(m),
+          content: m.content,
+        );
+        if (history != null) {
+          for (final message in history) {
+            ContextSegmentTags.replaceWithSingle(
+              message,
+              source: message['role'] == 'tool'
+                  ? ContextSource.toolResult
+                  : message['tool_calls'] is List
+                  ? ContextSource.toolCall
+                  : ContextSource.chatHistory,
+              length: (message['content'] ?? '').toString().length,
+            );
+          }
+          out.addAll(history);
+          continue;
+        }
+      }
+      var content = m.content;
+      var hasClaudeToolTurn = false;
+      // Signed native blocks belong to the provider/model that produced them.
+      // Tool turns carry their artifact on the tool-call message below.
+      final plainClaudeTurn =
+          includeToolMessages &&
+              !preserveToolTurns &&
+              m.role == 'assistant' &&
+              claudeSource != null &&
+              m.providerId == claudeSource.providerId &&
+              m.modelId == claudeSource.modelId &&
+              chatService.getToolEventsForMessage(m).isEmpty
+          ? _providerArtifact(m, claudeTurnArtifactKind)
+          : null;
       String? assistantReasoningContent;
       dynamic reasoningDetails;
       if (m.role == 'assistant') {
         assistantReasoningContent = _reasoningContentForToolContinuation(m);
         reasoningDetails = _reasoningDetailsForApi(m);
       }
-      if (includeToolMessages && m.role == 'assistant') {
-        final events = chatService.getToolEvents(m.id);
+      if (includeToolMessages && m.role == 'assistant' && preserveToolTurns) {
+        final history = buildAssistantToolHistory(m.parts);
+        for (final message in history.messages) {
+          ContextSegmentTags.replaceWithSingle(
+            message,
+            source: message['role'] == 'tool'
+                ? ContextSource.toolResult
+                : ContextSource.toolCall,
+            length: (message['content'] ?? '').toString().length,
+          );
+        }
+        out.addAll(history.messages);
+        content = history.content;
+        // Persisted parts own the position and exact bytes of each thinking
+        // block. The scalar spans all rounds and must not be repeated here.
+        if (m.parts.any(
+          (part) => part is ReasoningPart || part is ToolCallPart,
+        )) {
+          assistantReasoningContent = history.reasoning;
+        }
+        if (content.isEmpty && history.reasoning == null) {
+          reasoningDetails = null;
+        }
+      } else if (includeToolMessages && m.role == 'assistant') {
+        final events = chatService.getToolEventsForMessage(m);
         if (events.isNotEmpty) {
           // Tool-call history is only valid once every call has a result.
           final hasPendingToolEvent = events.any((e) => e['content'] == null);
@@ -384,16 +476,14 @@ class MessageBuilderService {
                 'content': '\n\n',
                 'tool_calls': calls,
               };
-              final turn = providerArtifactLookup?.call(
-                m,
-                claudeTurnArtifactKind,
-              );
+              final turn = _providerArtifact(m, claudeTurnArtifactKind);
               if (turn != null && turn.isNotEmpty) {
                 assistantToolMessage[multimodalInternalClaudeTurnKey] = turn;
+                hasClaudeToolTurn = claudeSource != null;
               }
               // Also here: a turn that ran code and then said nothing has no
               // final message below to carry the container.
-              final container = providerArtifactLookup?.call(
+              final container = _providerArtifact(
                 m,
                 claudeContainerArtifactKind,
               );
@@ -433,18 +523,21 @@ class MessageBuilderService {
 
       final mediaRefs = mediaRefsFromParts(m);
       final imageContext = m.imageGenerationContext;
-      final content =
-          m.content.isEmpty &&
-              m.role == 'assistant' &&
-              mediaRefs.isNotEmpty &&
-              imageContext != null
-          ? imageContext.buildImageDescription()
-          : m.content;
+      if (content.isEmpty &&
+          m.role == 'assistant' &&
+          mediaRefs.isNotEmpty &&
+          imageContext != null) {
+        content = imageContext.buildImageDescription();
+      }
       // Pure-attachment turns have empty text content but still must be sent.
       // Document FileParts are omitted from mediaRefs (they travel via
       // document extraction), so also keep messages that still have a usable
       // ImagePart/FilePart for processUserMessagesForApi to inject text.
       if (content.isEmpty &&
+          (assistantReasoningContent?.isEmpty ?? true) &&
+          reasoningDetails == null &&
+          (plainClaudeTurn?.isEmpty ?? true) &&
+          !hasClaudeToolTurn &&
           mediaRefs.isEmpty &&
           !_hasUsableAttachmentPart(m)) {
         continue;
@@ -454,14 +547,14 @@ class MessageBuilderService {
       if (role == 'user') {
         message[internalRevisionIdKey] = m.id;
       } else {
-        final container = providerArtifactLookup?.call(
-          m,
-          claudeContainerArtifactKind,
-        );
+        if (plainClaudeTurn?.isNotEmpty == true) {
+          message[multimodalInternalClaudeTurnKey] = plainClaudeTurn;
+        }
+        final container = _providerArtifact(m, claudeContainerArtifactKind);
         if (container != null && container.isNotEmpty) {
           message[multimodalInternalClaudeContainerKey] = container;
         }
-        final signature = providerArtifactLookup?.call(
+        final signature = _providerArtifact(
           m,
           geminiThoughtSignatureArtifactKind,
         );
@@ -492,6 +585,12 @@ class MessageBuilderService {
       out.add(message);
     }
 
+    // Carry the cumulative state on the last message so subsequent context
+    // trimming and textless assistant replies cannot lose the recovery.
+    final recoveryArtifact = thinkingRecovery.artifact;
+    if (out.isNotEmpty && recoveryArtifact != null) {
+      out.last[multimodalInternalClaudeThinkingRecoveryKey] = recoveryArtifact;
+    }
     return out;
   }
 
@@ -624,7 +723,7 @@ class MessageBuilderService {
 
   String _reasoningContentForToolContinuation(ChatMessage message) {
     String pick(ChatMessage candidate) {
-      final direct = (candidate.reasoningText ?? '').trim();
+      final direct = candidate.reasoningText ?? '';
       if (direct.isNotEmpty) return direct;
 
       final raw = (candidate.reasoningSegmentsJson ?? '').trim();
@@ -640,10 +739,10 @@ class MessageBuilderService {
         final parts = <String>[];
         for (final item in segmentsRaw) {
           if (item is! Map) continue;
-          final text = (item['text'] ?? '').toString().trim();
+          final text = (item['text'] ?? '').toString();
           if (text.isNotEmpty) parts.add(text);
         }
-        return parts.join('\n').trim();
+        return parts.join();
       } catch (_) {
         return '';
       }
@@ -740,7 +839,12 @@ class MessageBuilderService {
       return ChatInputData(text: text.trim(), imagePaths: mediaPaths);
     }
     final images = <String>[];
-    final docs = <DocumentAttachment>[];
+    final docs = [
+      for (final ref in parseInternalDocumentRefs(
+        message[multimodalInternalDocumentPathsKey],
+      ))
+        DocumentAttachment(path: ref.uri, fileName: ref.name, mime: ref.mime),
+    ];
     for (final ref in mediaRefs) {
       final path = ref.uri;
       final mime = (ref.mime != null && ref.mime!.trim().isNotEmpty)
@@ -784,6 +888,7 @@ class MessageBuilderService {
     Conversation? conversation,
     List<ChatMessage>? sourceMessages,
     bool sandboxDataFiles = false,
+    bool nativePdfInput = false,
     Map<String, AttachmentInfo> workspaceAttachments = const {},
   }) {
     final bool ocrActive =
@@ -812,6 +917,7 @@ class MessageBuilderService {
       final mediaPaths = <String>{};
       for (final document in parsed.documents) {
         final mime = _effectiveAttachmentMime(document);
+        if (nativePdfInput && isPdfMime(mime)) continue;
         if (isVideoMime(mime) || isAudioMime(mime)) {
           final path = document.path.trim();
           if (path.isNotEmpty) mediaPaths.add(path);
@@ -854,6 +960,7 @@ class MessageBuilderService {
     Conversation? conversation,
     List<ChatMessage>? sourceMessages,
     bool sandboxDataFiles = false,
+    bool nativePdfInput = false,
     bool previewOnly = false,
     Map<String, AttachmentInfo> workspaceAttachments = const {},
   }) async {
@@ -888,9 +995,38 @@ class MessageBuilderService {
         if (isPersistedUserMessage(message))
           (message[internalRevisionIdKey] ?? '').toString().trim(),
     ];
-    final frozenPrompts = _repo == null
+    final storedPrompts = _repo == null
         ? null
         : await _repo!.getMessagePrompts(persistedRevisionIds);
+
+    // Decide which frozen prompts survive before any memory injection. A PDF
+    // sent natively drops its extracted text and the snapshot frozen with it;
+    // that database row must no longer count as memory in this request.
+    final nativePdfRevisionIds = <String>{};
+    if (nativePdfInput) {
+      for (final message in apiMessages) {
+        if (!isPersistedUserMessage(message)) continue;
+        final revisionId = message[internalRevisionIdKey].toString().trim();
+        final chatMessage = _resolveChatMessage(
+          revisionId: revisionId,
+          conversation: conversation,
+          sourceMessages: sourceMessages,
+        );
+        final input = chatMessage != null
+            ? parseInputFromMessage(chatMessage)
+            : parseInputFromApiMap(message);
+        if (input.documents.any(
+          (d) => isPdfMime(_effectiveAttachmentMime(d)),
+        )) {
+          nativePdfRevisionIds.add(revisionId);
+        }
+      }
+    }
+    final frozenPrompts = {
+      if (storedPrompts != null)
+        for (final entry in storedPrompts.entries)
+          if (!nativePdfRevisionIds.contains(entry.key)) entry.key: entry.value,
+    };
 
     // Prefetch OCR only for messages that still need generation (no freeze yet).
     OcrPrepareSession? ocrSession;
@@ -902,7 +1038,7 @@ class MessageBuilderService {
         final revisionId = (message[internalRevisionIdKey] ?? '')
             .toString()
             .trim();
-        if (frozenPrompts?.containsKey(revisionId) ?? false) continue;
+        if (frozenPrompts.containsKey(revisionId)) continue;
         final revisionForParse = revisionId;
         final chatForParse = _resolveChatMessage(
           revisionId: revisionForParse,
@@ -994,7 +1130,12 @@ class MessageBuilderService {
       }
     }
 
-    final injectionPass = MemoryInjectionPass();
+    final injectionPass = MemoryInjectionPass(
+      retainedSnapshotCarriers: {
+        for (final entry in frozenPrompts.entries)
+          if (entry.value.carriesMemorySnapshot) entry.key,
+      },
+    );
 
     // Revision ids whose payload really came from memory injection. Format
     // alone must never decide this: a user who pastes a snapshot copied out of
@@ -1015,15 +1156,32 @@ class MessageBuilderService {
       final parsedUser = chatMessageForParts != null
           ? parseInputFromMessage(chatMessageForParts)
           : parseInputFromApiMap(apiMessages[i]);
+      final hasNativePdf = nativePdfRevisionIds.contains(revisionId);
       final hasWorkspaceDocuments = parsedUser.documents.any(
-        (d) => workspaceAttachments.containsKey(d.path),
+        (d) =>
+            workspaceAttachments.containsKey(d.path) &&
+            !(nativePdfInput && isPdfMime(_effectiveAttachmentMime(d))),
       );
       // A local workspace already owns these documents. Do not additionally
       // upload them to a provider's code-execution sandbox.
       if (hasWorkspaceDocuments) {
-        final remaining = parseInternalDocumentRefs(
-          apiMessages[i][multimodalInternalDocumentPathsKey],
-        ).where((ref) => !workspaceAttachments.containsKey(ref.uri)).toList();
+        final remaining =
+            parseInternalDocumentRefs(
+                  apiMessages[i][multimodalInternalDocumentPathsKey],
+                )
+                .where(
+                  (ref) =>
+                      !workspaceAttachments.containsKey(ref.uri) ||
+                      (nativePdfInput &&
+                          isPdfMime(
+                            resolveMediaAttachmentMime(
+                              explicitMime: ref.mime,
+                              fileName: ref.name,
+                              path: ref.uri,
+                            ),
+                          )),
+                )
+                .toList();
         if (remaining.isEmpty) {
           apiMessages[i].remove(multimodalInternalDocumentPathsKey);
         } else {
@@ -1120,8 +1278,8 @@ class MessageBuilderService {
         lastUserImagePaths = List<String>.of(parsedUser.imagePaths);
       }
 
-      // Prefer frozen promptContent — never recompute (§8.3).
-      final existing = frozenPrompts?[revisionId];
+      // Reuse only the frozen prompts retained for this request.
+      final existing = frozenPrompts[revisionId];
       if (existing != null) {
         final sendPayload = _legacyAwareFrozenPayload(
           payload: existing.payload,
@@ -1155,6 +1313,8 @@ class MessageBuilderService {
       final filePrompts = StringBuffer();
       var leftToSandbox = false;
       for (final d in parsedUser.documents) {
+        final effectiveMime = _effectiveAttachmentMime(d);
+        if (nativePdfInput && isPdfMime(effectiveMime)) continue;
         final local = workspaceAttachments[d.path];
         if (local != null) {
           leftToSandbox = true;
@@ -1165,7 +1325,6 @@ class MessageBuilderService {
           );
           continue;
         }
-        final effectiveMime = _effectiveAttachmentMime(d);
         if (isVideoMime(effectiveMime) || isAudioMime(effectiveMime)) {
           continue;
         }
@@ -1186,7 +1345,7 @@ class MessageBuilderService {
       }
 
       String merged = (filePrompts.toString() + cleanedUser).trim();
-      var canFreezePrompt = !previewOnly && !leftToSandbox;
+      var canFreezePrompt = !previewOnly && !leftToSandbox && !hasNativePdf;
 
       if (!previewOnly && ocrActive && ocrHandler != null) {
         final ocrTargets = parsedUser.imagePaths
@@ -1649,11 +1808,14 @@ class MessageBuilderService {
       if (revisionId.isEmpty || revisionId == currentMessageId) continue;
       historyUserIds.add(revisionId);
     }
+    final retainedCarriers = pass?.retainedSnapshotCarriers;
     final hasSnapshot =
         historyUserIds.any(
           (id) => pass?.snapshotCarriers.contains(id) ?? false,
         ) ||
-        await repo.anyPromptCarriesMemorySnapshot(historyUserIds);
+        (retainedCarriers != null
+            ? historyUserIds.any(retainedCarriers.contains)
+            : await repo.anyPromptCarriesMemorySnapshot(historyUserIds));
 
     // CRITICAL: compare against the prior hash BEFORE any write (appendix §6).
     // Writing first makes currentHash == injectedMemoryHash and no change is
@@ -2288,34 +2450,37 @@ class MessageBuilderService {
         );
       }
 
-      // AT_DEPTH: insert at depth from end (depth=1 means before last message).
+      // AT_DEPTH: depth=0 appends; depth=1 inserts before the last message.
       final atDepthInjections = byPosition[WorldBookInjectionPosition.atDepth];
       if (atDepthInjections != null && atDepthInjections.isNotEmpty) {
         final byDepth = <int, List<WorldBookEntry>>{};
         for (final e in atDepthInjections) {
-          final depth = (e.injectDepth <= 0 ? 1 : e.injectDepth)
-              .clamp(1, 200)
-              .toInt();
+          final depth = e.injectDepth.clamp(0, 200);
           byDepth.putIfAbsent(depth, () => <WorldBookEntry>[]).add(e);
         }
 
         final depths = byDepth.keys.toList(growable: false)
           ..sort((a, b) => b.compareTo(a));
+        final originalLength = apiMessages.length;
+        final historyStart = apiMessages
+            .takeWhile((message) => message['role'] == 'system')
+            .length;
+        var insertedCount = 0;
 
         for (final depth in depths) {
           final injections = byDepth[depth] ?? const <WorldBookEntry>[];
-          var insertIndex = (apiMessages.length - depth).clamp(
-            0,
-            apiMessages.length,
-          );
+          // Anchor to the original history so multiple oversized depths keep
+          // their order after clamping to the start of the chat.
+          var insertIndex =
+              (originalLength - depth).clamp(historyStart, originalLength) +
+              insertedCount;
           insertIndex = findSafeInsertIndex(apiMessages, insertIndex);
-          apiMessages.insertAll(
-            insertIndex,
-            createMergedInjectionMessages(
-              injections,
-              position: WorldBookInjectionPosition.atDepth,
-            ),
+          final messages = createMergedInjectionMessages(
+            injections,
+            position: WorldBookInjectionPosition.atDepth,
           );
+          apiMessages.insertAll(insertIndex, messages);
+          insertedCount += messages.length;
         }
       }
     } catch (_) {}
@@ -2365,28 +2530,23 @@ class MessageBuilderService {
       if (apiMessages.isNotEmpty && apiMessages.first['role'] == 'system') {
         startIdx = 1;
       }
-      final tail = apiMessages.sublist(startIdx);
-      if (tail.length > keep) {
-        final trimmed = tail.sublist(tail.length - keep);
-        apiMessages
-          ..removeRange(startIdx, apiMessages.length)
-          ..addAll(trimmed);
+      var cut = apiMessages.length - keep;
+      if (cut <= startIdx) return;
+      // Message count is a soft bound: keep the user request and its entire
+      // assistant/tool exchange instead of starting midway through a turn.
+      while (cut > startIdx && apiMessages[cut]['role'] != 'user') {
+        cut--;
       }
-      // Context trimming can cut in the middle of a tool-call triplet; avoid sending dangling tool messages.
-      while (apiMessages.length > startIdx &&
-          (apiMessages[startIdx]['role'] ?? '').toString() == 'tool') {
-        apiMessages.removeAt(startIdx);
-      }
+      apiMessages.removeRange(startIdx, cut);
     }
   }
 
   /// Convert local Markdown image links to inline base64 for model context.
   Future<void> inlineLocalImages(List<Map<String, dynamic>> apiMessages) async {
     for (int i = 0; i < apiMessages.length; i++) {
-      // view_image snapshots are resolved from successful result metadata at
-      // the provider boundary. Error text can contain untrusted image links.
-      if (apiMessages[i]['role'] == 'tool' &&
-          apiMessages[i]['name'] == 'view_image') {
+      // Typed tool images are resolved from result metadata at the provider
+      // boundary. Keep their Markdown intact; tool text never authorizes reads.
+      if (apiMessages[i]['role'] == 'tool') {
         continue;
       }
       final s = (apiMessages[i]['content'] ?? '').toString();

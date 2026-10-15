@@ -16,6 +16,7 @@ import '../../../model_spec/model_spec_resolver.dart';
 import '../../../model_spec/vendor_defaults.dart';
 import '../../builtin_tools.dart';
 import '../../chat_api_helpers.dart';
+import '../../native_input_attachments.dart';
 import '../../tool_result_content.dart';
 import '../../generation/tool_loop_runner.dart';
 import '../../kimi_formula_search.dart';
@@ -29,6 +30,7 @@ import 'chat_completions_decoder.dart';
 import 'openai_request_shaping.dart';
 import 'responses_api.dart';
 import 'responses_decoder.dart';
+import 'responses_history.dart';
 
 Uri _openAICompatibleUrl(ProviderConfig config) {
   final rawBase = config.baseUrl.endsWith('/')
@@ -108,6 +110,7 @@ Stream<StreamChunk> sendOpenAIStream(
   ProviderConfig config,
   String modelId,
   List<Map<String, dynamic>> messages, {
+  String? conversationId,
   List<String>? userImagePaths,
   ReasoningRequest reasoning = ReasoningRequest.auto,
   double? temperature,
@@ -123,6 +126,11 @@ Stream<StreamChunk> sendOpenAIStream(
   StreamRoundRunner? retryRound,
 }) async* {
   final upstreamModelId = apiModelId(config, modelId);
+  final cacheKey = conversationId?.trim() ?? '';
+  final promptCacheKey =
+      config.promptCacheKeyEnabled && !config.isOAuth && cacheKey.isNotEmpty
+      ? cacheKey
+      : null;
   // Utility calls (title / summary generation) only want search injected.
   final Iterable<String>? configuredBuiltInTools = builtInSearchOnly
       ? builtInTools(
@@ -156,6 +164,18 @@ Stream<StreamChunk> sendOpenAIStream(
     config,
     modelId,
   ).contains(BuiltInToolNames.search);
+  if (BuiltInToolsHelper.isVercelProvider(config) &&
+      config.useResponseApi == true &&
+      builtInSearchEnabled &&
+      !BuiltInToolsHelper.supportsBuiltInSearchForModel(
+        cfg: config,
+        modelId: modelId,
+      )) {
+    throw UnsupportedError(
+      'Kelivo supports Vercel Responses native web search with OpenAI models. '
+      'Use Chat Completions for Vercel Gateway search with other models.',
+    );
+  }
   if (config.useResponseApi != true &&
       BuiltInToolsHelper.isMoonshotProvider(config) &&
       builtInSearchEnabled) {
@@ -200,7 +220,11 @@ Stream<StreamChunk> sendOpenAIStream(
       const <Map<String, dynamic>>[];
   String responsesInstructions = '';
   List<dynamic>? responsesIncludeParam;
+  final responsesRecorder = ResponsesTurnRecorder(
+    responsesReplayScope(config, modelId),
+  );
   if (config.useResponseApi == true) {
+    messages = filterResponsesReasoningHistory(messages, spec.reasoning.replay);
     final input = <Map<String, dynamic>>[];
     // Extract system messages into `instructions` (Responses API best practice)
     String instructions = '';
@@ -246,6 +270,12 @@ Stream<StreamChunk> sendOpenAIStream(
           : (originalContent ?? '').toString();
       final roleRaw = (m['role'] ?? 'user').toString();
 
+      if (roleRaw == 'assistant' &&
+          m[multimodalInternalResponsesItemKey] is Map) {
+        input.add(responsesInputItem(m));
+        continue;
+      }
+
       // Responses API supports a top-level `instructions` field that has higher priority
       if (roleRaw == 'system') {
         if (raw.isNotEmpty) {
@@ -273,7 +303,33 @@ Stream<StreamChunk> sendOpenAIStream(
         continue;
       }
 
+      final nativeParts =
+          await NativeInputAttachments(
+            config: config,
+            spec: spec,
+            protocol: NativeInputProtocol.responses,
+          ).build(
+            m,
+            userPaths: i == lastResponsesUserIndex ? userImagePaths : null,
+          );
+      void addMessage(Map<String, dynamic> message) {
+        if (nativeParts.isNotEmpty) {
+          final content = message['content'];
+          message['content'] = [
+            if (content is List)
+              ...content
+            else if (content is String && content.isNotEmpty)
+              {'type': 'input_text', 'text': content},
+            ...nativeParts,
+          ];
+        }
+        input.add(message);
+      }
+
       final isAssistant = roleRaw == 'assistant';
+      // Reconstructed assistant text precedes its calls. Insert it here so
+      // no message separates a tool-call batch from its matching results.
+      final assistantMessageIndex = input.length;
 
       // Handle assistant messages with tool_calls - convert to function_call format
       if (isAssistant && m['tool_calls'] is List) {
@@ -338,7 +394,7 @@ Stream<StreamChunk> sendOpenAIStream(
         );
         if (!canImageInput) {
           if (isAssistant) {
-            input.add({
+            input.insert(assistantMessageIndex, {
               'type': 'message',
               'role': 'assistant',
               'status': 'completed',
@@ -347,7 +403,7 @@ Stream<StreamChunk> sendOpenAIStream(
               ],
             });
           } else {
-            input.add({'role': roleRaw, 'content': parsed.text});
+            addMessage({'role': roleRaw, 'content': parsed.text});
           }
           continue;
         }
@@ -411,6 +467,7 @@ Stream<StreamChunk> sendOpenAIStream(
           final p = mediaRef.uri;
           final String mime = mimeForInternalMediaRef(mediaRef);
           final bool isAv = isAudioMime(mime) || isVideoMime(mime);
+          if ((isAv || isPdfMime(mime)) && !isAssistant) continue;
           if (isAv) {
             // Responses path has no first-class A/V input parts here; never
             // encode video/audio as input_image. Keep a text reference for both
@@ -468,20 +525,20 @@ Stream<StreamChunk> sendOpenAIStream(
           if (assistantContent.isEmpty) {
             assistantContent.add({'type': 'output_text', 'text': parsed.text});
           }
-          input.add({
+          input.insert(assistantMessageIndex, {
             'type': 'message',
             'role': 'assistant',
             'status': 'completed',
             'content': assistantContent,
           });
         } else {
-          input.add({'role': roleRaw, 'content': parts});
+          addMessage({'role': roleRaw, 'content': parts});
         }
       } else {
         // No images
         if (isAssistant) {
           // Use proper message object format for assistant messages
-          input.add({
+          input.insert(assistantMessageIndex, {
             'type': 'message',
             'role': 'assistant',
             'status': 'completed',
@@ -490,7 +547,7 @@ Stream<StreamChunk> sendOpenAIStream(
             ],
           });
         } else {
-          input.add({'role': roleRaw, 'content': raw});
+          addMessage({'role': roleRaw, 'content': raw});
         }
       }
     }
@@ -516,6 +573,12 @@ Stream<StreamChunk> sendOpenAIStream(
           body['include'] = ['web_search_call.action.sources'];
         }
       } catch (_) {}
+    }
+    if (Uri.tryParse(config.baseUrl)?.host == 'api.openai.com') {
+      body['include'] = [
+        ...?body['include'] as List?,
+        'reasoning.encrypted_content',
+      ];
     }
     // Save initial Responses context
     try {
@@ -550,6 +613,11 @@ Stream<StreamChunk> sendOpenAIStream(
     final mm = await buildOpenAIChatCompletionMessages(
       messages,
       userMediaPaths: userImagePaths,
+      nativeInputs: NativeInputAttachments(
+        config: config,
+        spec: spec,
+        protocol: NativeInputProtocol.chatCompletions,
+      ),
       canImageInput: canImageInput,
       allowRemoteImages: allowRemoteImages,
       reasoningReplay: spec.reasoning.replay,
@@ -563,7 +631,7 @@ Stream<StreamChunk> sendOpenAIStream(
       if (temperature != null) 'temperature': temperature,
       if (topP != null) 'top_p': topP,
       if (tools != null && tools.isNotEmpty)
-        'tools': cleanToolsForCompatibility(tools),
+        'tools': copyChatCompletionTools(tools),
       if (tools != null && tools.isNotEmpty) 'tool_choice': 'auto',
     };
     setMaxTokens(body);
@@ -600,10 +668,14 @@ Stream<StreamChunk> sendOpenAIStream(
   // Custom body keys go last so they win over the reasoning dialect.
   final extraBodyCfg = customBody(config, modelId, assistantBody: extraBody);
   CustomRequestMerger.applyBody(body, extraBodyCfg);
+  if (promptCacheKey != null) {
+    body.putIfAbsent('prompt_cache_key', () => promptCacheKey);
+  }
   // Built-in tools run after the custom body and merge by type so custom
   // function tools and provider server tools coexist.
+  Object? builtInSearchQuery;
   if (config.useResponseApi != true) {
-    applyChatCompletionsBuiltInTools(
+    builtInSearchQuery = applyChatCompletionsBuiltInTools(
       body,
       config: config,
       modelId: modelId,
@@ -626,6 +698,12 @@ Stream<StreamChunk> sendOpenAIStream(
       final obj = jsonDecode(txt);
       // Responses API non-stream
       if (config.useResponseApi == true) {
+        for (final chunk
+            in ResponsesStreamDecoder(sourceId: 'finish').decodeSearchResults(
+              obj['response'] is Map ? obj['response'] as Map : obj as Map,
+            )) {
+          yield chunk;
+        }
         String outText = '';
         final rawOutput = obj['output'] ?? obj['response']?['output'];
         final reasoningText = responsesReasoningText(rawOutput);
@@ -700,6 +778,7 @@ Stream<StreamChunk> sendOpenAIStream(
               item.cast<String, dynamic>(),
         ];
         final calls = responsesCallsFromOutput(outputItems);
+        yield responsesRecorder.record(outputItems, calls);
         if (calls.isNotEmpty && effectiveOnToolCall != null) {
           yield* emitDelta(
             ids: ids,
@@ -708,6 +787,7 @@ Stream<StreamChunk> sendOpenAIStream(
             usage: usage,
           );
           yield* runOpenAIResponsesToolFollowUps(
+            recorder: responsesRecorder,
             client: client,
             config: config,
             modelId: modelId,
@@ -723,6 +803,7 @@ Stream<StreamChunk> sendOpenAIStream(
             onToolCall: effectiveOnToolCall,
             extraHeaders: extraHeaders,
             extraBody: extraBody,
+            promptCacheKey: promptCacheKey,
             temperature: temperature,
             topP: topP,
             maxTokens: maxTokens,
@@ -796,6 +877,11 @@ Stream<StreamChunk> sendOpenAIStream(
       );
       final firstMessage = openaiFirstChoiceMessage(lastObj);
       final ids = StreamChunkIds('finish');
+      for (final chunk in ChatCompletionsStreamDecoder(
+        sourceId: 'finish',
+      ).decodeCitations(lastObj)) {
+        yield chunk;
+      }
       yield* emitImages(visible.images, ids: ids);
       yield* emitDone(
         ids: ids,
@@ -890,6 +976,14 @@ Stream<StreamChunk> sendOpenAIStream(
             for (final call in decoder.takeFunctionCalls())
               call.index: call.toIndexFields(),
           });
+        final recordedCalls = responsesCallsFromIndexMap(respToolCallsByIndex);
+        yield responsesRecorder.record(
+          withResponsesFunctionCallItems(
+            lastResponseOutputItems,
+            recordedCalls,
+          ),
+          recordedCalls,
+        );
         if (!decoder.emittedImageEvents) {
           var fallbackCount = 0;
           for (final image in decoder.takeImages()) {
@@ -950,6 +1044,7 @@ Stream<StreamChunk> sendOpenAIStream(
                     ),
                 ];
           yield* runOpenAIResponsesToolFollowUps(
+            recorder: responsesRecorder,
             client: client,
             config: config,
             modelId: modelId,
@@ -965,6 +1060,7 @@ Stream<StreamChunk> sendOpenAIStream(
             onToolCall: effectiveOnToolCall,
             extraHeaders: extraHeaders,
             extraBody: extraBody,
+            promptCacheKey: promptCacheKey,
             temperature: temperature,
             topP: topP,
             maxTokens: maxTokens,
@@ -1025,6 +1121,23 @@ Stream<StreamChunk> sendOpenAIStream(
   for (final chunk in responsesDecoder?.onClosed() ?? const <StreamChunk>[]) {
     yield chunk;
   }
+  if (responsesDecoder != null) {
+    usage = responsesDecoder.usage ?? usage;
+    approxCompletionChars = responsesDecoder.approxCompletionChars;
+    final output = responsesDecoder.outputItems;
+    if (output.isNotEmpty) {
+      // EOF can follow complete output_item.done events without a terminal
+      // response event. Retain those native items, but do not synthesize or
+      // execute function calls whose response never completed.
+      yield responsesRecorder.record(
+        output,
+        responsesCallsFromIndexMap({
+          for (final call in responsesDecoder.takeFunctionCalls())
+            call.index: call.toIndexFields(),
+        }),
+      );
+    }
+  }
   if (chatDecoder != null &&
       effectiveOnToolCall != null &&
       toolAcc.isNotEmpty) {
@@ -1050,7 +1163,9 @@ Stream<StreamChunk> sendOpenAIStream(
       temperature: temperature,
       topP: topP,
       tools: tools,
+      builtInSearchQuery: builtInSearchQuery,
       extraBodyCfg: extraBodyCfg,
+      promptCacheKey: promptCacheKey,
       extraHeaders: extraHeaders,
       wantsImageOutput: wantsImageOutput,
       needsReasoningEcho: needsReasoningEcho,

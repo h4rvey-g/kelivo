@@ -36,6 +36,8 @@ import '../../../core/providers/tts_provider.dart';
 import '../../../shared/widgets/markdown_with_highlight.dart';
 import '../../../shared/widgets/auto_scroll_selection_area.dart';
 import '../../../shared/widgets/snackbar.dart';
+import '../../../shared/widgets/audio_clip_player.dart';
+import '../../../core/utils/multimodal_input_utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../core/providers/settings_provider.dart';
@@ -452,6 +454,8 @@ IconData _toolIconFor(String name, [Map<String, dynamic> args = const {}]) {
       return Lucide.Search;
     case 'search_web':
       return Lucide.Earth;
+    case 'fetch_url':
+      return Lucide.Link;
     case 'builtin_search':
       return Lucide.Search;
     // Provider built-in server tools. These are the names the decoders emit,
@@ -650,6 +654,10 @@ String _toolTitleFor(
       return l10n.chatMessageWidgetWebSearch(q);
     case 'builtin_search':
       return l10n.chatMessageWidgetBuiltinSearch;
+    case 'fetch_url':
+      final url = (args['url'] ?? '').toString().trim();
+      final host = Uri.tryParse(url)?.host ?? '';
+      return l10n.chatMessageWidgetWebFetch(host.isEmpty ? url : host);
     default:
       return isResult
           ? l10n.chatMessageWidgetToolResult(name)
@@ -2276,6 +2284,71 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
 
       if (part is FilePart) {
         final d = part;
+        final uri = d.uri.trim();
+        final localAudio =
+            !d.unavailable &&
+            isAudioMime(
+              inferMediaMimeFromSource(d.name, fallbackMime: d.mime ?? ''),
+            ) &&
+            !uri.startsWith('http://') &&
+            !uri.startsWith('https://') &&
+            !uri.startsWith('data:');
+        if (localAudio) {
+          items.add(
+            AudioClipPlayer(
+              key: ValueKey(
+                '$roleKey-message-attachment:${widget.message.id}:$partIndex',
+              ),
+              path: SandboxPathResolver.fix(uri),
+              builder: (context, button, time) => Container(
+                padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? cs.onSurface.withValues(alpha: 0.08)
+                      : cs.surface.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    button,
+                    const SizedBox(width: 4),
+                    // The name yields width so the button and time always fit.
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 180),
+                        child: Text(
+                          d.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: cs.onSurface.withValues(alpha: 0.86),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (time != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        time,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          color: cs.onSurface.withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+          continue;
+        }
         items.add(
           IosCardPress(
             key: ValueKey(

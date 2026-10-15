@@ -17,6 +17,7 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/world_book_provider.dart';
 import '../../../core/services/api/builtin_tools.dart';
 import '../../../core/services/api/chat_api_service.dart';
+import '../../../core/services/api/providers/openai/responses_history.dart';
 import '../../../core/services/api/reasoning/reasoning_dialects.dart';
 import '../../../core/services/model_spec/model_spec_resolver.dart';
 import '../../../core/providers/workspace_provider.dart';
@@ -172,7 +173,9 @@ class MessageGenerationService {
     bool persistWorldBookActivation = true,
     void Function(int before, int after)? onWorldBookActivationPersisted,
   }) async {
-    final cfg = settings.getProviderConfig(providerKey);
+    final cfg = settings
+        .getProviderConfig(providerKey)
+        .forModelProtocol(modelId);
     final kind = ProviderConfig.classify(
       providerKey,
       explicitType: cfg.providerType,
@@ -193,6 +196,13 @@ class MessageGenerationService {
       versionSelections: versionSelections,
       currentConversation: currentConversation,
       includeToolMessages: includeToolMessages,
+      preserveToolTurns: kind == ProviderKind.openai,
+      claudeSource: kind == ProviderKind.claude
+          ? (providerId: providerKey, modelId: modelId)
+          : null,
+      responsesScope: kind == ProviderKind.openai && cfg.useResponseApi == true
+          ? responsesReplayScope(cfg, modelId)
+          : null,
     );
 
     if (assistant != null && assistant.regexRules.isNotEmpty) {
@@ -366,6 +376,9 @@ class MessageGenerationService {
       conversation: conversation,
       sourceMessages: messages,
       previewOnly: true,
+      nativePdfInput: ModelSpecResolver.instance
+          .spec(packed.cfg, modelId)
+          .supportsPdfInput,
     );
     return ContextAssemblyPreview.fromApiMessages(
       apiMessages: packed.apiMessages,
@@ -465,6 +478,9 @@ class MessageGenerationService {
     final workspaceContext = packed.workspaceContext;
     final mcpRouteSnapshot = packed.mcpRouteSnapshot;
     final workspaceAttachments = packed.workspaceAttachments;
+    final nativePdfInput = ModelSpecResolver.instance
+        .spec(cfg, modelId)
+        .supportsPdfInput;
     final sandboxDataFiles = BuiltInToolsHelper.sendsDataFilesToSandbox(
       cfg: cfg,
       modelId: modelId,
@@ -491,6 +507,7 @@ class MessageGenerationService {
               conversation: currentConversation,
               sourceMessages: messages,
               sandboxDataFiles: sandboxDataFiles,
+              nativePdfInput: nativePdfInput,
               workspaceAttachments: localAttachments,
             )
         ? processingMessageId
@@ -508,6 +525,7 @@ class MessageGenerationService {
             conversation: currentConversation,
             sourceMessages: messages,
             sandboxDataFiles: sandboxDataFiles,
+            nativePdfInput: nativePdfInput,
             workspaceAttachments: localAttachments,
           );
     } on AttachmentRequiresWorkspace catch (e) {
@@ -633,6 +651,7 @@ class MessageGenerationService {
       userParts: userParts,
       modelId: modelId,
       providerId: providerKey,
+      draftSubmission: input.draftSubmission,
     );
     return (
       userMessage: result.userMessage!,

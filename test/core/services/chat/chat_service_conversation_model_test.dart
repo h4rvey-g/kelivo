@@ -311,6 +311,59 @@ void main() {
     });
   });
 
+  for (final selectedVersion in [0, 1]) {
+    test(
+      'cold regeneration retains revision $selectedVersion metadata',
+      () async {
+        final writer = createService();
+        final conversation = await writer.createConversation(title: 'Images');
+        final original = await writer.addMessage(
+          conversationId: conversation.id,
+          role: 'assistant',
+          content: 'original',
+        );
+        await writer.updateMessage(
+          original.id,
+          extras: const {'feature': 'original'},
+        );
+        final groupId = original.groupId ?? original.id;
+        if (selectedVersion == 1) {
+          final selected = await writer.addMessage(
+            conversationId: conversation.id,
+            role: 'assistant',
+            content: 'selected',
+            groupId: groupId,
+            version: 1,
+            selectVersion: true,
+          );
+          await writer.updateMessage(
+            selected.id,
+            extras: const {'feature': 'selected'},
+          );
+        }
+        await writer.close();
+        services.remove(writer);
+
+        final reader = createService();
+        await reader.init();
+        expect(reader.getMessages(conversation.id), isEmpty);
+        final result = await reader.beginRegeneration(
+          conversationId: conversation.id,
+          modelId: 'image-model',
+          providerId: 'provider',
+          groupId: groupId,
+          version: selectedVersion + 1,
+          truncateFuture: false,
+        );
+
+        expect(result.assistantMessage.extras, {
+          'feature': selectedVersion == 0 ? 'original' : 'selected',
+        });
+        expect(reader.debugHasMessageOrderSkeleton(conversation.id), isFalse);
+      },
+    );
+  }
+
   group('clearConversationModelOverrides', () {
     test('clears every conversation pinned to a provider', () async {
       final service = createService();

@@ -27,7 +27,7 @@ gh secret set SPARKLE_PRIVATE_KEY \
 
 ## Release flow
 
-Use `.github/workflows/build-stable-44.yml` for releases that should be visible
+Use `.github/workflows/build-stable-47.yml` for releases that should be visible
 to Sparkle. Its macOS job:
 
 1. Builds a monotonically increasing `CFBundleVersion` from the semantic

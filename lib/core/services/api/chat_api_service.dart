@@ -252,11 +252,7 @@ class ChatApiService {
       if (sessionToken.isCancelled) return;
       if (textOnly) config = _textOnlyConfig(config, modelId);
       if (config.oauthProvider == OAuthProvider.chatgpt) stream = true;
-      if (config.oauthProvider == OAuthProvider.kimi &&
-          (config.modelOverrides[modelId] as Map?)?['oauthProtocol'] ==
-              'anthropic') {
-        config = config.copyWith(providerType: ProviderKind.claude);
-      }
+      config = config.forModelProtocol(modelId);
       final options = retryOverride ?? AutoRetryConfig.current;
       final sessionHeaders = providerSessionHeaders(
         config,
@@ -327,32 +323,35 @@ class ChatApiService {
       }
 
       yield* retryRound(
-        () => _sendOnce(
-          config: config,
-          modelId: modelId,
-          messages: safeMessages,
-          userImagePaths: safeUserImagePaths,
-          reasoning: reasoning,
-          temperature: temperature,
-          topP: topP,
-          maxTokens: maxTokens,
-          tools: textOnly ? null : tools,
-          onToolCall: toolHandler == null
-              ? null
-              : (name, args, {toolCallId}) => toolCancellation.run(
-                  () => toolHandler(name, args, toolCallId: toolCallId),
-                ),
-          extraHeaders: sessionHeaders,
-          extraBody: textOnly ? null : extraBody,
-          stream: stream,
-          builtInSearchOnly: builtInSearchOnly,
-          skipImageParsing:
-              textOnly || skipImageParsing || !parseMarkdownImageLinks,
-          kind: kind,
-          useOpenAIImagesApi: useOpenAIImagesApi,
-          useZhipuLayoutParsing: useZhipuLayoutParsing,
-          sessionToken: sessionToken,
-          retryRound: retryRound,
+        () => toolCancellation.runStream(
+          () => _sendOnce(
+            config: config,
+            modelId: modelId,
+            messages: safeMessages,
+            userImagePaths: safeUserImagePaths,
+            reasoning: reasoning,
+            temperature: temperature,
+            topP: topP,
+            maxTokens: maxTokens,
+            tools: textOnly ? null : tools,
+            onToolCall: toolHandler == null
+                ? null
+                : (name, args, {toolCallId}) => toolCancellation.run(
+                    () => toolHandler(name, args, toolCallId: toolCallId),
+                  ),
+            extraHeaders: sessionHeaders,
+            extraBody: textOnly ? null : extraBody,
+            conversationId: conversationId,
+            stream: stream,
+            builtInSearchOnly: builtInSearchOnly,
+            skipImageParsing:
+                textOnly || skipImageParsing || !parseMarkdownImageLinks,
+            kind: kind,
+            useOpenAIImagesApi: useOpenAIImagesApi,
+            useZhipuLayoutParsing: useZhipuLayoutParsing,
+            sessionToken: sessionToken,
+            retryRound: retryRound,
+          ),
         ),
       );
     } finally {
@@ -400,6 +399,7 @@ class ChatApiService {
 
   static Stream<StreamChunk> _sendOnce({
     required ProviderConfig config,
+    String? conversationId,
     required String modelId,
     required List<Map<String, dynamic>> messages,
     List<String>? userImagePaths,
@@ -456,6 +456,7 @@ class ChatApiService {
             config,
             modelId,
             messages,
+            conversationId: conversationId,
             userImagePaths: userImagePaths,
             reasoning: reasoning,
             temperature: temperature,
@@ -476,6 +477,7 @@ class ChatApiService {
             config,
             modelId,
             messages,
+            conversationId: conversationId,
             userImagePaths: userImagePaths,
             reasoning: reasoning,
             temperature: temperature,

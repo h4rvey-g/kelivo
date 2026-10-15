@@ -23,6 +23,7 @@ import '../../stream/stream_chunk_ids.dart';
 import 'openai_tool_transcript.dart';
 import 'openai_request_shaping.dart';
 import 'responses_decoder.dart';
+import 'responses_history.dart';
 
 List<Map<String, dynamic>> toResponsesToolsFormat(
   List<Map<String, dynamic>> tools,
@@ -196,6 +197,7 @@ List<EmitToolCall> responsesCallsFromOutput(List<Map<String, dynamic>> output) {
 }
 
 Stream<StreamChunk> runOpenAIResponsesToolFollowUps({
+  required ResponsesTurnRecorder recorder,
   required http.Client client,
   required ProviderConfig config,
   required String modelId,
@@ -211,6 +213,7 @@ Stream<StreamChunk> runOpenAIResponsesToolFollowUps({
   required ToolCallHandler onToolCall,
   required Map<String, String>? extraHeaders,
   required Map<String, dynamic>? extraBody,
+  required String? promptCacheKey,
   required double? temperature,
   required double? topP,
   required int? maxTokens,
@@ -277,6 +280,9 @@ Stream<StreamChunk> runOpenAIResponsesToolFollowUps({
       );
       final extraCfg = customBody(config, modelId, assistantBody: extraBody);
       CustomRequestMerger.applyBody(body2, extraCfg);
+      if (promptCacheKey != null) {
+        body2.putIfAbsent('prompt_cache_key', () => promptCacheKey);
+      }
       try {
         if (body2['tools'] is List) {
           final raw = (body2['tools'] as List).cast<dynamic>();
@@ -319,6 +325,14 @@ Stream<StreamChunk> runOpenAIResponsesToolFollowUps({
         final raw = await decodeUtf8Stream(resp2.stream);
         throwIfInBandStreamError(raw);
         final obj = jsonDecode(raw) as Map;
+        for (final chunk
+            in ResponsesStreamDecoder(
+              sourceId: 'round-$round',
+            ).decodeSearchResults(
+              obj['response'] is Map ? obj['response'] as Map : obj,
+            )) {
+          yield chunk;
+        }
         final output = obj['output'] ?? obj['response']?['output'];
         outputItemsForAppend = [
           if (output is List)
@@ -384,6 +398,10 @@ Stream<StreamChunk> runOpenAIResponsesToolFollowUps({
         });
         lastCalls = responsesCallsFromIndexMap(respCalls2);
       }
+      yield recorder.record(
+        withResponsesFunctionCallItems(outputItemsForAppend, lastCalls),
+        lastCalls,
+      );
       if (lastCalls.isEmpty) return;
       final currentSig = [
         for (final call in lastCalls)

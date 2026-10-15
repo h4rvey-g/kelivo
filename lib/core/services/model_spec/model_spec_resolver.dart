@@ -117,6 +117,7 @@ class ModelSpecResolver {
     String modelKey, {
     String? displayName,
   }) {
+    cfg = cfg.forModelProtocol(modelKey);
     final rawOverride = _rawOverride(cfg, modelKey);
     final catalogVersion = _catalog.version;
     final fingerprint = _fingerprint(cfg, displayName);
@@ -225,7 +226,9 @@ class ModelSpecResolver {
       id: modelKey,
       displayName: displayName ?? modelKey,
       type: type,
-      input: input,
+      input: type == ModelType.chat
+          ? _protocolInput(cfg, upstreamId, input)
+          : input,
       output: output,
       abilities: abilities,
       reasoning: reasoning,
@@ -255,6 +258,36 @@ class ModelSpecResolver {
   static Object? _rawOverride(ProviderConfig cfg, String modelKey) {
     final raw = cfg.modelOverrides[modelKey];
     return raw is Map ? raw : null;
+  }
+
+  // Model capabilities alone do not imply the selected API can transport
+  // them. Explicit user overrides are applied afterwards and are validated
+  // when an attachment is sent.
+  static List<Modality> _protocolInput(
+    ProviderConfig cfg,
+    String modelId,
+    List<Modality> input,
+  ) {
+    final kind = ProviderConfig.classify(
+      cfg.id,
+      explicitType: cfg.providerType,
+    );
+    final pdfOnly =
+        kind == ProviderKind.claude ||
+        (kind == ProviderKind.google &&
+            cfg.vertexAI == true &&
+            modelId.toLowerCase().startsWith('claude-')) ||
+        (kind == ProviderKind.openai && cfg.useResponseApi == true);
+    final officialOpenAi =
+        kind == ProviderKind.openai &&
+        Uri.tryParse(cfg.baseUrl)?.host.toLowerCase() == 'api.openai.com';
+    return [
+      for (final modality in input)
+        if (!(pdfOnly &&
+                (modality == Modality.audio || modality == Modality.video)) &&
+            !(officialOpenAi && modality == Modality.video))
+          modality,
+    ];
   }
 
   static int _fingerprint(ProviderConfig cfg, String? displayName) {
@@ -581,14 +614,14 @@ class ModelSpecResolver {
     if (interleaved == 'reasoning_content') {
       sources[ModelSpecField.reasoningReplay] = SpecSource.catalog;
       return (
-        policy: ReasoningReplayPolicy.toolTurns,
+        policy: ReasoningReplayPolicy.all,
         field: ReasoningReplayField.reasoningContent,
       );
     }
     if (interleaved == 'reasoning_details') {
       sources[ModelSpecField.reasoningReplay] = SpecSource.catalog;
       return (
-        policy: ReasoningReplayPolicy.toolTurns,
+        policy: ReasoningReplayPolicy.all,
         field: ReasoningReplayField.reasoningDetails,
       );
     }

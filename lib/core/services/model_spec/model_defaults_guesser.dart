@@ -245,6 +245,37 @@ class ModelDefaultsGuesser {
       }
     }
 
+    // The catalog remains authoritative; these cover manually added models
+    // and relays without a catalog entry.
+    if (!forceEmbedding && !draft.output.contains(Modality.image)) {
+      if (_matches(
+            id,
+            r'(^|/)gemini-(1\.5-|[2-9][.-]|flash-latest|pro-latest)',
+          ) &&
+          !id.contains('tts') &&
+          !id.contains('live') &&
+          !id.contains('audio')) {
+        draft.input.addAll([Modality.audio, Modality.video, Modality.pdf]);
+      } else if (_matches(
+        id,
+        r'(^|/)claude-(3[.-]7-|(?:sonnet|opus|haiku|fable|mythos)-[4-9])',
+      )) {
+        draft.input.add(Modality.pdf);
+      } else if (_matches(id, r'(^|/)gpt-(audio(?:-|$)|4o(?:-mini)?-audio)')) {
+        draft.input.add(Modality.audio);
+      } else if (_matches(
+            id,
+            r'(^|/)gpt-(4o(?:-|$)|4\.1(?:-|$)|[5-9](?:[.-]|$))',
+          ) &&
+          draft.input.contains(Modality.image) &&
+          !id.contains('transcribe') &&
+          !id.contains('realtime')) {
+        draft.input.add(Modality.pdf);
+      } else if (_matches(id, r'(^|/)qwen[^/]*-omni(?:-|$)')) {
+        draft.input.addAll([Modality.audio, Modality.video]);
+      }
+    }
+
     final normalized = ModelSpec(
       id: spec.id,
       displayName: spec.displayName,
@@ -487,9 +518,6 @@ bool _isKimiHybrid(String id) =>
 
 bool _isKimiForcedThinking(String id) =>
     id.contains('kimi-k2-thinking') || id.contains('kimi-k2.7');
-
-bool _isKimiK27Code(String id) =>
-    _matches(id, r'(^|[/_:@])kimi-k2\.7-code(?:$|[-.:])');
 
 bool _isQwenVisionModel(String id) {
   if (RegExp(r'qwen-?3([-.])5').hasMatch(id)) return true;
@@ -734,20 +762,17 @@ _ReasoningHit _kimiHybrid(String id) {
     dialect: ReasoningDialect.kimiThinking,
     canDisable: true,
     sampling: id.contains('kimi-k2.5') ? SamplingPolicy.never : null,
-    replay: ReasoningReplayPolicy.toolTurns,
+    replay: ReasoningReplayPolicy.all,
     replayField: ReasoningReplayField.reasoningContent,
   );
 }
 
 _ReasoningHit _kimiForced(String id) {
-  final preserved = _isKimiK27Code(id);
   return _fixed(
     dialect: ReasoningDialect.kimiThinking,
     canDisable: false,
     sampling: id.contains('kimi-k2.7') ? SamplingPolicy.never : null,
-    replay: preserved
-        ? ReasoningReplayPolicy.all
-        : ReasoningReplayPolicy.toolTurns,
+    replay: ReasoningReplayPolicy.all,
     replayField: ReasoningReplayField.reasoningContent,
   );
 }
@@ -757,7 +782,7 @@ _ReasoningHit _deepSeek(String id) {
     efforts: const ['low', 'high', 'max'],
     dialect: ReasoningDialect.thinkingType,
     canDisable: true,
-    replay: ReasoningReplayPolicy.toolTurns,
+    replay: ReasoningReplayPolicy.all,
     replayField: ReasoningReplayField.reasoningContent,
   );
 }
@@ -766,7 +791,7 @@ _ReasoningHit _mimo(String id) {
   return _ladder(
     efforts: const ['none', 'low', 'medium', 'high'],
     dialect: ReasoningDialect.thinkingType,
-    replay: ReasoningReplayPolicy.toolTurns,
+    replay: ReasoningReplayPolicy.all,
     replayField: ReasoningReplayField.reasoningContent,
   );
 }
@@ -805,7 +830,7 @@ _ReasoningHit _glm53(String id) {
   return _ladder(
     efforts: const ['low', 'high', 'max'],
     dialect: ReasoningDialect.thinkingType,
-    replay: ReasoningReplayPolicy.toolTurns,
+    replay: ReasoningReplayPolicy.all,
     replayField: ReasoningReplayField.reasoningContent,
   );
 }
@@ -815,7 +840,7 @@ _ReasoningHit _glm52(String id) {
     efforts: const ['low', 'medium', 'high', 'xhigh', 'max'],
     dialect: ReasoningDialect.thinkingType,
     canDisable: true,
-    replay: ReasoningReplayPolicy.toolTurns,
+    replay: ReasoningReplayPolicy.all,
     replayField: ReasoningReplayField.reasoningContent,
   );
 }
@@ -824,7 +849,7 @@ _ReasoningHit _glmOther(String id) {
   return _fixed(
     dialect: ReasoningDialect.thinkingType,
     canDisable: true,
-    replay: ReasoningReplayPolicy.toolTurns,
+    replay: ReasoningReplayPolicy.all,
     replayField: ReasoningReplayField.reasoningContent,
   );
 }

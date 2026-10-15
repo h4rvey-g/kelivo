@@ -577,6 +577,32 @@
   "backupPagePath": "路径",
   "backupPageChatsLabel": "聊天记录",
   "backupPageFilesLabel": "文件",
+  "backupPageScopeTitle": "备份与导入内容",
+  "backupPageScopeSelectedCount": "{selected}/{total}",
+  "@backupPageScopeSelectedCount": {
+    "placeholders": {
+      "selected": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "backupPageBackupManagementDescription": "选择备份和导入的内容，适用于本地、WebDAV 和 S3。导入时保留未选中的内容。技能和工作区包含各自的文件。",
+  "backupPageAssistantsLabel": "助手",
+  "backupPageProvidersLabel": "供应商",
+  "backupPageMcpLabel": "MCP 服务器",
+  "backupPageEnvironmentVariablesLabel": "环境变量",
+  "backupPageSkillsLabel": "技能",
+  "backupPageWorldBooksLabel": "世界书",
+  "backupPageMemoriesLabel": "记忆",
+  "backupPageQuickPhrasesLabel": "快捷短语",
+  "backupPageInstructionsLabel": "提示词注入",
+  "backupPageWorkspacesLabel": "工作区",
+  "backupPageSearchServicesLabel": "搜索服务",
+  "backupPageSpeechServicesLabel": "语音服务",
+  "backupPageSettingsLabel": "其他设置",
   "backupPageTestDone": "测试完成",
   "backupPageTestConnection": "测试连接",
   "backupPageRestartRequired": "需要重启应用",
@@ -680,9 +706,9 @@
   "backupPageOK": "好的",
   "backupPageCancel": "取消",
   "backupPageSelectImportMode": "选择导入模式",
-  "backupPageSelectImportModeDescription": "请选择恢复方式。聊天和文件开关决定本次恢复的组件。",
+  "backupPageSelectImportModeDescription": "请选择恢复方式。备份管理中的分类开关同样适用于本次导入。",
   "backupPageOverwriteMode": "完全覆盖",
-  "backupPageOverwriteModeDescription": "仅替换已选组件；保留未选组件及无关本地设置",
+  "backupPageOverwriteModeDescription": "替换所选内容，保留未选内容及其他本机设置。替换聊天时，也会清除本机未发送的草稿。",
   "backupPageMergeMode": "合并",
   "backupPageMergeModeDescription": "保留本地数据并加入备份数据；相同会话会跳过，冲突会话会重新分配 ID。",
   "backupPageRestore": "恢复",
@@ -702,6 +728,10 @@
   "backupPageExporting": "正在导出...",
   "backupProgressCancel": "取消",
   "backupProgressCancelled": "已取消",
+  "backupProgressFailed": "操作失败",
+  "backupProgressFailedAt": "失败阶段：{phase}",
+  "backupProgressCopyError": "复制错误",
+  "backupProgressErrorCopied": "错误已复制",
   "backupProgressPreparing": "准备中",
   "backupProgressSnapshotting": "正在创建数据库快照",
   "backupProgressPacking": "正在打包",
@@ -988,6 +1018,12 @@
   "chatMessageWidgetBuiltinSearchHideNote": "隐藏内置搜索工具卡片",
   "chatMessageWidgetDeepThinking": "深度思考",
   "chatMessageWidgetWebSearch": "联网检索: {query}",
+  "chatMessageWidgetWebFetch": "读取网页: {target}",
+  "@chatMessageWidgetWebFetch": {
+    "placeholders": {
+      "target": { "type": "String" }
+    }
+  },
   "chatMessageWidgetBuiltinSearch": "模型内置搜索",
   "chatMessageWidgetReadClipboard": "读取剪切板",
   "chatMessageWidgetWriteClipboard": "写入剪切板",
@@ -1185,6 +1221,12 @@
   "chatInputBarVoiceStopTooltip": "停止并转为文字",
   "chatInputBarVoiceSendTooltip": "转文字并发送",
   "chatInputBarVoiceTranscribing": "正在识别…",
+  "chatInputBarVoiceAttachAudioTooltip": "停止并存为音频",
+  "chatInputBarVoiceSendAudioTooltip": "直接发送录音",
+  "chatInputBarVoiceSavingAudio": "正在保存录音…",
+  "audioClipPlayTooltip": "播放音频",
+  "audioClipPauseTooltip": "暂停",
+  "audioClipPlaybackFailed": "无法播放此音频",
   "chatInputBarImageProcessing": "正在处理图片",
   "chatInputBarImageMode": "绘图模式",
   "chatInputBarDisableImageModeTooltip": "关闭绘图模式",
@@ -1508,6 +1550,8 @@
   "providerDetailPageShowTooltip": "显示",
   "providerDetailPageApiPathLabel": "API 路径",
   "providerDetailPageResponseApiTitle": "Response API (/responses)",
+  "providerDetailPagePromptCacheKeyTitle": "发送会话缓存键",
+  "providerDetailPagePromptCacheKeyHelp": "为 OpenAI 兼容请求附加稳定的会话级 prompt_cache_key。仅在供应商支持时开启，自定义 Body 优先，不保证缓存命中。",
   "providerDetailPageAihubmixAppCodeLabel": "应用 Code（享 10% 优惠）",
   "providerDetailPageAihubmixAppCodeHelp": "为请求附加 APP-Code，可享 10% 优惠，仅对 AIhubmix 生效。",
   "providerDetailPageClaudePromptCachingTitle": "Claude Prompt Caching",
@@ -1662,6 +1706,28 @@
   "searchServicesPageSearchProviders": "搜索提供商",
   "searchServicesPageGeneralOptions": "通用选项",
   "searchServicesPageAutoTestTitle": "启动时自动测试连接",
+  "searchServicesPageWebFetchSection": "网页抓取",
+  "searchServicesPageWebFetchModeTitle": "抓取方式",
+  "searchServicesPageWebFetchFollow": "跟随搜索服务",
+  "searchServicesPageWebFetchFollowValue": "跟随搜索 · {name}",
+  "@searchServicesPageWebFetchFollowValue": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "searchServicesPageWebFetchFollowSubtitle": "当前：{name}",
+  "@searchServicesPageWebFetchFollowSubtitle": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "searchServicesPageWebFetchLocal": "本地抓取",
+  "searchServicesPageWebFetchLocalSubtitle": "免费，由本机直接请求网页",
+  "searchServicesPageWebFetchProviderSubtitle": "使用该服务商的 API Key 和额度",
+  "searchServicesPageWebFetchOff": "关闭",
+  "searchServicesPageWebFetchOffSubtitle": "联网时只搜索，不读取网页",
+  "searchServicesPageWebFetchFooter": "开启联网搜索后，模型还可以读取网页全文。搜索服务不支持抓取时会改用本地抓取，本地抓取无法处理需要 JavaScript 渲染或有反爬限制的页面。",
+  "searchServicesPageWebFetchSupported": "支持网页抓取",
   "searchServicesPageMaxResults": "最大结果数",
   "searchServicesPageTimeoutSeconds": "超时时间（秒）",
   "searchServicesPageAtLeastOneServiceRequired": "至少需要一个搜索服务",
@@ -1683,6 +1749,7 @@
   "searchServicesAddDialogApiKeyRequired": "API Key 必填",
   "searchServicesFieldCustomUrlOptional": "自定义 URL（可选）",
   "searchServicesDialogApiKey": "API Key",
+  "searchServicesDialogApiKeyOptional": "API Key（可选）",
   "searchServicesDialogModel": "模型",
   "searchServicesDialogSystemPrompt": "系统提示词",
   "searchServicesAddDialogInstanceUrl": "实例 URL",
@@ -1756,6 +1823,24 @@
   "@searchServiceEditorTestFailed": {
     "placeholders": {
       "message": { "type": "String" }
+    }
+  },
+  "searchServiceEditorTestModeSearch": "搜索",
+  "searchServiceEditorTestModeFetch": "抓取",
+  "searchServiceEditorTestUrlHint": "输入测试网址",
+  "searchServiceEditorTestFetchRun": "运行抓取测试",
+  "searchServiceEditorTestFetchRunning": "抓取中…",
+  "searchServiceEditorTestFetchFailed": "抓取失败：{message}",
+  "@searchServiceEditorTestFetchFailed": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+  "searchServiceEditorTestFetchStats": "{characters} 字符 · {seconds} 秒",
+  "@searchServiceEditorTestFetchStats": {
+    "placeholders": {
+      "characters": { "type": "String" },
+      "seconds": { "type": "String" }
     }
   },
   "searchServiceEditorResultOpenTooltip": "打开结果",
@@ -2007,6 +2092,8 @@
   "asrServicesLocalSubtitle": "下载后在设备上离线运行",
   "asrServicesOpenAiTitle": "OpenAI Realtime",
   "asrServicesOpenAiSubtitle": "低延迟流式转写",
+  "asrServicesGroqSubtitle": "Whisper 分段云端转写",
+  "asrServicesMistralSubtitle": "Voxtral 分段云端转写",
   "asrServicesDashScopeTitle": "DashScope",
   "asrServicesDashScopeSubtitle": "Qwen 实时转写",
   "asrServicesVolcengineTitle": "火山引擎",
@@ -2171,6 +2258,7 @@
   "searchProviderDuckDuckGoDescription": "基于 DDGS 的 DuckDuckGo 隐私搜索，无需 API 密钥，支持设置地区。",
   "searchProviderBraveDescription": "Brave 独立搜索引擎。注重隐私，无跟踪或画像。",
   "searchProviderExaDescription": "具备语义理解的神经搜索引擎。适合研究与查找特定内容。",
+  "searchProviderExaMcpDescription": "通过 MCP 使用 Exa 搜索。不填 API Key 可在免费限额内使用。",
   "searchProviderLinkUpDescription": "提供来源可追溯答案的搜索 API，同时提供搜索结果与 AI 摘要。",
   "modelFetchInvertTooltip": "反选",
   "modelDetailSheetSaveFailedMessage": "保存失败，请重试",
@@ -2184,6 +2272,7 @@
   "searchServiceNameDuckDuckGo": "DuckDuckGo",
   "searchServiceNameTavily": "Tavily",
   "searchServiceNameExa": "Exa",
+  "searchServiceNameExaMcp": "Exa MCP",
   "searchServiceNameZhipu": "智谱",
   "searchServiceNameSearXNG": "SearXNG",
   "searchServiceNameLinkUp": "LinkUp",
@@ -3042,6 +3131,7 @@
   "worldBookInjectionPositionTopOfChat": "对话顶部",
   "worldBookInjectionPositionBottomOfChat": "对话底部",
   "worldBookInjectionPositionAtDepth": "指定深度",
+  "worldBookImportUnsupportedEntries": "导入完成。{count} 个条目使用了暂不支持的酒馆功能（如宏、正则、时效、筛选或插入规则），已保留内容并停用，请检查后再启用。",
   "worldBookInjectionRoleUser": "用户",
   "worldBookInjectionRoleAssistant": "助手",
   "mcpToolNeedsApproval": "需要审批",
@@ -3379,7 +3469,7 @@
   "localSnapshotActionPin": "保留这份",
   "localSnapshotActionUnpin": "取消保留",
   "localSnapshotRestoreTitle": "恢复这份副本？",
-  "localSnapshotRestoreMessage": "当前的对话和设置会被 {when} 的这份副本替换。系统会先把现在的数据存一份，所以这一步可以撤销。",
+  "localSnapshotRestoreMessage": "当前聊天和设置将替换为 {when} 的副本。替换前会保存当前聊天和设置的副本。未发送的草稿不包含在副本中，此次恢复会清除这些草稿。",
   "localSnapshotRestorePreparing": "正在准备副本",
   "localSnapshotDeleteTitle": "删除这份副本？",
   "localSnapshotDeleteMessage": "这份副本会从设备上永久删除。它里面有、而当前数据库里没有的数据将无法找回。",
@@ -3599,6 +3689,9 @@
   "workspaceEnvErrorNetwork": "下载失败，请检查网络后重试。",
   "workspaceEnvErrorChecksumMismatch": "下载文件已损坏，请重试。",
   "workspaceEnvErrorExtractFailed": "无法解压沙箱镜像。",
+  "workspaceEnvErrorCleanupFailed": "无法清理旧沙箱文件，请重试。",
+  "workspaceEnvCleanupIncomplete": "沙箱已就绪，但部分旧文件未能清理，仍占用存储空间。",
+  "workspaceEnvErrorResetFailed": "未能完成沙箱重置，请重试。",
   "workspaceEnvErrorPatchFailed": "无法完成沙箱配置。",
   "workspaceEnvErrorCancelled": "安装已取消。",
   "workspaceEnvErrorGeneric": "安装沙箱时出错。",
@@ -4511,5 +4604,34 @@
   "phoneControlAssistantHint": "需要同时完成两项设置：在系统无障碍设置中启用“Kelivo 手机控制”，并在要使用的助手 → 本地工具中开启“手机控制”（也可从对话工具菜单开启）。每个助手单独配置，执行任务时请保持手机解锁。",
   "phoneControlRestrictedTitle": "无法开启无障碍？",
   "phoneControlRestrictedHint": "部分下载的 APK 需要先在应用信息右上角菜单中选择“允许受限制的设置”。点击打开 Kelivo 应用信息，完成后再返回无障碍设置。",
-  "phoneControlEnableAssistant": "允许此助手使用手机控制"
+  "phoneControlEnableAssistant": "允许此助手使用手机控制",
+  "composerDraftLabel": "草稿",
+  "composerDraftRecovered": "已恢复一条尚未发送的内容。",
+  "composerDraftRestore": "继续编辑",
+  "composerDraftDiscard": "丢弃",
+  "composerDraftSaveFailed": "最新草稿保存失败，内容仍保留在当前窗口。",
+  "composerDraftRetry": "重试保存",
+  "composerDraftConflictTitle": "这个对话已有草稿",
+  "composerDraftConflictBody": "追加会保留两边的文字和附件；替换会丢弃原来的草稿。内容不会自动发送。",
+  "composerDraftAppend": "追加",
+  "composerDraftReplace": "替换草稿",
+  "composerDraftMissingFile": "有附件无法读取，请移除或重新选择该文件。",
+  "composerDraftMessageMissing": "正在编辑的原消息已不存在。请复制内容到新消息，或取消本次编辑。",
+  "composerDraftDeleteNotice": "这些对话中未发送的草稿也会一起删除。",
+  "mcpOAuthSettings": "OAuth 设置",
+  "mcpOAuthAutomatic": "自动",
+  "mcpOAuthMetadataUrl": "客户端元数据文档 URL",
+  "mcpOAuthClientAuthentication": "客户端认证方式",
+  "mcpOAuthPublicClient": "公共客户端",
+  "mcpOAuthRedirectUri": "本地回调 URL（可选）",
+  "mcpOAuthFillRedirectExample": "填入示例",
+  "mcpOAuthRedirectHint": "留空使用平台默认回调。若服务仅允许 localhost 回调，可填写 HTTP 回环地址。端口 0 自动选择可用端口；预注册客户端可能要求固定端口。",
+  "mcpOAuthClientIdRequired": "请输入客户端 ID，或选择自动注册。",
+  "mcpOAuthMetadataUrlInvalid": "请输入包含路径的 HTTPS 元数据文档 URL。",
+  "mcpOAuthSecretRequired": "此客户端认证方式需要 Client secret。",
+  "mcpOAuthRedirectInvalid": "请使用 localhost、127.0.0.1 或 [::1] 的 HTTP 回调地址，不要包含凭据、查询参数或片段。",
+  "mcpOAuthDiscovering": "正在发现授权服务器…",
+  "mcpOAuthRegistering": "正在准备授权…",
+  "mcpOAuthWaitingBrowser": "等待浏览器授权…",
+  "mcpOAuthExchangingToken": "正在完成登录…"
 }

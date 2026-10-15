@@ -664,7 +664,7 @@ void main() {
           },
         ]),
         'search_services_v1': jsonEncode([
-          {'id': 'search-1', 'type': 'bing_local', 'acceptLanguage': 'en-US'},
+          {'id': 'search-1', 'type': 'bing_local'},
         ]),
         'tts_services_v1': jsonEncode([
           {
@@ -724,6 +724,35 @@ void main() {
           'plugin_future_key_v1': {'nested': true},
         }),
         throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('preserves optional boolean provider prompt cache key settings', () {
+      for (final fields in <Map<String, Object?>>[
+        {},
+        {'promptCacheKeyEnabled': null},
+        {'promptCacheKeyEnabled': false},
+        {'promptCacheKeyEnabled': true},
+      ]) {
+        final provider = {'id': 'provider-1', ...fields};
+        final snapshot = BusinessSettingsRouter.normalizeAndRoute({
+          'provider_configs_v1': jsonEncode({'provider-1': provider}),
+        });
+        final exported = BusinessSettingsRouter.exportSnapshot(snapshot);
+        final providers =
+            jsonDecode(exported['provider_configs_v1']! as String) as Map;
+        expect(providers['provider-1'], provider);
+      }
+    });
+
+    test('rejects a non-string OAuth model cache version', () {
+      expect(
+        () => BusinessSettingsRouter.normalizeAndRoute({
+          'provider_configs_v1': jsonEncode({
+            'account': {'oauthModelsClientVersion': 159},
+          }),
+        }),
+        throwsFormatException,
       );
     });
 

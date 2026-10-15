@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:Kelivo/core/models/assistant.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
+import 'package:Kelivo/core/models/image_generation_context.dart';
 import 'package:Kelivo/core/models/message_part.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
@@ -17,6 +18,7 @@ import 'package:Kelivo/core/services/api/providers/google/gemini_thought_signatu
 import 'package:Kelivo/core/utils/multimodal_input_utils.dart';
 import 'package:Kelivo/features/home/services/message_builder_service.dart';
 import 'package:Kelivo/features/home/services/ocr_service.dart';
+import 'package:Kelivo/utils/mcp_structured_image.dart';
 
 import '../../../support/business_test_harness.dart';
 
@@ -70,7 +72,7 @@ ChatMessage _message({
 
 void main() {
   test(
-    'inlineLocalImages leaves view_image error text and snapshots to the provider',
+    'inlineLocalImages leaves all tool text and typed images to the provider',
     () async {
       final service = MessageBuilderService(
         chatService: _FakeChatService(const {}),
@@ -88,12 +90,25 @@ void main() {
       final messages = <Map<String, dynamic>>[
         {'role': 'tool', 'name': 'view_image', 'content': error},
         {'role': 'tool', 'name': 'view_image', 'content': snapshot},
+        {
+          'role': 'tool',
+          'name': 'svguess__view_drawing',
+          'content': snapshot,
+          'metadata': {
+            kMcpResultMetadataKey: mcpResultMetadata([file.path]),
+          },
+        },
+        {'role': 'tool', 'name': 'view_drawing', 'content': error},
+        {'role': 'tool', 'name': 'shell', 'content': snapshot},
         {'role': 'user', 'content': snapshot},
       ];
       await service.inlineLocalImages(messages);
       expect(messages[0]['content'], error);
       expect(messages[1]['content'], snapshot);
-      expect(messages[2]['content'], contains('data:image/png;base64,AQID'));
+      expect(messages[2]['content'], snapshot);
+      expect(messages[3]['content'], error);
+      expect(messages[4]['content'], snapshot);
+      expect(messages[5]['content'], contains('data:image/png;base64,AQID'));
     },
   );
 
@@ -350,6 +365,41 @@ void main() {
   });
 
   group('MessageBuilderService.buildApiMessages media paths', () {
+    test('generated image descriptions fill only empty assistant text', () {
+      const imageContext = ImageGenerationContext(
+        stageId: 'image-turn',
+        inheritanceMode: ImageContextInheritanceMode.summary,
+        inheritedContext: 'A portrait.',
+        modificationLog: ['Add a hat'],
+      );
+      final service = MessageBuilderService(
+        chatService: _FakeChatService(const {}),
+        contextProvider: _FakeBuildContext(),
+      );
+      final apiMessages = service.buildApiMessages(
+        messages: [
+          for (final text in ['', 'caption'])
+            ChatMessage(
+              id: 'image-$text',
+              role: 'assistant',
+              conversationId: 'c1',
+              parts: [
+                TextPart(text),
+                const ImagePart(uri: '/tmp/image.png', mime: 'image/png'),
+              ],
+              extras: imageContext.mergeIntoExtras(),
+            ),
+        ],
+        versionSelections: const {},
+        currentConversation: Conversation(title: 'test'),
+      );
+
+      expect(apiMessages.map((message) => message['content']), [
+        '[Generated image] A portrait.\nApplied requests: Add a hat',
+        'caption',
+      ]);
+    });
+
     test('pure-attachment user message emits structured media paths', () {
       final service = MessageBuilderService(
         chatService: _FakeChatService(const {}),
@@ -1280,7 +1330,7 @@ void main() {
       expect(apiMessages.last['content'], 'message-1506');
     });
 
-    test('上下文裁剪不会保留缺少 tool result 的 assistant tool call', () {
+    test('上下文裁剪回退到工具轮次的 user 起点', () {
       final service = MessageBuilderService(
         chatService: _FakeChatService({}),
         contextProvider: _FakeBuildContext(),
@@ -1320,13 +1370,16 @@ void main() {
 
       expect(
         apiMessages.where((message) => message['tool_calls'] is List),
-        isEmpty,
+        hasLength(1),
       );
       expect(
         apiMessages.where((message) => message['role'] == 'tool'),
-        isEmpty,
+        hasLength(1),
       );
       expect(apiMessages.map((message) => message['content']).toList(), [
+        'before',
+        '\n\n',
+        'ok',
         'done',
         'next',
       ]);
@@ -1379,6 +1432,7 @@ void main() {
         hasLength(1),
       );
       expect(apiMessages.map((message) => message['role']).toList(), [
+        'user',
         'assistant',
         'tool',
         'assistant',

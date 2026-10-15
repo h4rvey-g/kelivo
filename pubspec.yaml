@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.2.9
+version: 0.3.0
 
 environment:
   sdk: ^3.12.1
@@ -78,20 +78,22 @@ dependencies:
   xml: ^6.5.0
   open_filex: ^4.5.0
   easy_image_viewer: ^1.4.6
-  share_plus: ^11.1.0
+  share_plus: ^12.0.2
   pretty_qr_code: ^3.5.0
   mobile_scanner: ^7.0.1
   mcp_client: # ^1.0.2
     path: ./dependencies/mcp_client
   flutter_highlight: ^0.7.0
   highlight: ^0.7.0
+  re_editor:
+    path: ./dependencies/re_editor
   syncfusion_flutter_core: ^31.2.5
   syncfusion_flutter_sliders: ^31.2.5
   syncfusion_flutter_pdf: ^31.2.5
   audioplayers: ^6.5.1
   record: ^7.1.1
-  # 1.12.21+ ships macOS binaries with a higher deployment target. Keep the
-  # final macOS 11-compatible release until upstream restores compatibility.
+  # Keep this release for compatibility with our macOS 12 deployment target.
+  # Newer native binaries can require macOS 13.4/15.5 (see overrides below).
   sherpa_onnx: 1.12.20
   speech_to_text: ^7.4.0
   html: ^0.15.6

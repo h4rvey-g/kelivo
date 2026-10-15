@@ -35,6 +35,7 @@ class ChatCompletionsStreamDecoder implements StreamChunkDecoder {
       <int, Map<String, dynamic>>{};
 
   final List<dynamic> _details = <dynamic>[];
+  final Map<String, Map<String, dynamic>> _citationItems = {};
   final Map<int, String> _toolIdsByIndex = <int, String>{};
   final Set<String> _openToolIds = <String>{};
   final Set<String> _endedToolIds = <String>{};
@@ -92,6 +93,7 @@ class ChatCompletionsStreamDecoder implements StreamChunkDecoder {
   }
 
   void _parseEvent(Map<String, dynamic> obj, List<StreamChunk> chunks) {
+    final toolChunks = <StreamChunk>[];
     var content = '';
     String? reasoning;
     final pendingImages = <dynamic>[];
@@ -121,23 +123,23 @@ class ChatCompletionsStreamDecoder implements StreamChunkDecoder {
           if (wantsImageOutput) {
             pendingImages.addAll(_imageItems(delta));
           }
-          _accumulateToolCalls(delta['tool_calls'], chunks);
+          _accumulateToolCalls(delta['tool_calls'], toolChunks);
         }
         if (message is Map) {
           final rdMsg = message['reasoning_details'];
           if (rdMsg is List && rdMsg.isNotEmpty) {
             _addReasoningDetails(rdMsg);
           }
+          final rcMsg = message['reasoning_content'] ?? message['reasoning'];
+          if (rcMsg is String && rcMsg.isNotEmpty) {
+            if (needsReasoningEcho) reasoningEcho += rcMsg;
+            reasoning ??= rcMsg;
+          }
           if (message['content'] != null) {
             final messageContent = _messageText(message['content']);
             if (messageContent.isNotEmpty) {
               content += messageContent;
               approxCompletionChars += messageContent.length;
-            }
-            final rcMsg = message['reasoning_content'] ?? message['reasoning'];
-            if (rcMsg is String && rcMsg.isNotEmpty) {
-              if (needsReasoningEcho) reasoningEcho += rcMsg;
-              reasoning ??= rcMsg;
             }
             if (wantsImageOutput && message['content'] is List) {
               pendingImages.addAll([
@@ -149,7 +151,7 @@ class ChatCompletionsStreamDecoder implements StreamChunkDecoder {
             }
           }
           if (delta is! Map || delta['tool_calls'] == null) {
-            _ingestCompleteToolCalls(message['tool_calls'], chunks);
+            _ingestCompleteToolCalls(message['tool_calls'], toolChunks);
           }
         }
       }
@@ -180,7 +182,7 @@ class ChatCompletionsStreamDecoder implements StreamChunkDecoder {
         if (extraContent != null) {
           entry['extra_content'] = extraContent;
         }
-        chunks.addAll(
+        toolChunks.addAll(
           _emitCompleteToolCall(
             eventId,
             name: name,
@@ -198,22 +200,7 @@ class ChatCompletionsStreamDecoder implements StreamChunkDecoder {
       _round = _mergeUsage(_round, obj['usage']);
     }
 
-    final citations = obj['citations'];
-    if (citations is List && citations.isNotEmpty) {
-      final items = <Map<String, dynamic>>[
-        for (var k = 0; k < citations.length; k++)
-          <String, dynamic>{
-            'index': k + 1,
-            'url': citations[k].toString(),
-            'title': citations[k].toString(),
-          },
-      ];
-      final searchId = _ids.searchSticky();
-      chunks.add(ServerToolStart(id: searchId, toolName: 'search_web'));
-      chunks.add(
-        ServerToolEnd(id: searchId, output: <String, dynamic>{'items': items}),
-      );
-    }
+    chunks.addAll(decodeCitations(obj));
 
     if (reasoning != null && reasoning.isNotEmpty) {
       chunks.add(ReasoningDelta(id: _ids.reasoning(), text: reasoning));
@@ -225,9 +212,61 @@ class ChatCompletionsStreamDecoder implements StreamChunkDecoder {
     if (pendingImages.isNotEmpty) {
       chunks.addAll(_emitImages(pendingImages));
     }
+    // A complete-message SSE event may carry thinking, text and calls together.
+    // Preserve the same order as separate deltas when persisting its parts.
+    chunks.addAll(toolChunks);
     if (finishReason == 'tool_calls') {
       chunks.addAll(_endOpenTools());
     }
+  }
+
+  /// Source annotations are also returned by non-streaming completions.
+  List<StreamChunk> decodeCitations(Map<String, dynamic> obj) {
+    final raw = <dynamic>[
+      if (obj['citations'] is List) ...obj['citations'] as List,
+    ];
+    final choices = obj['choices'];
+    if (choices is List && choices.isNotEmpty && choices.first is Map) {
+      final choice = choices.first as Map;
+      for (final message in [choice['message'], choice['delta']]) {
+        if (message is Map && message['annotations'] is List) {
+          raw.addAll(
+            (message['annotations'] as List).where((annotation) {
+              return annotation is Map && annotation['type'] == 'url_citation';
+            }),
+          );
+        }
+      }
+    }
+    var changed = false;
+    for (final citation in raw) {
+      final details = citation is Map
+          ? (citation['url_citation'] is Map
+                ? citation['url_citation'] as Map
+                : citation)
+          : null;
+      final url = (details?['url'] ?? (citation is String ? citation : ''))
+          .toString();
+      if (url.isEmpty) continue;
+      final previous = _citationItems[url];
+      final rawTitle = (details?['title'] ?? '').toString();
+      final title = rawTitle.isEmpty
+          ? (previous?['title'] ?? url).toString()
+          : rawTitle;
+      if (previous != null && previous['title'] == title) continue;
+      _citationItems[url] = {
+        'index': previous?['index'] ?? _citationItems.length + 1,
+        'url': url,
+        'title': title,
+      };
+      changed = true;
+    }
+    if (!changed) return const [];
+    final id = _ids.searchSticky();
+    return [
+      ServerToolStart(id: id, toolName: 'search_web'),
+      ServerToolEnd(id: id, output: {'items': _citationItems.values.toList()}),
+    ];
   }
 
   void _accumulateToolCalls(dynamic raw, List<StreamChunk> chunks) {
