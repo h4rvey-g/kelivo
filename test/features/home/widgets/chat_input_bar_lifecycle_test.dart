@@ -70,6 +70,32 @@ void main() {
     focusNode.dispose();
   });
 
+  testWidgets('resuming leaves an unfocused desktop input alone', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+
+    await tester.pumpWidget(
+      buildHarness(controller: controller, focusNode: focusNode),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    focusNode.unfocus();
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse);
+
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    focusNode.dispose();
+  }, variant: TargetPlatformVariant.desktop());
+
   testWidgets('对话页被其他路由覆盖时恢复前台不抢焦点', (tester) async {
     final controller = TextEditingController();
     final focusNode = FocusNode();

@@ -1,5 +1,10 @@
+import '../../../core/services/api/providers/zhipu_layout_parsing.dart';
+import '../../../core/models/context_operation.dart';
+import '../../../core/services/api/request_image_context.dart';
+import '../../intelligent_ui/host/ui_context_submission.dart';
 import 'package:Kelivo/core/providers/external_mounts_provider.dart';
 import 'dart:async';
+import '../../../core/models/quote_ref.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import '../../../core/models/assistant.dart';
@@ -101,6 +106,7 @@ class PreparedGeneration {
   final ImageGenerationContext? imageGenerationContext;
   final Object? contextUsageConfiguration;
   final int? contextUsageRevision;
+  final RequestImageContext? imageContext;
 
   PreparedGeneration({
     required this.apiMessages,
@@ -111,6 +117,7 @@ class PreparedGeneration {
     this.imageGenerationContext,
     this.contextUsageConfiguration,
     this.contextUsageRevision,
+    this.imageContext,
   });
 }
 
@@ -196,7 +203,9 @@ class MessageGenerationService {
       versionSelections: versionSelections,
       currentConversation: currentConversation,
       includeToolMessages: includeToolMessages,
-      preserveToolTurns: kind == ProviderKind.openai,
+      // Claude replays its rounds from the native turn artifact instead.
+      preserveToolTurns: kind != ProviderKind.claude,
+      googleProviderId: kind == ProviderKind.google ? providerKey : null,
       claudeSource: kind == ProviderKind.claude
           ? (providerId: providerKey, modelId: modelId)
           : null,
@@ -299,7 +308,6 @@ class MessageGenerationService {
           assistant,
           conversationId: currentConversation?.id,
           workspaceContext: workspaceContext,
-          attachments: workspaceAttachments,
         );
       }
     } catch (e) {
@@ -319,6 +327,7 @@ class MessageGenerationService {
 
     final mcpRouteSnapshot = generationController.captureMcpToolRoutes(
       assistant,
+      conversationId: currentConversation?.id,
     );
     final toolDefs = generationController.buildToolDefinitions(
       settings,
@@ -346,6 +355,7 @@ class MessageGenerationService {
     required String providerKey,
     required String modelId,
     required String? assistantId,
+    List<ChatMessage>? messagesOverride,
   }) async {
     final settings = contextProvider.read<SettingsProvider>();
     Assistant? assistant;
@@ -354,11 +364,18 @@ class MessageGenerationService {
       assistant = assistantId == null ? null : assistants.getById(assistantId);
     } catch (_) {}
     final conversation = chatService.getConversation(conversationId);
-    final messages = await chatService.loadMessages(conversationId);
+    final messages =
+        messagesOverride ??
+        await chatService.loadSelectedContextMessages(
+          conversationId,
+          limit: assistant?.limitContextMessages == true
+              ? assistant!.contextMessageSize
+              : 0x7fffffff,
+        );
     final packed = await assembleUnprocessedRequestContext(
       messages: messages,
       versionSelections: chatService.getVersionSelections(conversationId),
-      currentConversation: conversation,
+      currentConversation: conversation?.copyWith(truncateIndex: -1),
       settings: settings,
       assistant: assistant,
       assistantId: assistantId,
@@ -380,7 +397,27 @@ class MessageGenerationService {
           .spec(packed.cfg, modelId)
           .supportsPdfInput,
     );
+    final imageContext =
+        ChatApiService.supportsOpenAIImagesApiRouting(packed.cfg, modelId)
+        ? null
+        : await _imageContext(
+            conversationId,
+            messages,
+            packed,
+            settings,
+            modelId,
+          );
+    if (imageContext != null) {
+      await imageContext.prepareMessages(
+        packed.apiMessages,
+        const [],
+        parseMarkdownImages: settings.sendMarkdownImageLinksAsImages,
+        allowRemoteImages: imageContext.allowsRemoteUserImages,
+      );
+    }
+    final imagePreview = await imageContext?.preview();
     return ContextAssemblyPreview.fromApiMessages(
+      imageContext: imageContext,
       apiMessages: packed.apiMessages,
       mcpToolNames: {
         for (final tool in packed.toolDefs)
@@ -389,10 +426,77 @@ class MessageGenerationService {
               name,
       },
       tools: packed.toolDefs,
-      images: imageRefsFromApiMessages(
-        packed.apiMessages,
-        sourceMessages: messages,
+      images: imagePreview == null
+          ? imageRefsFromApiMessages(
+              packed.apiMessages,
+              sourceMessages: messages,
+            )
+          : [
+              for (final image in imagePreview)
+                if (image.included) const ContextImageRef(),
+            ],
+    );
+  }
+
+  Future<RequestImageContext> _imageContext(
+    String conversationId,
+    List<ChatMessage> messages,
+    UnprocessedRequestContext packed,
+    SettingsProvider settings,
+    String modelId,
+  ) async {
+    final cfg = packed.cfg;
+    final kind = ProviderConfig.classify(
+      cfg.id,
+      explicitType: cfg.providerType,
+    );
+    final original = await chatService.imageContextHistory(
+      conversationId,
+      throughMessageId: messages
+          .where((m) => !ContextOperation.isSummary(m))
+          .lastOrNull
+          ?.id,
+    );
+    final history =
+        chatService.chatRepositoryOrNull == null &&
+            !chatService.isTemporaryConversation(conversationId)
+        ? messages
+        : original;
+    final spec = ModelSpecResolver.instance.spec(cfg, modelId);
+    final remoteImages =
+        (kind == ProviderKind.openai && spec.remoteImageUrls) ||
+        (kind == ProviderKind.google &&
+            cfg.vertexAI == true &&
+            modelId.toLowerCase().startsWith('claude-'));
+    return RequestImageContext(
+      settings: await chatService.imageContextSettings(conversationId),
+      images: await RequestImageContext.collectHistory(
+        history,
+        parseMarkdownImages: settings.sendMarkdownImageLinksAsImages,
+        allowRemoteImages: remoteImages,
       ),
+      userTurns: RequestImageContext.userTurnsFor(history),
+      inlineRemoteUsers: kind == ProviderKind.google,
+      allowsRemoteUserImages: remoteImages,
+      omitUserImages: settings.ocrActive,
+      latestUserId: history
+          .where((m) => m.role == 'user' && !ContextOperation.isSummary(m))
+          .lastOrNull
+          ?.id,
+      maxImageBytes: kind == ProviderKind.google
+          ? 14 * 1024 * 1024
+          : 20 * 1024 * 1024,
+      maxBodyBytes: kind == ProviderKind.google ? 20000000 : 28 * 1024 * 1024,
+      canImageInput: spec.supportsImageInput,
+      canRecall: packed.toolDefs.any(
+        (t) => (t['function'] as Map?)?['name'] == 'read_chat_image',
+      ),
+      viewImageUris:
+          packed.toolDefs.any(
+            (t) => (t['function'] as Map?)?['name'] == 'view_image',
+          )
+          ? {for (final file in packed.workspaceAttachments) file.sourceUri}
+          : {},
     );
   }
 
@@ -496,8 +600,7 @@ class MessageGenerationService {
               resolvedWorkspace.workspace.isToolEnabled(name as String);
         });
     final localAttachments = <String, AttachmentInfo>{
-      if (hasWorkspaceFileTools)
-        for (final file in workspaceAttachments) file.sourceUri: file,
+      for (final file in workspaceAttachments) file.sourceUri: file,
     };
     final indicatorMessageId =
         processingMessageId != null &&
@@ -509,10 +612,11 @@ class MessageGenerationService {
               sandboxDataFiles: sandboxDataFiles,
               nativePdfInput: nativePdfInput,
               workspaceAttachments: localAttachments,
+              useWorkspaceForDocuments: hasWorkspaceFileTools,
             )
         ? processingMessageId
         : null;
-    final List<String> lastUserImagePaths;
+    List<String> lastUserImagePaths;
     if (indicatorMessageId != null) {
       onFileProcessingStarted?.call(indicatorMessageId);
     }
@@ -527,6 +631,7 @@ class MessageGenerationService {
             sandboxDataFiles: sandboxDataFiles,
             nativePdfInput: nativePdfInput,
             workspaceAttachments: localAttachments,
+            useWorkspaceForDocuments: hasWorkspaceFileTools,
           );
     } on AttachmentRequiresWorkspace catch (e) {
       if (!contextProvider.mounted) rethrow;
@@ -542,7 +647,60 @@ class MessageGenerationService {
       }
     }
 
-    await messageBuilderService.inlineLocalImages(apiMessages);
+    if (currentConversation != null &&
+        chatService.contextOperationsFor(currentConversation.id).isNotEmpty) {
+      final window = ModelSpecResolver.instance
+          .spec(cfg, modelId)
+          .contextWindow;
+      if (window != null) {
+        final preview = ContextAssemblyPreview.fromApiMessages(
+          apiMessages: apiMessages,
+          tools: toolDefs,
+          mcpToolNames: const {},
+          images: imageRefsFromApiMessages(
+            apiMessages,
+            sourceMessages: messages,
+          ),
+        );
+        final used = estimateContextBuckets(
+          ContextEstimateJob(
+            preview: preview,
+            kind: ProviderConfig.classify(
+              providerKey,
+              explicitType: cfg.providerType,
+            ),
+          ),
+        ).total;
+        final reserve = assistant?.maxTokens ?? (window ~/ 10).clamp(1, 4096);
+        if (used + reserve > window) {
+          throw StateError(
+            contextProvider.mounted
+                ? AppLocalizations.of(contextProvider)!.contextBudgetExceeded
+                : 'context_budget_exceeded',
+          );
+        }
+      }
+    }
+    RequestImageContext? imageContext;
+    if (currentConversation != null &&
+        !ChatApiService.supportsOpenAIImagesApiRouting(cfg, modelId) &&
+        !shouldUseZhipuLayoutParsing(cfg, modelId)) {
+      imageContext = await _imageContext(
+        currentConversation.id,
+        messages,
+        packed,
+        settings,
+        modelId,
+      );
+      lastUserImagePaths = await imageContext.prepareMessages(
+        apiMessages,
+        lastUserImagePaths,
+        parseMarkdownImages: settings.sendMarkdownImageLinksAsImages,
+        allowRemoteImages: imageContext.allowsRemoteUserImages,
+      );
+    } else {
+      await messageBuilderService.inlineLocalImages(apiMessages);
+    }
     if (preparedImageContext != null) {
       for (var i = apiMessages.length - 1; i >= 0; i--) {
         final message = apiMessages[i];
@@ -595,7 +753,49 @@ class MessageGenerationService {
       imageGenerationContext: preparedImageContext?.context,
       contextUsageConfiguration: requestConfiguration,
       contextUsageRevision: requestRevision,
+      imageContext: imageContext,
     );
+  }
+
+  UiContextSubmission? _uiContext(ChatInputData input) {
+    final attachment = input.uiContext;
+    return attachment == null
+        ? null
+        : UiContextSubmission(
+            attachment,
+            omittedText: AppLocalizations.of(contextProvider)!.genuiChipOmitted,
+          );
+  }
+
+  /// Estimate the same frozen payload that sending would persist. The final
+  /// write still revalidates its source atomically; previews never save a draft
+  /// or substitute newer values from an interactive surface.
+  Future<List<MessagePart>> buildUserMessagePreviewParts(
+    ChatInputData input, {
+    required Assistant? assistant,
+  }) async {
+    final quoteMarker = input.quotes.isEmpty
+        ? null
+        : AppLocalizations.of(contextProvider)!.selectionQuoteMarker;
+    final uiContext = _uiContext(input);
+    final body = await buildPersistedUserMessageParts(
+      input,
+      assistant: assistant,
+    );
+    if (input.quotes.isNotEmpty && body.first is TextPart) {
+      body[0] = TextPart(
+        formatQuotedMessage(
+          (body.first as TextPart).text,
+          input.quotes,
+          quoteMarker: quoteMarker!,
+        ),
+      );
+    }
+    if (uiContext == null) return body;
+    final source = uiContext.attachment.source;
+    final current =
+        source != null && await chatService.isUiContextCurrent(source);
+    return uiContext.resolve(body, sourceIsCurrent: current);
   }
 
   /// Create user message from input data.
@@ -604,6 +804,7 @@ class MessageGenerationService {
     required ChatInputData input,
     required Assistant? assistant,
   }) async {
+    final uiContext = _uiContext(input);
     final parts = await MessageGenerationService.buildPersistedUserMessageParts(
       input,
       assistant: assistant,
@@ -612,6 +813,8 @@ class MessageGenerationService {
       conversationId: conversationId,
       role: 'user',
       parts: parts,
+      quotes: input.quotes,
+      uiContext: uiContext,
     );
   }
 
@@ -625,6 +828,7 @@ class MessageGenerationService {
     required String modelId,
     required String providerKey,
   }) async {
+    final uiContext = _uiContext(input);
     final userParts = await buildPersistedUserMessageParts(
       input,
       assistant: assistant,
@@ -634,6 +838,8 @@ class MessageGenerationService {
         conversationId: conversationId,
         role: 'user',
         parts: userParts,
+        quotes: input.quotes,
+        uiContext: uiContext,
       );
       final assistantMessage = await createAssistantPlaceholder(
         conversationId: conversationId,
@@ -649,9 +855,11 @@ class MessageGenerationService {
     final result = await chatService.beginSendGeneration(
       conversationId: conversationId,
       userParts: userParts,
+      quotes: input.quotes,
       modelId: modelId,
       providerId: providerKey,
       draftSubmission: input.draftSubmission,
+      uiContext: uiContext,
     );
     return (
       userMessage: result.userMessage!,
@@ -667,6 +875,7 @@ class MessageGenerationService {
     required String groupId,
     required int version,
     required bool truncateFuture,
+    String? expectedContextState,
   }) async {
     if (chatService.isTemporaryConversation(conversationId)) {
       final assistantMessage = await createAssistantPlaceholder(
@@ -679,6 +888,7 @@ class MessageGenerationService {
       return (assistantMessage: assistantMessage, runId: null);
     }
     final result = await chatService.beginRegeneration(
+      expectedContextState: expectedContextState,
       conversationId: conversationId,
       modelId: modelId,
       providerId: providerKey,
@@ -696,6 +906,7 @@ class MessageGenerationService {
     required String providerKey,
     required String anchorGroupId,
     required bool truncateFuture,
+    String? expectedContextState,
   }) async {
     if (chatService.isTemporaryConversation(conversationId)) {
       final assistantMessage = await createAssistantPlaceholder(
@@ -707,6 +918,7 @@ class MessageGenerationService {
       return (assistantMessage: assistantMessage, runId: null);
     }
     final result = await chatService.beginAssistantGeneration(
+      expectedContextState: expectedContextState,
       conversationId: conversationId,
       modelId: modelId,
       providerId: providerKey,
@@ -724,12 +936,19 @@ class MessageGenerationService {
     ChatInputData input, {
     required Assistant? assistant,
   }) async {
-    final processedUserText = applyAssistantRegexes(
-      input.text.trim(),
+    String transform(String text) => applyAssistantRegexes(
+      text,
       assistant: assistant,
       scope: AssistantRegexScope.user,
       target: AssistantRegexTransformTarget.persist,
     );
+    final processedUserText = input.quotes.isEmpty
+        ? transform(input.text.trim())
+        : input.text
+              .trim()
+              .split(quotePlaceholder)
+              .map(transform)
+              .join(quotePlaceholder);
 
     final parts = <MessagePart>[TextPart(processedUserText)];
     for (final path in input.imagePaths) {
@@ -828,10 +1047,17 @@ class MessageGenerationService {
 
     return stream_ctrl.GenerationContext(
       assistantMessage: assistantMessage,
+      imageContext: prepared.imageContext
+        ?..targetMessageId = assistantMessage.id,
       apiMessages: prepared.apiMessages,
       contextUsageConfiguration: prepared.contextUsageConfiguration,
       contextUsageRevision: prepared.contextUsageRevision,
-      userImagePaths: userImagePaths,
+      userImagePaths:
+          prepared.imageContext?.preparePaths(
+            userImagePaths,
+            allowRemoteImages: prepared.imageContext!.allowsRemoteUserImages,
+          ) ??
+          userImagePaths,
       allowImagesApiRouting: allowImagesApiRouting,
       providerKey: providerKey,
       modelId: modelId,
@@ -1096,6 +1322,7 @@ class MessageGenerationService {
       return WorkspaceToolContext.skillsOnly(
         skillsHostDir: skillsService.skillsDirectory.path,
         conversationId: conversation?.id,
+        assistantId: conversation?.assistantId,
       );
     } catch (_) {
       return null;

@@ -1,3 +1,4 @@
+import 'package:Kelivo/l10n/app_localizations_en.dart';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -139,7 +140,10 @@ void main() {
         ...visibleWindow,
       ];
 
-      final text = buildConversationTextForCompression(completeHistory);
+      final text = buildConversationTextForCompression(
+        completeHistory,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
+      );
 
       expect(text, contains('User: earliest user'));
       expect(text, contains('Assistant: earliest assistant'));
@@ -151,7 +155,7 @@ void main() {
       final text = buildConversationTextForCompression([
         _message(id: 'u1', role: 'user', content: '  '),
         _message(id: 'a1', role: 'assistant', content: 'answer'),
-      ]);
+      ], quoteMarker: AppLocalizationsEn().selectionQuoteMarker);
 
       expect(text, 'Assistant: answer');
     });
@@ -289,23 +293,8 @@ void main() {
     });
   });
 
-  group('defaultKeepUserMessageCountFor', () {
-    test('少于 5 条用户消息时默认 1', () {
-      expect(defaultKeepUserMessageCountFor(0), 1);
-      expect(defaultKeepUserMessageCountFor(1), 1);
-      expect(defaultKeepUserMessageCountFor(2), 1);
-      expect(defaultKeepUserMessageCountFor(4), 1);
-    });
-
-    test('5-9 条用户消息时默认 2', () {
-      expect(defaultKeepUserMessageCountFor(5), 2);
-      expect(defaultKeepUserMessageCountFor(9), 2);
-    });
-
-    test('10 条及以上用户消息时默认 3', () {
-      expect(defaultKeepUserMessageCountFor(10), 3);
-      expect(defaultKeepUserMessageCountFor(100), 3);
-    });
+  test('first use retains six user messages', () {
+    expect(CompressContextOptions.defaultKeepUserMessages, 6);
   });
 
   group('estimateCompressionTokens', () {
@@ -373,13 +362,17 @@ void main() {
         mode: CompressContextLimitMode.start,
         maxChars: 6000,
       );
-      final joined = buildConversationTextForCompression(messages);
+      final joined = buildConversationTextForCompression(
+        messages,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
+      );
 
       expect(
         buildBoundedConversationText(
           messages,
           mode: CompressContextLimitMode.start,
           maxChars: 6000,
+          quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
         ),
         buildCompressContextContent(joined, options),
       );
@@ -396,13 +389,17 @@ void main() {
         mode: CompressContextLimitMode.recent,
         maxChars: 6000,
       );
-      final joined = buildConversationTextForCompression(messages);
+      final joined = buildConversationTextForCompression(
+        messages,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
+      );
 
       expect(
         buildBoundedConversationText(
           messages,
           mode: CompressContextLimitMode.recent,
           maxChars: 6000,
+          quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
         ),
         buildCompressContextContent(joined, options),
       );
@@ -422,6 +419,7 @@ void main() {
         messages,
         mode: CompressContextLimitMode.start,
         maxChars: 6000,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
       );
       expect(start.length, lessThanOrEqualTo(6000));
       expect(start, contains('block-0'));
@@ -431,6 +429,7 @@ void main() {
         messages,
         mode: CompressContextLimitMode.recent,
         maxChars: 6000,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
       );
       expect(recent.length, lessThanOrEqualTo(6000));
       expect(recent, contains('block-199'));
@@ -446,7 +445,11 @@ void main() {
         _message(id: 'u2', role: 'user', content: 'ccc'),
       ];
 
-      final chunks = chunkMessagesForCompression(messages, maxChars: 20);
+      final chunks = chunkMessagesForCompression(
+        messages,
+        maxChars: 20,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
+      );
 
       expect(chunks, hasLength(greaterThan(1)));
       expect(chunks.every((chunk) => chunk.length <= 20), isTrue);
@@ -459,9 +462,16 @@ void main() {
       final messages = [
         _message(id: 'u1', role: 'user', content: 'aa$emoji${'b' * 30}'),
       ];
-      final line = conversationLineForCompression(messages.single)!;
+      final line = conversationLineForCompression(
+        messages.single,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
+      )!;
 
-      final chunks = chunkMessagesForCompression(messages, maxChars: 9);
+      final chunks = chunkMessagesForCompression(
+        messages,
+        maxChars: 9,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
+      );
 
       expect(chunks, hasLength(greaterThan(1)));
       expect(chunks.join(), line);
@@ -483,6 +493,7 @@ void main() {
         messages,
         const CompressContextOptions(mode: CompressContextLimitMode.unlimited),
         safeRequestChars: 50,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
       );
 
       expect(chunks, hasLength(greaterThan(1)));
@@ -504,6 +515,7 @@ void main() {
           keepUserMessages: 1,
         ),
         safeRequestChars: 50,
+        quoteMarker: AppLocalizationsEn().selectionQuoteMarker,
       );
 
       expect(chunks, hasLength(greaterThan(1)));

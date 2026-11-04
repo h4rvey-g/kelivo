@@ -1,10 +1,11 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'dart:ui' as ui;
 import '../icons/lucide_adapter.dart';
 import '../shared/widgets/ios_tactile.dart';
 import '../core/services/haptics.dart';
 import 'package:Kelivo/theme/app_font_weights.dart';
+import 'desktop_overlay_backdrop.dart';
 
 /// Simple anchored context menu for desktop.
 /// Shows a Material menu near the cursor or an anchor widget with a subtle animation.
@@ -12,6 +13,7 @@ class DesktopContextMenuItem {
   final IconData? icon;
   final String? svgAsset;
   final String label;
+  final String? subtitle;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool danger;
@@ -21,6 +23,7 @@ class DesktopContextMenuItem {
     this.icon,
     this.svgAsset,
     required this.label,
+    this.subtitle,
     this.onTap,
     this.onLongPress,
     this.danger = false,
@@ -33,50 +36,15 @@ Future<void> showDesktopContextMenuAt(
   BuildContext context, {
   required Offset globalPosition,
   required List<DesktopContextMenuItem> items,
+  Color? backgroundColor,
 }) async {
   // Match the navigator used by showGeneralDialog, including nested panes.
   final overlay = Navigator.of(context, rootNavigator: true).overlay;
   if (overlay == null) return;
   final overlayBox = overlay.context.findRenderObject() as RenderBox?;
   if (overlayBox == null) return;
-  final padding = MediaQuery.of(overlay.context).padding;
-
-  const double minMenuWidth = 160;
-  const double maxMenuWidth = 360;
-  final screen = overlayBox.size;
-  final estimatedMenuWidth = _estimateMenuWidth(
-    context,
-    items,
-    minMenuWidth,
-    maxMenuWidth,
-  );
-  final availableMenuWidth = screen.width - padding.left - padding.right - 16;
-  final menuWidth = availableMenuWidth > 0
-      ? estimatedMenuWidth.clamp(0.0, availableMenuWidth)
-      : 0.0;
-  final double menuMaxHeight = screen.height * 0.5; // scroll if exceeds
-  final estimatedMenuHeight = items.length * 44.0;
-  final double estMenuHeight = menuMaxHeight >= 44
-      ? estimatedMenuHeight.clamp(44.0, menuMaxHeight)
-      : menuMaxHeight;
-  const double gap = 8; // offset from cursor
   final cs = Theme.of(context).colorScheme;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  final minX = padding.left + 8;
-  final maxX = screen.width - padding.right - menuWidth - 8;
-  final minY = padding.top + 8;
-  final maxY = screen.height - padding.bottom - estMenuHeight - 8;
-
   final local = overlayBox.globalToLocal(globalPosition);
-  double x = (local.dx + gap).clamp(minX, maxX);
-  // Decide above/below based on available space
-  final availableBelow = screen.height - padding.bottom - local.dy - 8;
-  final availableAbove = local.dy - padding.top - 8;
-  final placeAbove =
-      availableBelow < estMenuHeight && availableAbove > availableBelow;
-  double y = placeAbove
-      ? (local.dy - gap - estMenuHeight).clamp(minY, maxY)
-      : (local.dy + gap).clamp(minY, maxY);
 
   await showGeneralDialog<void>(
     context: context,
@@ -85,6 +53,45 @@ Future<void> showDesktopContextMenuAt(
     barrierDismissible: true,
     barrierColor: cs.scrim.withValues(alpha: 0.06),
     pageBuilder: (ctx, _, __) {
+      const double minMenuWidth = 160;
+      const double maxMenuWidth = 360;
+      final double estimatedWidth = _estimateMenuWidth(
+        ctx,
+        items,
+        minMenuWidth,
+        maxMenuWidth,
+      );
+      final screen = MediaQuery.sizeOf(ctx);
+      final padding = MediaQuery.paddingOf(ctx);
+      final menuWidth = math.min(
+        estimatedWidth,
+        math.max(0.0, screen.width - padding.horizontal - 16),
+      );
+      final double menuMaxHeight = screen.height * 0.5; // scroll if exceeds
+      final double estMenuHeight = items
+          .fold<double>(
+            0,
+            (sum, item) => sum + (item.subtitle == null ? 44 : 60),
+          )
+          .clamp(44.0, menuMaxHeight);
+      const double gap = 8; // offset from cursor
+      final cs = Theme.of(ctx).colorScheme;
+      final isDark = Theme.of(ctx).brightness == Brightness.dark;
+      final minX = padding.left + 8;
+      final maxX = screen.width - padding.right - menuWidth - 8;
+      final minY = padding.top + 8;
+      final maxY = screen.height - padding.bottom - estMenuHeight - 8;
+
+      double x = (local.dx + gap).clamp(minX, maxX);
+      // Decide above/below based on available space
+      final availableBelow = screen.height - padding.bottom - local.dy - 8;
+      final availableAbove = local.dy - padding.top - 8;
+      final placeAbove =
+          availableBelow < estMenuHeight && availableAbove > availableBelow;
+      double y = placeAbove
+          ? (local.dy - gap - estMenuHeight).clamp(minY, maxY)
+          : (local.dy + gap).clamp(minY, maxY);
+
       return Material(
         type: MaterialType.transparency,
         child: Stack(
@@ -113,11 +120,13 @@ Future<void> showDesktopContextMenuAt(
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                        child: DesktopOverlayBackdrop(
+                          sigma: 14,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: cs.surface.withValues(alpha: 0.66),
+                              color:
+                                  backgroundColor ??
+                                  cs.surface.withValues(alpha: 0.66),
                             ),
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
@@ -132,12 +141,17 @@ Future<void> showDesktopContextMenuAt(
                                         icon: it.icon,
                                         svgAsset: it.svgAsset,
                                         label: it.label,
+                                        subtitle: it.subtitle,
                                         danger: it.danger,
                                         checked: it.checked,
-                                        onTap: () {
-                                          Navigator.of(ctx).pop();
-                                          it.onTap?.call();
-                                        },
+                                        onTap:
+                                            it.onTap == null &&
+                                                it.onLongPress == null
+                                            ? null
+                                            : () {
+                                                Navigator.of(ctx).pop();
+                                                it.onTap?.call();
+                                              },
                                         onLongPress: it.onLongPress == null
                                             ? null
                                             : () {
@@ -172,7 +186,7 @@ double _estimateMenuWidth(
 ) {
   // Base paddings: 12 left/right; icon 18 + spacing 10 if present
   double maxText = 0;
-  final textStyle = TextStyle(
+  final textStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
     fontSize: 14.5,
     color: Theme.of(context).colorScheme.onSurface,
     decoration: TextDecoration.none,
@@ -180,9 +194,20 @@ double _estimateMenuWidth(
   );
   for (final it in items) {
     final tp = TextPainter(
-      text: TextSpan(text: it.label, style: textStyle),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
+      text: TextSpan(
+        text: it.label,
+        style: textStyle,
+        children: [
+          if (it.subtitle != null)
+            TextSpan(
+              text: '\n${it.subtitle}',
+              style: textStyle.copyWith(fontSize: 11.5),
+            ),
+        ],
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: it.subtitle == null ? 1 : 2,
     )..layout(maxWidth: maxW);
     double width = 12 /*left*/ + tp.width + 12 /*right*/;
     if (it.icon != null || it.svgAsset != null) {
@@ -193,7 +218,7 @@ double _estimateMenuWidth(
     }
     if (width > maxText) maxText = width;
   }
-  return maxText.clamp(minW, maxW);
+  return (maxText.ceilToDouble() + 4).clamp(minW, maxW);
 }
 
 /// Show a menu anchored to a widget key (appears above/below the widget depending on space).
@@ -260,6 +285,7 @@ class _GlassMenuItem extends StatefulWidget {
     this.icon,
     this.svgAsset,
     required this.label,
+    this.subtitle,
     this.onTap,
     this.onLongPress,
     this.danger = false,
@@ -268,6 +294,7 @@ class _GlassMenuItem extends StatefulWidget {
   final IconData? icon;
   final String? svgAsset;
   final String label;
+  final String? subtitle;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool danger;
@@ -289,25 +316,30 @@ class _GlassMenuItemState extends State<_GlassMenuItem> {
     final ic = widget.danger
         ? Theme.of(context).colorScheme.error
         : cs.onSurface.withValues(alpha: 0.9);
-    final bg = _hover
+    final bg = _hover && widget.onTap != null
         ? (cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05))
         : Colors.transparent;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
+      cursor: widget.onTap == null
+          ? MouseCursor.defer
+          : SystemMouseCursors.click,
       child: IosCardPress(
+        focusable: true,
         borderRadius: BorderRadius.zero,
         baseColor: Colors.transparent,
-        onTap: () {
-          try {
-            Haptics.light();
-          } catch (_) {}
-          widget.onTap?.call();
-        },
+        onTap: widget.onTap == null && widget.onLongPress == null
+            ? null
+            : () {
+                try {
+                  Haptics.light();
+                } catch (_) {}
+                widget.onTap?.call();
+              },
         onLongPress: widget.onLongPress,
         child: Container(
-          height: 44,
+          height: widget.subtitle == null ? 44 : 60,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(color: bg),
@@ -326,13 +358,34 @@ class _GlassMenuItemState extends State<_GlassMenuItem> {
                 const SizedBox(width: 10),
               ],
               Expanded(
-                child: Text(
-                  widget.label,
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    color: fg,
-                    decoration: TextDecoration.none,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                        fontWeight: AppFontWeights.medium,
+                        fontSize: 14.5,
+                        color: fg,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    if (widget.subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.subtitle!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 11.5,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               if (widget.checked) ...[

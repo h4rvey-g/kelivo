@@ -95,26 +95,32 @@ void main() {
     addTearDown(worldBooks.dispose);
     addTearDown(usage.dispose);
 
+    var operationsOpened = 0;
     await tester.pumpWidget(
       MultiProvider(
         providers: [
           ChangeNotifierProvider<SettingsProvider>.value(value: settings),
           ChangeNotifierProvider<ContextUsageService>.value(value: usage),
         ],
-        child: const MaterialApp(
-          locale: Locale('en'),
+        child: MaterialApp(
+          locale: const Locale('en'),
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: ContextManagementSheet(
               conversationId: 'c1',
               draftText: 'draft',
+              onOperations: () => operationsOpened++,
             ),
           ),
         ),
       ),
     );
     await tester.pump();
+
+    await tester.ensureVisible(find.text('Context operations'));
+    await tester.tap(find.text('Context operations'));
+    expect(operationsOpened, 1);
 
     expect(find.byType(ContextUsageHeader), findsOneWidget);
     expect(find.byType(ContextUsageRing), findsNothing);
@@ -168,6 +174,7 @@ void main() {
       draft: 5,
     );
     usage.seeded = usage.seeded!.copyWith(
+      state: ContextUsageState.failed,
       buckets: detailed,
       usedTokens: detailed.total,
     );
@@ -178,5 +185,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Clear Context').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    expect(
+      find.text('Update failed · previous result is stale'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.byTooltip('Retry'));
+    await tester.tap(find.byTooltip('Retry'));
+    await tester.pump();
+    expect(usage.refreshCalls, 2);
+    expect(usage.lastForce, isTrue);
+    expect(usage.lastDraft, isNull);
+
+    usage.seeded = usage.seeded!.copyWith(state: ContextUsageState.estimated);
+    usage.notifyListeners();
+    await tester.pump();
+    expect(find.byTooltip('Retry'), findsNothing);
+    expect(find.text('Estimated'), findsOneWidget);
   });
 }

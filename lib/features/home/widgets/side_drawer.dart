@@ -1,3 +1,4 @@
+import 'package:Kelivo/features/chat/widgets/tool_permission_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform, listEquals;
@@ -48,6 +49,7 @@ import '../../assistant/widgets/assistant_select_sheet.dart';
 import '../../../desktop/hotkeys/sidebar_tab_bus.dart';
 import '../../../desktop/desktop_settings_navigation_bus.dart';
 import 'dart:async';
+import '../../chat/widgets/context_compression_status.dart';
 import '../../../features/search/services/global_session_search_service.dart';
 import '../controllers/chat_actions.dart';
 import '../utils/model_display_helper.dart';
@@ -101,7 +103,11 @@ class SideDrawer extends StatefulWidget {
   final ValueChanged<String>? onGlobalSearchQueryChanged;
   final VoidCallback? onEnterGlobalSearch;
   final VoidCallback? onExitGlobalSearch;
-  final Future<void> Function(String conversationId, String messageId)?
+  final Future<void> Function(
+    String conversationId,
+    String messageId,
+    String? surfaceKey,
+  )?
   onOpenGlobalSearchResult;
 
   /// Number of times the conversation-list area has (re)built. The sidebar
@@ -1023,12 +1029,6 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
   }
 
   @override
-  void deactivate() {
-    _closeAssistantPicker();
-    super.deactivate();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final host = InteractiveDrawer.maybeControllerOf(context);
@@ -1318,6 +1318,7 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
                       await widget.onOpenGlobalSearchResult?.call(
                         result.conversationId,
                         result.firstMatchedMessageId,
+                        result.matchedSurfaceKey,
                       );
                     },
                     child: AnimatedContainer(
@@ -2983,6 +2984,12 @@ class _SideDrawerState extends State<SideDrawer> with TickerProviderStateMixin {
           );
 
     if (widget.embedded) {
+      if (_isDesktop) {
+        return Material(
+          type: MaterialType.transparency,
+          child: SizedBox(width: widget.embeddedWidth ?? 300, child: inner),
+        );
+      }
       return ClipRect(
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
@@ -4467,6 +4474,14 @@ class _ChatTileState extends State<_ChatTile> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final compression = context.select<ChatService, ContextTaskIndicator?>(
+      (service) => contextTaskIndicator(
+        service.contextCompression.taskFor(widget.chat.id),
+        inputPaused:
+            service.contextCompression.isInputPaused?.call(widget.chat.id) ??
+            false,
+      ),
+    );
     // Per-tile current-conversation subscription (cache plan measure 16):
     // switching the open chat rebuilds only the affected tiles, not the list.
     final isCurrent = context.select<ChatService, bool>(
@@ -4590,6 +4605,11 @@ class _ChatTileState extends State<_ChatTile> {
                         ),
                       ),
                     ],
+                    if (compression != null) ...[
+                      const SizedBox(width: 6),
+                      ContextTaskStatusIcon(status: compression),
+                    ],
+                    ToolPermissionBadge(conversationId: widget.chat.id),
                     if (widget.loading) ...[
                       const SizedBox(width: 8),
                       _LoadingDot(),
@@ -4744,6 +4764,7 @@ class _DesktopSidebarTabsState extends State<_DesktopSidebarTabs> {
             final double pad = 4;
             final double segW = (constraints.maxWidth - pad * 2) / 2;
             return Container(
+              key: const ValueKey('desktopSidebarTabsSurface'),
               decoration: BoxDecoration(
                 color: context.appColors.surfaceFill,
                 borderRadius: BorderRadius.circular(16),

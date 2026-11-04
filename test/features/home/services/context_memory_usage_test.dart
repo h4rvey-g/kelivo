@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:Kelivo/core/models/memory_entry.dart';
+import 'package:Kelivo/core/models/message_part.dart';
+import 'package:Kelivo/core/utils/multimodal_input_utils.dart';
 import 'package:Kelivo/core/models/token_usage.dart';
 import 'package:Kelivo/core/providers/memory_provider_v2.dart';
 import 'package:Kelivo/core/services/memory/memory_repository.dart';
@@ -58,8 +61,9 @@ class _Chat extends ChatService {
   @override
   Future<void> updateConversationExtras(
     String id,
-    Map<String, dynamic> Function(Map<String, dynamic>) update,
-  ) async {
+    Map<String, dynamic> Function(Map<String, dynamic>) update, {
+    Conversation? expectedOwner,
+  }) async {
     await repository.updateConversationExtras(id, update);
     conversations[id] = (await repository.getConversation(id))!;
     revisions[id] = contextRevision(id) + 1;
@@ -73,14 +77,12 @@ class _Chat extends ChatService {
   @override
   Future<List<ChatMessage>> loadSelectedContextMessages(
     String id, {
-    required int truncateIndex,
     required int limit,
     String? throughRevisionId,
     bool includeFollowingAssistant = false,
   }) {
-    return repository.getSelectedContextMessages(
+    return repository.getEffectiveContextMessages(
       id,
-      truncateIndex: truncateIndex,
       limit: limit,
       throughRevisionId: throughRevisionId,
       includeFollowingAssistant: includeFollowingAssistant,
@@ -98,7 +100,10 @@ class _Generation extends Fake implements GenerationController {
   @override
   Map<String, dynamic>? buildCustomBody(Assistant? assistant) => null;
   @override
-  McpToolRouteSnapshot captureMcpToolRoutes(Assistant? assistant) => _Routes();
+  McpToolRouteSnapshot captureMcpToolRoutes(
+    Assistant? assistant, {
+    String? conversationId,
+  }) => _Routes();
   @override
   List<Map<String, dynamic>> buildToolDefinitions(
     SettingsProvider settings,
@@ -369,6 +374,36 @@ void main() {
     });
   });
 
+  testWidgets('full injection toggles refresh the cached memory bucket', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.runAsync(() async {
+      await seedUser('hello');
+      await putMemory('one', List.filled(500, 'word').join(' '));
+      await putMemory('two', List.filled(500, 'word').join(' '));
+      await settings.setMemoryInjectionMaxItems(1);
+      final g = generation();
+      final usage = usageService(g)..setActiveConversation('one');
+      try {
+        await usage.refresh('one', force: true);
+        final limited = usage.current!.buckets.memory;
+        await settings.setMemoryFullInjectionTypes({MemoryType.identity});
+        await usage.refresh('one');
+        expect(usage.current!.buckets.memory, greaterThan(limited + 400));
+        expect(
+          usage.current!.buckets.memory,
+          estimateTokens((await preview(g)).memoryText),
+        );
+        await settings.setMemoryFullInjectionTypes({});
+        await usage.refresh('one');
+        expect(usage.current!.buckets.memory, limited);
+      } finally {
+        usage.dispose();
+      }
+    });
+  });
+
   testWidgets('data URI in plain text is counted in full', (tester) async {
     await mount(tester);
     await tester.runAsync(() async {
@@ -407,6 +442,53 @@ void main() {
         modelId: 'opaque',
       );
 
+  testWidgets('image context respects models that disable remote image URLs', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.runAsync(() async {
+      final config = settings.getProviderConfig('Test');
+      await settings.setProviderConfig(
+        'Test',
+        config.copyWith(
+          modelOverrides: {
+            'opaque': {
+              'input': ['text', 'image'],
+              'remoteImageUrls': false,
+            },
+          },
+        ),
+      );
+      const url = 'https://example.test/remote.png';
+      final message = ChatMessage(
+        id: 'remote-user',
+        conversationId: 'one',
+        role: 'user',
+        parts: [
+          const TextPart('Inspect ![remote]($url)'),
+          ImagePart(uri: url, mime: 'image/png'),
+        ],
+      );
+      await repository.putMessage(message);
+      chat.storedMessages.add(message);
+      final result = await prepare(generation());
+      expect(result.imageContext!.allowsRemoteUserImages, isFalse);
+      expect(result.lastUserImagePaths, contains(url));
+      final user = result.apiMessages.lastWhere((m) => m['role'] == 'user');
+      expect(internalImageReferences(user), isEmpty);
+      expect(
+        parseInternalMediaRefs(
+          user[multimodalInternalMediaPathsKey],
+        ).single.uri,
+        url,
+      );
+      expect(
+        (await result.imageContext!.preview()).where((im) => im.included),
+        isEmpty,
+      );
+    });
+  });
+
   Future<void> record(ContextUsageService usage, PreparedGeneration request) =>
       usage.recordUsage(
         conversationId: 'one',
@@ -430,6 +512,8 @@ void main() {
     'delete',
     'scope',
     'limit',
+    'fullInjection',
+    'limitedInjection',
   ]) {
     for (final force in [false, true]) {
       testWidgets(
@@ -442,6 +526,9 @@ void main() {
             await putMemory('m1', 'first fact');
             await putMemory('m2', 'second fact');
             await settings.setMemoryInjectionMaxItems(1);
+            if (change == 'limitedInjection') {
+              await settings.setMemoryFullInjectionTypes({MemoryType.identity});
+            }
             final g = generation();
             final usage = usageService(g);
             if (!force) usage.setActiveConversation('one');
@@ -467,6 +554,12 @@ void main() {
                   await putMemory('m1', 'first fact', assistantId: 'other');
                 case 'limit':
                   await settings.setMemoryInjectionMaxItems(2);
+                case 'fullInjection':
+                  await settings.setMemoryFullInjectionTypes({
+                    MemoryType.identity,
+                  });
+                case 'limitedInjection':
+                  await settings.setMemoryFullInjectionTypes({});
               }
               final rebuilt = await preview(g);
               await usage.refresh('one', force: force);

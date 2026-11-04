@@ -1,16 +1,15 @@
 import "../../../support/business_test_harness.dart";
+import '../../../support/markdown_render_helpers.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
 import 'package:Kelivo/core/providers/settings_provider.dart';
 import 'package:Kelivo/core/providers/tts_provider.dart';
 import 'package:Kelivo/core/providers/user_provider.dart';
-import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/features/home/controllers/stream_controller.dart'
     as stream_ctrl;
 import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart';
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
 import 'package:Kelivo/features/home/widgets/message_list_view.dart';
-import 'package:Kelivo/icons/lucide_adapter.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -24,7 +23,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('all user messages expose an edit action', (tester) async {
+  testWidgets('all user messages expose edit from long press menu', (
+    tester,
+  ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
       final editedMessages = <String>[];
@@ -56,25 +57,17 @@ void main() {
         ),
       );
 
-      Finder editActionFor(String text) {
-        final message = find.ancestor(
-          of: find.text(text),
-          matching: find.byType(ChatMessageWidget),
-        );
-        return find.descendant(
-          of: message,
-          matching: find.byIcon(Lucide.Pencil),
-        );
-      }
-
-      final oldMessageEdit = editActionFor('old question');
-      expect(oldMessageEdit, findsOneWidget);
-      await tester.tap(oldMessageEdit);
+      await tester.longPressAt(markdownGlyphCenter(tester, 'old question'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit'), findsOneWidget);
+      await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
 
-      final latestMessageEdit = editActionFor('latest question');
-      expect(latestMessageEdit, findsOneWidget);
-      await tester.tap(latestMessageEdit);
+      await tester.longPressAt(markdownGlyphCenter(tester, 'latest question'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit'), findsOneWidget);
+
+      await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
 
       expect(editedMessages, <String>['user-old', 'user-latest']);

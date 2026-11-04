@@ -53,48 +53,6 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     replacement.dispose();
   });
-
-  testWidgets('quotes selected text into the draft and focuses the input', (
-    tester,
-  ) async {
-    late HomePageController controller;
-    late TextEditingController inputController;
-    late FocusNode inputFocus;
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(
-            create: (_) => SettingsProvider(createBusinessTestPreferences()),
-          ),
-          ChangeNotifierProvider(create: (_) => ChatService()),
-        ],
-        child: MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: _ControllerHarness(
-            onCreated: (value, textController, focusNode) {
-              controller = value;
-              inputController = textController;
-              inputFocus = focusNode;
-            },
-          ),
-        ),
-      ),
-    );
-
-    inputController.text = 'Existing draft';
-    controller.quoteSelectedText('Selected text');
-    await tester.pump();
-
-    expect(inputController.text, 'Existing draft\nSelected text\n');
-    expect(inputController.selection.extentOffset, inputController.text.length);
-    expect(inputFocus.hasFocus, isTrue);
-
-    controller.quoteSelectedText('Next line\n');
-    await tester.pump();
-    expect(inputController.text, 'Existing draft\nSelected text\nNext line\n');
-    expect(inputController.selection.extentOffset, inputController.text.length);
-  });
 }
 
 class _ControllerHarness extends StatefulWidget {
