@@ -1427,20 +1427,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get markdownTableCopiedMarkdownSnackbar => 'Table copied.';
 
   @override
-  String get markdownTableHorizontalScrollHint =>
-      'Scroll horizontally to see more columns';
-
-  @override
-  String markdownTableSemantics(int rows, int columns) {
-    return '$rows rows, $columns columns';
-  }
-
-  @override
-  String markdownTableRowsDisplayed(int visible, int total) {
-    return '$visible of $total rows';
-  }
-
-  @override
   String codeBlockCollapsedLines(int n) {
     return '… $n lines folded';
   }
@@ -2712,9 +2698,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatMessageWidgetCopiedToClipboard => 'Copied to clipboard';
-
-  @override
-  String get chatMessageWidgetQuoteSelection => 'Quote';
 
   @override
   String get chatMessageWidgetResendTooltip => 'Resend';

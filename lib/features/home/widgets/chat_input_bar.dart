@@ -883,7 +883,6 @@ class _ChatInputBarState extends State<ChatInputBar>
   static const double _imageRemoveButtonSize = 18;
   // Suppress context menu briefly after app resume to avoid flickering
   bool _suppressContextMenu = false;
-  bool _inputFocusedBeforeBackground = false;
   UiContextAttachment? _uiContext;
   bool _isSubmitting = false;
   bool _isTranslatingInput = false;
@@ -1525,24 +1524,14 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // When app resumes from background, suppress context menu briefly to avoid flickering.
+    // When app resumes from background, suppress context menu briefly to avoid flickering
     if (state == AppLifecycleState.resumed) {
       _suppressContextMenu = true;
-      // Only iOS needs this toolbar reset. Desktop keeps the focus restored by
-      // Flutter after switching windows (for example, Alt+Tab); the input is
-      // refocused only when it owned the focus before the app left the
-      // foreground, so external dictation can hand text back.
+      // Only iOS needs this toolbar reset. Desktop must retain the focus
+      // restored by Flutter after switching windows (for example, Alt+Tab).
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         widget.focusNode?.unfocus();
-      } else if (_inputFocusedBeforeBackground) {
-        scheduleMicrotask(() {
-          if (!mounted) return;
-          final route = ModalRoute.of(context);
-          if (route != null && !route.isCurrent) return;
-          widget.focusNode?.requestFocus();
-        });
       }
-      _inputFocusedBeforeBackground = false;
       // Re-enable context menu after a short delay
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
@@ -1553,10 +1542,6 @@ class _ChatInputBarState extends State<ChatInputBar>
         state == AppLifecycleState.paused) {
       // When going to background, hide any open toolbar
       _suppressContextMenu = true;
-      _inputFocusedBeforeBackground = widget.focusNode?.hasFocus ?? false;
-      // Desktop dictation tools briefly deactivate the app, then inject their
-      // result into the previously focused field. Keep the text input
-      // connection alive so that handoff does not lose the insertion.
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         widget.focusNode?.unfocus();
       }

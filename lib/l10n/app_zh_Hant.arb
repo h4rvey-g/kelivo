@@ -405,29 +405,6 @@
   "markdownTableDefaultFileNameStem": "表格",
   "markdownTableCopiedCsvSnackbar": "已複製 CSV，長按複製可複製為圖片",
   "markdownTableCopiedMarkdownSnackbar": "已複製表格",
-  "markdownTableHorizontalScrollHint": "橫向捲動查看更多欄",
-  "markdownTableSemantics": "{rows} 行，{columns} 欄",
-  "@markdownTableSemantics": {
-    "placeholders": {
-      "rows": {
-        "type": "int"
-      },
-      "columns": {
-        "type": "int"
-      }
-    }
-  },
-  "markdownTableRowsDisplayed": "已顯示 {visible}/{total} 行",
-  "@markdownTableRowsDisplayed": {
-    "placeholders": {
-      "visible": {
-        "type": "int"
-      },
-      "total": {
-        "type": "int"
-      }
-    }
-  },
   "codeBlockCollapsedLines": "… 已摺疊 {n} 行",
   "@codeBlockCollapsedLines": {
     "placeholders": {
@@ -975,7 +952,6 @@
   "chatMessageWidgetCannotOpenFile": "無法開啟檔案: {message}",
   "chatMessageWidgetOpenFileError": "開啟檔案失敗: {error}",
   "chatMessageWidgetCopiedToClipboard": "已複製到剪貼簿",
-  "chatMessageWidgetQuoteSelection": "引用",
   "chatMessageWidgetResendTooltip": "重新傳送",
   "chatMessageWidgetMoreTooltip": "更多",
   "chatMessageWidgetThinking": "正在思考...",

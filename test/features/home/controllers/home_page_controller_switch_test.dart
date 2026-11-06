@@ -143,21 +143,6 @@ class _ControlledChatService extends ChatService {
       const <String, int>{};
 
   @override
-  Future<({String providerId, String modelId})?>
-  loadLatestSelectedAssistantModel(String conversationId) async {
-    for (final message in messagesOf(conversationId).reversed) {
-      final providerId = message.providerId?.trim() ?? '';
-      final modelId = message.modelId?.trim() ?? '';
-      if (message.role == 'assistant' &&
-          providerId.isNotEmpty &&
-          modelId.isNotEmpty) {
-        return (providerId: providerId, modelId: modelId);
-      }
-    }
-    return null;
-  }
-
-  @override
   void setCurrentConversation(String? id) {
     setCurrentCalls.add(id);
     _trackedCurrentConversationId = id;
@@ -1090,7 +1075,7 @@ void main() {
       },
     );
 
-    testWidgets('restores the model last used by each conversation', (
+    testWidgets('switching conversations preserves the assistant model', (
       tester,
     ) async {
       await runAsDesktop(() async {
@@ -1135,6 +1120,11 @@ void main() {
           'conv-a': assistantId,
           'conv-b': assistantId,
         });
+        await assistantProvider.updateAssistant(
+          assistantProvider
+              .getById(assistantId)!
+              .copyWith(chatModelProvider: providerId, chatModelId: 'model-1'),
+        );
 
         await switchAndSettle(tester, controller, service, 'conv-a');
         await tester.pumpAndSettle();
@@ -1143,7 +1133,7 @@ void main() {
 
         await switchAndSettle(tester, controller, service, 'conv-b');
         await tester.pumpAndSettle();
-        expect(assistantProvider.currentAssistant?.chatModelId, 'model-2');
+        expect(assistantProvider.currentAssistant?.chatModelId, 'model-1');
 
         await switchAndSettle(tester, controller, service, 'conv-a');
         await tester.pumpAndSettle();

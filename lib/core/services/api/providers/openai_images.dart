@@ -223,16 +223,15 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
     final internalMediaRefs = parseInternalMediaRefs(
       message[multimodalInternalMediaPathsKey],
     );
-    final imageMediaRefs = [
-      for (final mediaRef in internalMediaRefs)
-        if (isImageMime(mimeForInternalMediaRef(mediaRef))) mediaRef,
-    ];
-    if (imageMediaRefs.isNotEmpty) {
+    if (internalMediaRefs.isNotEmpty) {
       // /images/edits only accepts image/* inputs; skip audio/video/octet-stream.
-      final mediaRef = imageMediaRefs.last;
       return _OpenAIImagesInput(
         prompt: prompt,
-        imageRefs: [_imageRefFromSource(mediaRef.uri, mime: mediaRef.mime)],
+        imageRefs: [
+          for (final mediaRef in internalMediaRefs)
+            if (isImageMime(mimeForInternalMediaRef(mediaRef)))
+              _imageRefFromSource(mediaRef.uri, mime: mediaRef.mime),
+        ],
       );
     }
     break;
@@ -242,7 +241,7 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
   if (explicitPaths.isNotEmpty) {
     return _OpenAIImagesInput(
       prompt: prompt,
-      imageRefs: [_imageRefFromSource(explicitPaths.last)],
+      imageRefs: [for (final path in explicitPaths) _imageRefFromSource(path)],
     );
   }
 
@@ -255,10 +254,7 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
     if (content is List) {
       final structuredImages = _extractOpenAIImageRefs(content);
       if (structuredImages.isNotEmpty) {
-        return _OpenAIImagesInput(
-          prompt: prompt,
-          imageRefs: [structuredImages.last],
-        );
+        return _OpenAIImagesInput(prompt: prompt, imageRefs: structuredImages);
       }
     }
 
@@ -270,10 +266,7 @@ Future<_OpenAIImagesInput> _openAIImagesInput(
       keepRemoteMarkdownText: false,
     );
     if (parsed.images.isNotEmpty) {
-      return _OpenAIImagesInput(
-        prompt: prompt,
-        imageRefs: [parsed.images.last],
-      );
+      return _OpenAIImagesInput(prompt: prompt, imageRefs: parsed.images);
     }
 
     final previousAssistantImage = _lastAssistantImageBefore(messages, i);

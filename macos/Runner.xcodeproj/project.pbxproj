@@ -27,7 +27,6 @@
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
-		7C5A00100000000000000002 /* SelectedTextAccessibilityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C5A00100000000000000001 /* SelectedTextAccessibilityController.swift */; };
 		7C5A00100000000000000004 /* TransientPasteboardTextCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C5A00100000000000000003 /* TransientPasteboardTextCapture.swift */; };
 		7C5A00100000000000000008 /* TextInputContextRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C5A00100000000000000007 /* TextInputContextRecovery.swift */; };
 		B610A5500000000000000001 /* BrowserGlassView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B610A5500000000000000002 /* BrowserGlassView.swift */; };
@@ -80,7 +79,6 @@
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
-		7C5A00100000000000000001 /* SelectedTextAccessibilityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectedTextAccessibilityController.swift; sourceTree = "<group>"; };
 		7C5A00100000000000000003 /* TransientPasteboardTextCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransientPasteboardTextCapture.swift; sourceTree = "<group>"; };
 		7C5A00100000000000000007 /* TextInputContextRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInputContextRecovery.swift; sourceTree = "<group>"; };
 		B610A5500000000000000002 /* BrowserGlassView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserGlassView.swift; sourceTree = "<group>"; };
@@ -196,7 +194,6 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
-				7C5A00100000000000000001 /* SelectedTextAccessibilityController.swift */,
 				7C5A00100000000000000003 /* TransientPasteboardTextCapture.swift */,
 				7C5A00100000000000000007 /* TextInputContextRecovery.swift */,
 				B610A5500000000000000002 /* BrowserGlassView.swift */,
@@ -466,7 +463,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7C5A00100000000000000002 /* SelectedTextAccessibilityController.swift in Sources */,
 				7C5A00100000000000000004 /* TransientPasteboardTextCapture.swift in Sources */,
 				7C5A00100000000000000008 /* TextInputContextRecovery.swift in Sources */,
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,

@@ -286,6 +286,58 @@ void main() {
       },
     );
 
+    for (final source in ['paths', 'media', 'content', 'markdown']) {
+      test('retains multiple image inputs from $source', () async {
+        const images = [
+          'data:image/png;base64,AQIDBA==',
+          'data:image/png;base64,BQYHCA==',
+        ];
+        late String requestBody;
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() async => server.close(force: true));
+        server.listen((request) async {
+          requestBody = latin1.decode(await _readBytes(request));
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            jsonEncode({
+              'data': [
+                {'url': 'https://example.com/edited.png'},
+              ],
+            }),
+          );
+          await request.response.close();
+        });
+
+        await ChatApiService.sendMessageStream(
+          config: _openAiConfig(_baseUrl(server)),
+          modelId: 'gpt-image-2',
+          messages: [
+            {
+              'role': 'user',
+              'content': switch (source) {
+                'content' => [
+                  {'type': 'text', 'text': 'Combine these images'},
+                  for (final image in images)
+                    {
+                      'type': 'image_url',
+                      'image_url': {'url': image},
+                    },
+                ],
+                'markdown' =>
+                  'Combine ![first](${images[0]}) and ![second](${images[1]})',
+                _ => 'Combine these images',
+              },
+              if (source == 'media') multimodalInternalMediaPathsKey: images,
+            },
+          ],
+          userImagePaths: source == 'paths' ? images : null,
+          stream: false,
+        ).toList();
+
+        expect('name="image[]"'.allMatches(requestBody), hasLength(2));
+      });
+    }
+
     test('routes image model with input image to edits multipart', () async {
       late Uri requestUri;
       late String contentType;

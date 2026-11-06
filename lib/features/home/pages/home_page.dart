@@ -1464,13 +1464,11 @@ class _HomePageState extends State<HomePage>
   }
 
   ModelSelection? _activeModelSelection() {
-    final settings = context.read<SettingsProvider>();
-    final assistant = context.read<AssistantProvider>().currentAssistant;
-    final provider =
-        assistant?.chatModelProvider ?? settings.currentModelProvider;
-    final model = assistant?.chatModelId ?? settings.currentModelId;
-    return provider != null && model != null
-        ? ModelSelection(provider, model)
+    final model = _resolvedChatModel();
+    final providerKey = model.providerKey;
+    final modelId = model.modelId;
+    return providerKey != null && modelId != null
+        ? ModelSelection(providerKey, modelId)
         : null;
   }
 
@@ -1530,23 +1528,11 @@ class _HomePageState extends State<HomePage>
     await _applyModelSelection(selection);
   }
 
-  Future<void> _applyModelSelection(ModelSelection selection) async {
-    final assistantProvider = context.read<AssistantProvider>();
-    final assistant = assistantProvider.currentAssistant;
-    if (assistant != null) {
-      await assistantProvider.updateAssistant(
-        assistant.copyWith(
-          chatModelProvider: selection.providerKey,
-          chatModelId: selection.modelId,
-        ),
+  Future<void> _applyModelSelection(ModelSelection selection) =>
+      _controller.selectChatModel(
+        providerKey: selection.providerKey,
+        modelId: selection.modelId,
       );
-      return;
-    }
-    await context.read<SettingsProvider>().setCurrentModel(
-      selection.providerKey,
-      selection.modelId,
-    );
-  }
 
   Widget _buildScrollButtons() {
     return Builder(

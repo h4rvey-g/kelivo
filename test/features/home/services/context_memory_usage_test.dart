@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:Kelivo/core/models/memory_entry.dart';
+import 'package:Kelivo/core/models/image_generation_context.dart';
 import 'package:Kelivo/core/models/message_part.dart';
 import 'package:Kelivo/core/utils/multimodal_input_utils.dart';
 import 'package:Kelivo/core/models/token_usage.dart';
@@ -441,6 +442,50 @@ void main() {
         providerKey: 'Test',
         modelId: 'opaque',
       );
+
+  testWidgets('image generation context preserves all current attachments', (
+    tester,
+  ) async {
+    await mount(tester);
+    await tester.runAsync(() async {
+      const images = [
+        'data:image/png;base64,AQIDBA==',
+        'data:image/png;base64,BQYHCA==',
+      ];
+      await settings.setImageContextInheritanceMode(
+        ImageContextInheritanceMode.fullConversation,
+      );
+      final message = ChatMessage(
+        id: 'image-user',
+        conversationId: 'one',
+        role: 'user',
+        parts: [
+          const TextPart('Combine these images'),
+          for (final image in images) ImagePart(uri: image, mime: 'image/png'),
+        ],
+      );
+      await repository.putMessage(message);
+      chat.storedMessages.add(message);
+      final result = await generation().prepareApiMessagesWithInjections(
+        messages: chat.storedMessages,
+        versionSelections: {},
+        currentConversation: chat.getConversation('one'),
+        settings: settings,
+        assistant: assistants.getById('assistant'),
+        assistantId: 'assistant',
+        providerKey: 'Test',
+        modelId: 'gpt-image-2',
+      );
+      expect(result.imageGenerationContext, isNotNull);
+      final user = result.apiMessages.lastWhere((m) => m['role'] == 'user');
+      expect(
+        parseInternalMediaRefs(
+          user[multimodalInternalMediaPathsKey],
+        ).map((ref) => ref.uri),
+        images,
+      );
+    });
+  });
 
   testWidgets('image context respects models that disable remote image URLs', (
     tester,

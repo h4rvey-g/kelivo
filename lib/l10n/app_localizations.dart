@@ -2698,24 +2698,6 @@ abstract class AppLocalizations {
   /// **'Table copied.'**
   String get markdownTableCopiedMarkdownSnackbar;
 
-  /// No description provided for @markdownTableHorizontalScrollHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Scroll horizontally to see more columns'**
-  String get markdownTableHorizontalScrollHint;
-
-  /// No description provided for @markdownTableSemantics.
-  ///
-  /// In en, this message translates to:
-  /// **'{rows} rows, {columns} columns'**
-  String markdownTableSemantics(int rows, int columns);
-
-  /// No description provided for @markdownTableRowsDisplayed.
-  ///
-  /// In en, this message translates to:
-  /// **'{visible} of {total} rows'**
-  String markdownTableRowsDisplayed(int visible, int total);
-
   /// No description provided for @codeBlockCollapsedLines.
   ///
   /// In en, this message translates to:
@@ -5025,12 +5007,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Copied to clipboard'**
   String get chatMessageWidgetCopiedToClipboard;
-
-  /// No description provided for @chatMessageWidgetQuoteSelection.
-  ///
-  /// In en, this message translates to:
-  /// **'Quote'**
-  String get chatMessageWidgetQuoteSelection;
 
   /// No description provided for @chatMessageWidgetResendTooltip.
   ///

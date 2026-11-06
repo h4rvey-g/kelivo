@@ -298,7 +298,8 @@ class MessageListView extends StatefulWidget {
   /// Lines a long code block collapses to, or null when it stays expanded.
   final int? collapsedCodeLines;
 
-  /// Whether code blocks wrap instead of scrolling horizontally.
+  /// Whether code blocks wrap (desktop, or the mobile wrap setting) instead of
+  /// scrolling horizontally.
   final bool wrapCodeBlocks;
 
   final bool showModelIcon;
@@ -374,8 +375,6 @@ class _MessageListViewState extends State<MessageListView> {
   final FocusNode _keyboardFocusNode = FocusNode(
     debugLabel: 'timeline-keyboard-scroll-region',
   );
-  Duration? _lastPrimaryPointerDownTime;
-  Offset? _lastPrimaryPointerDownPosition;
 
   String _slotId(ChatMessage message) => message.groupId ?? message.id;
 
@@ -802,8 +801,8 @@ class _MessageListViewState extends State<MessageListView> {
     // decides how many characters fit on a line.
     final charWidth = fontSize * (0.5 + 0.55 * _wideCharRatio(body));
     final charsPerLine = math.max(1.0, textWidth / charWidth);
-    // Code renders in a fixed 13px monospace face, so wrapped code uses a
-    // different column estimate from body text. A null column keeps no-wrap.
+    // Code renders in a fixed 13px monospace face, so it wraps at a different
+    // column and stacks at a different row height than the body text.
     final codeFontSize = _estimateCodeFontSize * fontScale;
     final codeCharsPerLine = math.max(1.0, textWidth / (codeFontSize * 0.6));
     // An empty body still reports one wrapped line; skip it so a tools-only
@@ -1705,19 +1704,6 @@ class _MessageListViewState extends State<MessageListView> {
       defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.linux;
 
-  bool _continuesPrimaryClickSequence(PointerDownEvent event) {
-    final previousTime = _lastPrimaryPointerDownTime;
-    final previousPosition = _lastPrimaryPointerDownPosition;
-    final continuesSequence =
-        previousTime != null &&
-        previousPosition != null &&
-        event.timeStamp - previousTime <= kDoubleTapTimeout &&
-        (event.position - previousPosition).distance <= kDoubleTapSlop;
-    _lastPrimaryPointerDownTime = event.timeStamp;
-    _lastPrimaryPointerDownPosition = event.position;
-    return continuesSequence;
-  }
-
   ScrollViewKeyboardDismissBehavior get _keyboardDismissBehavior {
     if (_isDesktopPlatform) {
       return ScrollViewKeyboardDismissBehavior.manual;
@@ -1846,22 +1832,15 @@ class _MessageListViewState extends State<MessageListView> {
 
               final userScrollAwareList = Listener(
                 onPointerDown: (event) {
-                  final isSecondaryPointer =
-                      event.buttons & kSecondaryMouseButton != 0;
-                  // SelectableRegion requests focus only on the first click.
-                  // Keep that focus for later clicks in the same sequence, and
-                  // leave GenUi controls to own their own pointer handling.
+                  // Keep copy shortcuts on a focused text selection when the
+                  // second click of a double-click reaches the list.
                   if (_isDesktopPlatform &&
-                      !isSecondaryPointer &&
+                      !_keyboardFocusNode.hasFocus &&
                       !GenUiControlPointer.contains(event)) {
-                    final continuesClickSequence =
-                        _continuesPrimaryClickSequence(event);
-                    if (!continuesClickSequence ||
-                        !_keyboardFocusNode.hasFocus) {
-                      _keyboardFocusNode.requestFocus();
-                    }
+                    _keyboardFocusNode.requestFocus();
                   }
-                  if (event.buttons != 0 && !isSecondaryPointer) {
+                  if (event.buttons != 0 &&
+                      event.buttons != kSecondaryMouseButton) {
                     _pointerDragInProgress = true;
                     _latestPointerDragMetrics = null;
                     _setDeferStreamingMessageUpdates(true);
@@ -2717,6 +2696,7 @@ final class _EstimateSettings {
   /// A list so two unscoped same-id requests stay distinct. [Set] would merge
   /// them and make the estimate say pending while the renderer says not.
   final List<PendingApprovalKey> pendingApprovals;
+
   @override
   bool operator ==(Object other) =>
       other is _EstimateSettings &&

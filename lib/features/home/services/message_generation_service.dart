@@ -22,6 +22,8 @@ import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/world_book_provider.dart';
 import '../../../core/services/api/builtin_tools.dart';
 import '../../../core/services/api/chat_api_service.dart';
+import '../../../core/services/api/chat_api_helpers.dart'
+    show mimeForInternalMediaRef;
 import '../../../core/services/api/providers/openai/responses_history.dart';
 import '../../../core/services/api/reasoning/reasoning_dialects.dart';
 import '../../../core/services/model_spec/model_spec_resolver.dart';
@@ -710,12 +712,16 @@ class MessageGenerationService {
         }
         message['content'] = preparedImageContext.context.buildImagePrompt();
         final inputImageUri = preparedImageContext.context.inputImageUri;
-        if (inputImageUri != null && inputImageUri.isNotEmpty) {
+        final hasInputImages = parseInternalMediaRefs(
+          message[MessageBuilderService.internalMediaPathsKey],
+        ).any((ref) => isImageMime(mimeForInternalMediaRef(ref)));
+        if (!hasInputImages &&
+            inputImageUri != null &&
+            inputImageUri.isNotEmpty) {
           message[MessageBuilderService.internalMediaPathsKey] = [
+            ...?message[MessageBuilderService.internalMediaPathsKey] as List?,
             encodeInternalMediaRef(uri: inputImageUri),
           ];
-        } else {
-          message.remove(MessageBuilderService.internalMediaPathsKey);
         }
         break;
       }

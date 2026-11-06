@@ -518,6 +518,63 @@ void main() {
     return config;
   }
 
+  for (final perChat in [false, true]) {
+    testWidgets('model shortcuts respect conversation scope: $perChat', (
+      tester,
+    ) async {
+      final controller = await pumpHarness(tester);
+      await tester.runAsync(() async {
+        await settings.setProviderConfig(
+          'SiliconFlow',
+          settings
+              .getProviderConfig('SiliconFlow')
+              .copyWith(models: ['model-1', 'model-2', 'model-3']),
+        );
+        await assistantProvider.updateAssistant(
+          assistantProvider.currentAssistant!.copyWith(
+            chatModelProvider: 'SiliconFlow',
+            chatModelId: 'model-1',
+          ),
+        );
+        await settings.setPerChatModelEnabled(perChat);
+        await settings.setQuickModel(1, 'SiliconFlow', 'model-1');
+        await settings.setQuickModel(2, 'SiliconFlow', 'model-2');
+        final conversation = await openConversation(controller);
+        final following = await service.createConversation(title: 'Following');
+        await controller.setConversationModel(
+          providerKey: 'SiliconFlow',
+          modelId: 'model-2',
+        );
+
+        await controller.cycleQuickModelShortcut(forward: true);
+
+        expect(
+          assistantProvider.currentAssistant!.chatModelId,
+          perChat ? 'model-1' : 'model-2',
+        );
+        expect(
+          service.getConversation(conversation.id)!.chatModelId,
+          perChat ? 'model-1' : 'model-2',
+        );
+        expect(service.getConversation(following.id)!.chatModelId, isNull);
+
+        await controller.selectChatModel(
+          providerKey: 'SiliconFlow',
+          modelId: 'model-3',
+        );
+        expect(
+          assistantProvider.currentAssistant!.chatModelId,
+          perChat ? 'model-1' : 'model-3',
+        );
+        expect(
+          service.getConversation(conversation.id)!.chatModelId,
+          perChat ? 'model-3' : 'model-2',
+        );
+      });
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final claude in [false, true]) {
     testWidgets(
       'nonstream cancel during checkpoint never starts the pending tool: claude=$claude',

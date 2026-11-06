@@ -3,8 +3,6 @@ import FlutterMacOS
 import WebKit
 
 class MainFlutterWindow: NSWindow {
-  private var selectedTextAccessibilityController:
-    SelectedTextAccessibilityController?
   private var transientTextPasteChannel: FlutterMethodChannel?
   private var transientTextPasteTarget: String?
   private weak var transientTextPasteResponder: NSResponder?
@@ -105,14 +103,6 @@ class MainFlutterWindow: NSWindow {
     inputContext.deactivate()
     inputContext.activate()
     return true
-  }
-
-  override var accessibilityFocusedUIElement: Any? {
-    if let focusedElement =
-      selectedTextAccessibilityController?.focusedUIElement {
-      return focusedElement
-    }
-    return super.accessibilityFocusedUIElement
   }
 
   // Use Cocoa autosave to persist and restore window frame precisely on macOS.
@@ -553,20 +543,6 @@ class MainFlutterWindow: NSWindow {
     (NSApp.delegate as? AppDelegate)?.registerSparkleUpdateChannel(
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
-
-    let coordinateView = flutterViewController.view.subviews.first(
-      where: { $0.isFlipped }
-    ) ?? flutterViewController.view
-    let selectedTextAccessibilityController =
-      SelectedTextAccessibilityController(
-        ownerWindow: self,
-        coordinateView: coordinateView
-      )
-    selectedTextAccessibilityController.register(
-      binaryMessenger: flutterViewController.engine.binaryMessenger
-    )
-    self.selectedTextAccessibilityController =
-      selectedTextAccessibilityController
 
     let transientTextPasteChannel = FlutterMethodChannel(
       name: "com.psyche.kelivo/transient_text_paste",

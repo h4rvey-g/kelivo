@@ -322,18 +322,7 @@ Future<void> showModelSelectSheet(
   );
   if (sel == null) return;
 
-  if (!perChat) {
-    if (assistant == null) return;
-    await assistantProvider.updateAssistant(
-      assistant.copyWith(
-        chatModelProvider: sel.providerKey,
-        chatModelId: sel.modelId,
-      ),
-    );
-    return;
-  }
-
-  await controller.setConversationModel(
+  await controller.selectChatModel(
     providerKey: sel.isInherit ? null : sel.providerKey,
     modelId: sel.isInherit ? null : sel.modelId,
   );

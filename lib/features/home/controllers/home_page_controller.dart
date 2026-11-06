@@ -71,6 +71,7 @@ import '../services/ocr_service.dart';
 import '../services/translation_service.dart';
 import '../services/file_upload_service.dart';
 import '../utils/chat_layout_constants.dart';
+import '../utils/model_display_helper.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/share_destination_sheet.dart';
 import '../../model/widgets/model_select_sheet.dart';
@@ -1106,13 +1107,34 @@ class HomePageController extends ChangeNotifier {
     });
   }
 
+  Future<void> selectChatModel({String? providerKey, String? modelId}) async {
+    final settings = _context.read<SettingsProvider>();
+    if (settings.perChatModelEnabled) {
+      await setConversationModel(providerKey: providerKey, modelId: modelId);
+      return;
+    }
+    final assistants = _context.read<AssistantProvider>();
+    final assistant = assistants.resolveConversationAssistant(
+      currentConversation?.assistantId,
+    );
+    if (assistant == null) return;
+    await assistants.updateAssistant(
+      assistant.copyWith(chatModelProvider: providerKey, chatModelId: modelId),
+    );
+  }
+
   Future<void> cycleQuickModelShortcut({required bool forward}) async {
     final settings = _context.read<SettingsProvider>();
-    final assistantProvider = _context.read<AssistantProvider>();
-    final assistant = assistantProvider.currentAssistant;
-    final activeProvider =
-        assistant?.chatModelProvider ?? settings.currentModelProvider;
-    final activeModel = assistant?.chatModelId ?? settings.currentModelId;
+    final assistant = _context
+        .read<AssistantProvider>()
+        .resolveConversationAssistant(currentConversation?.assistantId);
+    final active = resolveChatModel(
+      settings,
+      conversation: currentConversation,
+      assistant: assistant,
+    );
+    final activeProvider = active.providerKey;
+    final activeModel = active.modelId;
 
     Future<void>? fallbackSlotPersistence;
     if (settings.quickModelKey(1) == null &&
@@ -1166,17 +1188,7 @@ class HomePageController extends ChangeNotifier {
     final target = slots[targetIndex];
     _lastCycledQuickModelSlot = target.slot;
 
-    if (assistant != null) {
-      await assistantProvider.updateAssistant(
-        assistant.copyWith(
-          chatModelProvider: target.provider,
-          chatModelId: target.model,
-        ),
-      );
-      await fallbackSlotPersistence;
-      return;
-    }
-    await settings.setCurrentModel(target.provider, target.model);
+    await selectChatModel(providerKey: target.provider, modelId: target.model);
     await fallbackSlotPersistence;
   }
 
@@ -1427,7 +1439,6 @@ class HomePageController extends ChangeNotifier {
           // the skeleton instead of a blank list.
           notifyListeners();
           await Future.wait([restoreAssistant, loadWindow]);
-          await _viewModel.restoreConversationModel(recent.id);
           _restoreMessageUiState();
           _scrollCtrl.positionAtBottomOnNextLayout();
           notifyListeners();

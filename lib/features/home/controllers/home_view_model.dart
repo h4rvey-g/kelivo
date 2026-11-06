@@ -175,7 +175,6 @@ class HomeViewModel extends ChangeNotifier {
   @visibleForTesting
   ChatActions get debugChatActions => _chatActions;
   final Map<String, QueuedChatInput> _queuedInputs = {};
-  int _conversationModelRestoreSerial = 0;
   final Set<String> _drainingQueuedInputs = {};
   final Set<String> _pausedQueuedInputs = {};
   final Map<String, String> _compressionStates = {};
@@ -1135,7 +1134,6 @@ class HomeViewModel extends ChangeNotifier {
         _chatController.setCurrentConversationAndLoad(convo),
         if (assistantSwitch != null) assistantSwitch,
       ]);
-      await restoreConversationModel(id);
       // Arm the new list's initial position before listeners can paint it with
       // the previous conversation's scroll offset.
       onConversationSwitched?.call();
@@ -1186,7 +1184,6 @@ class HomeViewModel extends ChangeNotifier {
       assistantProvider,
       prepared.conversation.assistantId,
     );
-    unawaited(restoreConversationModel(id, assistantSwitch: assistantSwitch));
     if (assistantSwitch != null) unawaited(assistantSwitch);
     // Arm the new list's initial position before listeners can paint it with
     // the previous conversation's scroll offset.
@@ -1210,64 +1207,6 @@ class HomeViewModel extends ChangeNotifier {
       return null;
     }
     return assistantProvider.setCurrentAssistant(assistant.id);
-  }
-
-  /// Restores the model that was last selected in [conversationId].
-  Future<void> restoreConversationModel(
-    String conversationId, {
-    Future<void>? assistantSwitch,
-  }) async {
-    final serial = ++_conversationModelRestoreSerial;
-    final modelFuture = _chatService.loadLatestSelectedAssistantModel(
-      conversationId,
-    );
-    try {
-      if (assistantSwitch != null) await assistantSwitch;
-      final model = await modelFuture;
-      if (serial != _conversationModelRestoreSerial ||
-          currentConversation?.id != conversationId ||
-          !_contextProvider.mounted ||
-          model == null) {
-        return;
-      }
-
-      final settings = _contextProvider.read<SettingsProvider>();
-      await settings.loaded;
-      if (serial != _conversationModelRestoreSerial ||
-          currentConversation?.id != conversationId ||
-          !_contextProvider.mounted) {
-        return;
-      }
-      final config = settings.providerConfigs[model.providerId];
-      if (config == null ||
-          !config.enabled ||
-          !config.models.contains(model.modelId)) {
-        return;
-      }
-
-      final assistantProvider = _contextProvider.read<AssistantProvider>();
-      final assistant = assistantProvider.currentAssistant;
-      if (assistant != null) {
-        if (assistant.chatModelProvider == model.providerId &&
-            assistant.chatModelId == model.modelId) {
-          return;
-        }
-        await assistantProvider.updateAssistant(
-          assistant.copyWith(
-            chatModelProvider: model.providerId,
-            chatModelId: model.modelId,
-          ),
-        );
-        return;
-      }
-      if (settings.currentModelProvider == model.providerId &&
-          settings.currentModelId == model.modelId) {
-        return;
-      }
-      await settings.setCurrentModel(model.providerId, model.modelId);
-    } catch (_) {
-      // Conversation switching must still succeed when model restoration fails.
-    }
   }
 
   /// Returns this request's new or reused entry even if navigation changes
