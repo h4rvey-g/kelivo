@@ -1,5 +1,6 @@
 import '../../../support/business_test_harness.dart';
 import '../../../support/markdown_render_helpers.dart';
+import '../../../support/native_clipboard_mock.dart';
 
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/providers/assistant_provider.dart';
@@ -24,6 +25,9 @@ const _messageText = 'alpha bravo charlie';
 const _wordSelection = TextSelection(baseOffset: 6, extentOffset: 11);
 
 void main() {
+  final clipboard = NativeClipboardMock();
+  setUp(clipboard.clear);
+
   testWidgets(
     'selection edge scroll expresses user intent before auto-follow can pin the page',
     (tester) async {
@@ -94,21 +98,6 @@ void main() {
     testWidgets(
       '$role message supports keyboard copy after double-click and drag selection',
       (tester) async {
-        final copied = <String>[];
-        final messenger = tester.binding.defaultBinaryMessenger;
-        messenger.setMockMethodCallHandler(SystemChannels.platform, (
-          call,
-        ) async {
-          if (call.method == 'Clipboard.setData') {
-            copied.add((call.arguments as Map)['text'] as String);
-          }
-          return null;
-        });
-        addTearDown(
-          () =>
-              messenger.setMockMethodCallHandler(SystemChannels.platform, null),
-        );
-
         await _pumpTimeline(tester, role: role);
         final paragraph = renderParagraphs(find.byType(MessageListView))
             .singleWhere(
@@ -118,14 +107,18 @@ void main() {
         await _selectWord(tester, paragraph, doubleClick: true);
         expect(paragraph.selections, contains(_wordSelection));
         await _copySelection(tester);
-        expect(copied, ['bravo']);
+        expect(await clipboard.plainText, 'bravo');
+        expect(await clipboard.htmlText, contains('bravo'));
+        expect(clipboard.writeCount, 1);
 
         // Start a separate gesture after the double-click tracking expires.
         await tester.pump(kDoubleTapTimeout);
         await _selectWord(tester, paragraph, doubleClick: false);
         expect(paragraph.selections, contains(_wordSelection));
         await _copySelection(tester);
-        expect(copied, ['bravo', 'bravo']);
+        expect(await clipboard.plainText, 'bravo');
+        expect(await clipboard.htmlText, contains('bravo'));
+        expect(clipboard.writeCount, 2);
       },
       variant: TargetPlatformVariant.desktop(),
     );

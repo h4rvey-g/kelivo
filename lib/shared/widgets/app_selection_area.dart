@@ -75,10 +75,8 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
   int _toolbarRevision = 0;
   int _quickRequestedRevision = 0;
   late final _copyAction = _SelectionCopyAction(
-    intercept: () =>
-        _regionFocus.hasPrimaryFocus &&
-        (_hasCopyBudget || (widget.message?.quotes.isNotEmpty ?? false)),
-    copy: _copyNativeSelection,
+    intercept: () => _regionFocus.hasPrimaryFocus,
+    copy: () => unawaited(_copyRichText(null)),
   );
   late MarkstreamSelectionController _markdownSelection;
 
@@ -352,10 +350,6 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
     );
   }
 
-  bool get _hasCopyBudget =>
-      widget.copyByteLimit != null ||
-      _markdownSelection.selectionByteLimit != null;
-
   bool _writeSelection(String text) {
     if (text.isEmpty) return false;
     try {
@@ -372,21 +366,42 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
     return true;
   }
 
-  bool _copyNativeSelection() => _writeSelection(
-    _captureSelection()?.text ??
+  Future<void> _copyRichText(
+    SelectableRegionState? region, {
+    SelectionSnapshot? snapshot,
+  }) async {
+    snapshot ??= _captureSelection();
+    final text =
+        snapshot?.text ??
         _selectionKey.currentState?.selectedText ??
-        _selectedText,
-  );
-
-  Future<void> _copyRichText(SelectableRegionState region) async {
-    final pending = copyRichMarkdownSelection(
-      _markdownSelection,
-      writer: widget.clipboardWriter,
-      byteLimit: widget.copyByteLimit,
-    );
-    region.hideToolbar();
+        _selectedText;
+    if (text.isEmpty) return;
+    final pending = snapshot == null && _markdownSelection.hasSelection
+        ? copyRichMarkdownSelection(
+            _markdownSelection,
+            writer: widget.clipboardWriter,
+            byteLimit: widget.copyByteLimit,
+          )
+        : copyRichTextSnapshot(
+            text,
+            markdown: _markdownSelection.hasSelection
+                ? snapshot?.markdown
+                : null,
+            writer: widget.clipboardWriter,
+            verifyBudget: (values) => _markdownSelection.verifyCopyBudget(
+              values,
+              byteLimit: widget.copyByteLimit,
+            ),
+          );
+    region?.hideToolbar();
     try {
       await pending;
+      if (region != null &&
+          region.mounted &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.fuchsia)) {
+        region.clearSelection();
+      }
     } catch (error) {
       _copyFailure(error);
     }
@@ -407,19 +422,11 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
       keepOpenOnSelectAll: false,
       buttonItems: [
         for (final item in region.contextMenuButtonItems)
-          if (item.type == ContextMenuButtonType.copy && _hasCopyBudget)
+          if (item.type == ContextMenuButtonType.copy)
             ContextMenuButtonItem(
               type: item.type,
               label: item.label,
-              onPressed: () {
-                final copied = _copyNativeSelection();
-                if (copied &&
-                    (defaultTargetPlatform == TargetPlatform.android ||
-                        defaultTargetPlatform == TargetPlatform.fuchsia)) {
-                  region.clearSelection();
-                }
-                region.hideToolbar();
-              },
+              onPressed: () => unawaited(_copyRichText(region)),
             )
           else
             item,
@@ -460,19 +467,9 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
     final l10n = AppLocalizations.of(context)!;
     final anchor = _selectionAnchor(fallbackAnchor: anchors.primaryAnchor);
     final items = region.contextMenuButtonItems;
-    final selectedMarkdown = _markdownSelection.hasSelection
-        ? snapshot.markdown
-        : null;
     final copy = ContextMenuButtonItem(
       type: ContextMenuButtonType.copy,
-      onPressed: () {
-        _writeSelection(snapshot.text);
-        if (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.fuchsia) {
-          region.clearSelection();
-        }
-        region.hideToolbar();
-      },
+      onPressed: () => unawaited(_copyRichText(region, snapshot: snapshot)),
     );
     final markdown = ContextMenuButtonItem(
       label: l10n.selectionCopyMarkdown,
@@ -483,19 +480,7 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
     );
     final rich = ContextMenuButtonItem(
       label: l10n.selectionCopyRich,
-      onPressed: () {
-        final pending = copyRichTextSnapshot(
-          snapshot.text,
-          markdown: selectedMarkdown,
-          writer: widget.clipboardWriter,
-          verifyBudget: (values) => _markdownSelection.verifyCopyBudget(
-            values,
-            byteLimit: widget.copyByteLimit,
-          ),
-        );
-        region.hideToolbar();
-        unawaited(pending.catchError(_copyFailure));
-      },
+      onPressed: () => unawaited(_copyRichText(region, snapshot: snapshot)),
     );
     final quote = ContextMenuButtonItem(
       label: l10n.selectionQuote,
@@ -700,7 +685,8 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
 /// Editable inputs retain their own action because their focus is distinct.
 class _SelectionCopyAction extends Action<CopySelectionTextIntent> {
   _SelectionCopyAction({required this.intercept, required this.copy});
-  final bool Function() intercept, copy;
+  final bool Function() intercept;
+  final VoidCallback copy;
   @override
   bool isEnabled(CopySelectionTextIntent intent) =>
       intercept() || (callingAction?.isEnabled(intent) ?? false);

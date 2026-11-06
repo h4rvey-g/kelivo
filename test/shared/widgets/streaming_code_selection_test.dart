@@ -5,6 +5,7 @@ import 'package:markstream/markstream.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/native_clipboard_mock.dart';
 
 void main() {
   testWidgets('long code keeps cross-chunk copying and iOS translation', (
@@ -18,17 +19,8 @@ void main() {
       calls.add(call);
       return call.method == 'isAvailable' ? true : null;
     });
-    String? copied;
-    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-      if (call.method == 'Clipboard.setData') {
-        copied = (call.arguments as Map)['text'] as String;
-      }
-      return null;
-    });
-    addTearDown(() {
-      messenger.setMockMethodCallHandler(translation, null);
-      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
-    });
+    final clipboard = NativeClipboardMock();
+    addTearDown(() => messenger.setMockMethodCallHandler(translation, null));
     final source = ValueNotifier(
       List.generate(200, (i) => 'final value$i = "中文 $i";').join('\n'),
     );
@@ -84,7 +76,11 @@ void main() {
           .singleWhere((item) => item.type == ContextMenuButtonType.copy)
           .onPressed!();
       await tester.pump();
-      expect(copied, source.value);
+      expect(await clipboard.plainText, source.value);
+      expect(
+        await clipboard.htmlText,
+        contains('final value199 = &quot;中文 199&quot;;'),
+      );
       // Copy can clear selection, so restore it before opening the menu again.
       region.selectAll(SelectionChangedCause.keyboard);
       await tester.pumpAndSettle();

@@ -19,9 +19,12 @@ import 'package:provider/provider.dart';
 import '../../support/business_test_harness.dart';
 import '../../support/markdown_render_helpers.dart';
 import '../../support/android_selection_menu_mock.dart';
+import '../../support/native_clipboard_mock.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final clipboard = NativeClipboardMock();
+  setUp(clipboard.clear);
   late AndroidSelectionMenuMock androidMenu;
   setUp(() => androidMenu = AndroidSelectionMenuMock());
   tearDown(() => androidMenu.dispose());
@@ -172,18 +175,6 @@ void main() {
     'Android message Select all retires stale actions and keeps Copy available',
     (tester) async {
       const source = 'alpha beta gamma';
-      String? clipboard;
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') {
-          clipboard = (call.arguments as Map)['text'] as String;
-        }
-        return null;
-      });
-      addTearDown(
-        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
-      );
       final received = <QuoteRef>[];
       await mount(tester, received);
       await tester.longPress(find.text(source));
@@ -197,16 +188,17 @@ void main() {
       // overlay. They must not execute callbacks holding the old partial snapshot.
       await androidMenu.event('action', previousMenu, index: copyIndex);
       await androidMenu.event('action', previousMenu, index: quoteIndex);
-      expect(clipboard, isNull);
+      expect(clipboard.items, isEmpty);
       expect(received, isEmpty);
       await tester.pumpAndSettle();
       expect(androidMenu.isShown, isTrue);
       await androidMenu.event('action', previousMenu, index: copyIndex);
-      expect(clipboard, isNull);
+      expect(clipboard.items, isEmpty);
       expect(androidMenu.isShown, isTrue);
       await androidMenu.press('Copy');
       await tester.pumpAndSettle();
-      expect(clipboard, source);
+      expect(await clipboard.plainText, source);
+      expect(await clipboard.htmlText, contains(source));
       expect(androidMenu.isShown, isFalse);
       await tester.pumpWidget(const SizedBox.shrink());
     },
